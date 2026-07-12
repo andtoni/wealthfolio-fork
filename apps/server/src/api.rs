@@ -39,6 +39,7 @@ mod ai_providers;
 mod allocation_targets;
 mod alternative_assets;
 mod assets;
+pub(crate) mod bridge;
 #[cfg(any(feature = "connect-sync", feature = "device-sync"))]
 pub mod connect;
 mod custom_providers;
@@ -58,6 +59,7 @@ mod net_worth;
 mod performance;
 mod portfolio;
 mod portfolios;
+mod provider_connections;
 mod secrets;
 mod settings;
 pub mod shared;
@@ -164,7 +166,8 @@ pub fn app_router(state: Arc<AppState>, config: &Config) -> Router {
         .merge(custom_providers::router())
         .merge(spending::router())
         .merge(allocation_targets::router())
-        .merge(agent_access::router());
+        .merge(agent_access::router())
+        .merge(provider_connections::router());
 
     #[cfg(feature = "device-sync")]
     {
@@ -176,6 +179,35 @@ pub fn app_router(state: Arc<AppState>, config: &Config) -> Router {
     #[cfg(any(feature = "connect-sync", feature = "device-sync"))]
     {
         protected_api = protected_api.merge(connect::router());
+    }
+
+    // Add household bridge and onboarding routes behind flag
+    if config.household_enabled {
+        protected_api = protected_api
+            .route(
+                "/bridge/grant/{subject}/{account}",
+                axum::routing::post(crate::api::bridge::handle_grant),
+            )
+            .route(
+                "/bridge/commit",
+                axum::routing::post(crate::api::bridge::handle_commit),
+            )
+            .route(
+                "/bridge/revoke/{subject}/{account}/{key}",
+                axum::routing::post(crate::api::bridge::handle_revoke),
+            )
+            .route(
+                "/onboarding/candidates",
+                axum::routing::post(crate::onboarding::discover),
+            )
+            .route(
+                "/onboarding/candidates/{id}/approve",
+                axum::routing::put(crate::onboarding::approve),
+            )
+            .route(
+                "/onboarding/accounts/{id}/relink",
+                axum::routing::post(crate::onboarding::relink),
+            );
     }
 
     let protected_api = protected_api.route(

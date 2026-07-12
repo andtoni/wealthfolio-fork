@@ -4,7 +4,7 @@ use rust_decimal_macros::dec;
 use std::collections::{HashMap, VecDeque};
 
 use crate::{
-    accounts::{Account, TrackingMode},
+    accounts::{Account, TrackingMode, filter_eligible_accounts},
     assets::{Asset, AssetKind, InstrumentType, QuoteMode},
     portfolio::{
         economic_events::BasisStatus,
@@ -22,6 +22,8 @@ fn account(id: &str, currency: &str) -> Account {
     let now =
         chrono::NaiveDateTime::parse_from_str("2026-03-17 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
     Account {
+        include_in_net_worth: true,
+        name_source: "provider".to_string(),
         id: id.to_string(),
         name: format!("Account {id}"),
         account_type: "SECURITIES".to_string(),
@@ -728,4 +730,72 @@ fn current_valuation_response_summarizes_scope_and_optionally_returns_accounts()
         summary_only.summary.source_data_as_of,
         Some(DateTime::<Utc>::from_timestamp(1_776_480_000, 0).unwrap())
     );
+}
+// - Focused receipt/eligibility composition regressions -
+
+#[test]
+fn test_eligible_composition_excludes_opted_out_account() {
+    // Regression: include_in_net_worth=false account must be excluded
+    let mut opted_out = account("opted", "USD");
+    opted_out.include_in_net_worth = false;
+    let included = account("included", "USD");
+    let accounts = vec![opted_out, included];
+
+    let after_inclusion = filter_current_valuation_accounts(
+        Some(&unique_account_ids(vec!["opted".into(), "included".into()])),
+        accounts,
+    );
+    assert_eq!(after_inclusion.len(), 1);
+    assert_eq!(after_inclusion[0].id, "included");
+
+    let eligible_ids = vec!["included".to_string()];
+    let after_receipt = filter_eligible_accounts(after_inclusion, &eligible_ids);
+    assert_eq!(after_receipt.len(), 1);
+    assert_eq!(after_receipt[0].id, "included");
+}
+
+#[test]
+fn test_eligible_composition_excludes_account_without_receipt() {
+    // Regression: include_in_net_worth=true but no receipt -> excluded
+    let no_receipt = account("no-receipt", "USD");
+    let accounts = vec![no_receipt.clone()];
+    let after_inclusion = filter_current_valuation_accounts(
+        Some(&unique_account_ids(vec!["no-receipt".into()])),
+        accounts,
+    );
+    assert_eq!(after_inclusion.len(), 1);
+    assert_eq!(after_inclusion[0].id, "no-receipt");
+
+    let after_receipt = filter_eligible_accounts(after_inclusion, &[]);
+    assert_eq!(after_receipt.len(), 0);
+}
+
+#[test]
+fn test_eligible_composition_includes_fully_eligible_account() {
+    let acct = account("full-eligible", "USD");
+    let accounts = vec![acct.clone()];
+    let after_inclusion = filter_current_valuation_accounts(
+        Some(&unique_account_ids(vec!["full-eligible".into()])),
+        accounts,
+    );
+    let after_receipt = filter_eligible_accounts(after_inclusion, &["full-eligible".to_string()]);
+    assert_eq!(after_receipt.len(), 1);
+    assert_eq!(after_receipt[0].id, "full-eligible");
+}
+
+#[test]
+fn test_eligible_composition_mixed_eligibility() {
+    let included = account("a", "USD");
+    let excluded = account("b", "USD");
+    let accounts = vec![included, excluded];
+
+    let after_inclusion = filter_current_valuation_accounts(
+        Some(&unique_account_ids(vec!["a".into(), "b".into()])),
+        accounts,
+    );
+    assert_eq!(after_inclusion.len(), 2);
+
+    let after_receipt = filter_eligible_accounts(after_inclusion, &["a".to_string()]);
+    assert_eq!(after_receipt.len(), 1);
+    assert_eq!(after_receipt[0].id, "a");
 }

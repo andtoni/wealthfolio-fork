@@ -150,6 +150,7 @@ impl OidcConfig {
 /// verbose typestate generics in a struct field).
 pub struct OidcManager {
     provider_metadata: CoreProviderMetadata,
+    issuer_url: String,
     client_id: ClientId,
     /// Raw client id string, used for the `client_id` logout parameter.
     client_id_str: String,
@@ -209,6 +210,7 @@ impl OidcManager {
 
         Ok(Self {
             provider_metadata,
+            issuer_url: config.issuer_url.clone(),
             client_id: ClientId::new(config.client_id.clone()),
             client_id_str: config.client_id.clone(),
             client_secret: config.client_secret.clone().map(ClientSecret::new),
@@ -435,7 +437,14 @@ pub async fn oidc_callback(
         return error_redirect("oidc_internal");
     };
     let secure = cookie_secure(&state, &headers);
-    let Ok((session_cookie, _ttl_secs)) = auth.issue_session_cookie(&headers) else {
+    let Ok(principal) = crate::auth::OidcPrincipal::from_verified_callback(
+        &oidc.issuer_url,
+        claims.subject().as_str(),
+    ) else {
+        return error_redirect("oidc_invalid_token");
+    };
+    let Ok((session_cookie, _ttl_secs)) = auth.issue_oidc_session_cookie(&headers, &principal)
+    else {
         return error_redirect("oidc_internal");
     };
 

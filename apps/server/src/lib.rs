@@ -10,6 +10,7 @@ mod main_lib;
 pub mod mcp;
 pub mod models;
 pub mod oidc;
+pub mod onboarding;
 pub mod secrets;
 
 pub use ai_environment::ServerAiEnvironment;

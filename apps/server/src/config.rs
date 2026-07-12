@@ -31,6 +31,10 @@ pub struct Config {
     /// headers cross-site, so DNS rebinding gains nothing). Deployments
     /// that want strict Host pinning set WF_MCP_ALLOWED_HOSTS explicitly.
     pub mcp_allowed_hosts: Option<Vec<String>>,
+    /// Enable household/bridge/onboarding endpoints (WF_HOUSEHOLD_ENABLED, default false).
+    pub household_enabled: bool,
+    /// Deployment identifier for bridge policy isolation (WF_DEPLOYMENT_ID, default "default").
+    pub deployment_id: String,
 }
 
 impl Config {
@@ -98,6 +102,7 @@ impl Config {
             };
             Some(AuthConfig {
                 password_hash,
+                password_subject: "urn:wealthfolio:password#local".to_owned(),
                 jwt_secret: jwt_key.to_vec(),
                 access_token_ttl: Duration::from_secs(ttl_minutes.saturating_mul(60)),
                 cookie_secure,
@@ -120,6 +125,12 @@ impl Config {
                     .collect::<Vec<_>>()
             })
             .filter(|hosts| !hosts.is_empty());
+
+        let household_enabled = std::env::var("WF_HOUSEHOLD_ENABLED")
+            .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "true" | "1" | "yes"))
+            .unwrap_or(false);
+        let deployment_id =
+            std::env::var("WF_DEPLOYMENT_ID").unwrap_or_else(|_| "default".to_string());
 
         // When auth is enabled, wildcard CORS is incompatible with credentials
         if auth.is_some() && cors_allow.iter().any(|o| o == "*") {
@@ -183,6 +194,8 @@ impl Config {
             mcp_enabled,
             mcp_audit_enabled,
             mcp_allowed_hosts,
+            household_enabled,
+            deployment_id,
         }
     }
 }

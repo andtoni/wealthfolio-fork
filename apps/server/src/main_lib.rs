@@ -46,7 +46,7 @@ use wealthfolio_core::{
 };
 use wealthfolio_device_sync::{engine::DeviceSyncRuntimeState, DeviceEnrollService};
 use wealthfolio_storage_sqlite::{
-    accounts::AccountRepository,
+    accounts::{AccountRepository, VerifiedReceiptRepository},
     activities::ActivityRepository,
     agent::{McpAuditRepository, PatRepository},
     ai_chat::AiChatRepository,
@@ -140,6 +140,12 @@ pub struct AppState {
     pub mcp_enabled: bool,
     /// Whether agent tool calls are audited (from `Config::mcp_audit_enabled`).
     pub mcp_audit_enabled: bool,
+    /// Bridge policy store for household commit/grant/revoke (None when household disabled).
+    pub bridge_store: Option<wealthfolio_storage_sqlite::bridge_policy::BridgePolicyStore>,
+    /// Verified receipt repository for eligibility checks.
+    pub verified_receipt_repository: Arc<VerifiedReceiptRepository>,
+    /// Onboarding service for household credential-bound account onboarding (None when household disabled).
+    pub onboarding_state: Option<crate::onboarding::OnboardingState>,
 }
 
 pub fn init_tracing() {
@@ -337,6 +343,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
     );
 
     let account_repo = Arc::new(AccountRepository::new(pool.clone(), writer.clone()));
+    let verified_receipt_repository = Arc::new(VerifiedReceiptRepository::new(pool.clone()));
 
     // Additional repositories/services for web API
     let asset_repository = Arc::new(AssetRepository::new(pool.clone(), writer.clone()));
@@ -439,6 +446,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
             quote_service.clone(),
             valuation_repository.clone(),
             fx_service.clone(),
+            verified_receipt_repository.clone(),
         ));
 
     let holdings_valuation_service = Arc::new(HoldingsValuationService::new_with_timezone(
@@ -802,6 +810,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         token_lifecycle.clone(),
         spending_settings_service.clone(),
         categorization_rules_service.clone(),
+        verified_receipt_repository.clone(),
     );
 
     let addon_service: Arc<dyn AddonServiceTrait + Send + Sync> = Arc::new(AddonService::new(
@@ -821,6 +830,53 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
             OidcManager::discover(oidc_config, config.secrets_encryption_key).await?,
         )),
         None => None,
+    };
+
+    // Bridge policy store (household commit/grant/revoke)
+    let bridge_store = if config.household_enabled {
+        let pool = db::create_pool(&db_path)?;
+        // spawn_writer needs DbPool (not Arc<DbPool>)
+        let writer_pool = pool.as_ref().clone();
+        let writer = write_actor::spawn_writer(writer_pool)
+            .map_err(|e| anyhow::anyhow!("Failed to initialize bridge writer: {e}"))?;
+        Some(
+            wealthfolio_storage_sqlite::bridge_policy::BridgePolicyStore::new(
+                &config.deployment_id,
+                pool,
+                writer,
+            ),
+        )
+    } else {
+        None
+    };
+
+    // Onboarding store
+    let onboarding_store =
+        wealthfolio_storage_sqlite::onboarding::OnboardingStore::new(db_path.clone());
+    let deployment = wealthfolio_storage_sqlite::onboarding::DeploymentContext::server_configured(
+        config.deployment_id.clone(),
+    );
+    let onboarding_state = if config.household_enabled {
+        let credential_store = Arc::new(crate::onboarding::CredentialStore::from_env());
+        if credential_store.is_empty() {
+            tracing::warn!(
+                "Household enabled but no WF_CREDENTIALS/WF_CREDENTIAL_* env vars set — \
+                 onboarding routes mounted but will return 403 until credentials are configured"
+            );
+        }
+        match deployment {
+            Ok(d) => Some(crate::onboarding::OnboardingState {
+                store: onboarding_store,
+                deployment: d,
+                credential_store,
+            }),
+            Err(e) => {
+                tracing::error!("Failed to init deployment context: {e}");
+                None
+            }
+        }
+    } else {
+        None
     };
 
     let state = Arc::new(AppState {
@@ -880,6 +936,9 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         agent_environment,
         mcp_enabled: config.mcp_enabled,
         mcp_audit_enabled: config.mcp_audit_enabled,
+        bridge_store,
+        onboarding_state,
+        verified_receipt_repository,
     });
 
     #[cfg(feature = "device-sync")]

@@ -4,7 +4,10 @@ use rust_decimal::Decimal;
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    accounts::{account_supports_portfolio_scope, Account, AccountPurpose, AccountServiceTrait},
+    accounts::{
+        account_supports_portfolio_scope, filter_eligible_accounts, Account,
+        AccountPurpose, AccountServiceTrait, VerifiedReceiptRepositoryTrait,
+    },
     assets::{Asset, AssetServiceTrait, InstrumentType},
     errors::Result,
     fx::{currency::normalize_amount, FxServiceTrait},
@@ -32,6 +35,7 @@ pub struct CurrentAccountValuationService<'a> {
     asset_service: &'a dyn AssetServiceTrait,
     quote_service: &'a dyn QuoteServiceTrait,
     fx_service: &'a dyn FxServiceTrait,
+    verified_receipt_repository: &'a dyn VerifiedReceiptRepositoryTrait,
 }
 
 impl<'a> CurrentAccountValuationService<'a> {
@@ -41,6 +45,7 @@ impl<'a> CurrentAccountValuationService<'a> {
         asset_service: &'a dyn AssetServiceTrait,
         quote_service: &'a dyn QuoteServiceTrait,
         fx_service: &'a dyn FxServiceTrait,
+        verified_receipt_repository: &'a dyn VerifiedReceiptRepositoryTrait,
     ) -> Self {
         Self {
             account_service,
@@ -48,6 +53,7 @@ impl<'a> CurrentAccountValuationService<'a> {
             asset_service,
             quote_service,
             fx_service,
+            verified_receipt_repository,
         }
     }
 
@@ -79,7 +85,7 @@ impl<'a> CurrentAccountValuationService<'a> {
         include_accounts: bool,
         calculated_at: DateTime<Utc>,
     ) -> Result<CurrentValuationResponse> {
-        let accounts = self.resolve_requested_accounts(account_ids)?;
+        let accounts = self.resolve_eligible_requested_accounts(account_ids).await?;
         if accounts.is_empty() {
             return Ok(empty_current_valuation_response(
                 scope_id,
@@ -120,6 +126,23 @@ impl<'a> CurrentAccountValuationService<'a> {
             Some(&requested_ids),
             accounts,
         ))
+    }
+
+    /// Resolve requested accounts and then cross-check against verified receipts.
+    /// Accounts without a verified receipt are excluded (fail-closed).
+    async fn resolve_eligible_requested_accounts(
+        &self,
+        account_ids: &[String],
+    ) -> Result<Vec<Account>> {
+        let accounts = self.resolve_requested_accounts(account_ids)?;
+        if accounts.is_empty() {
+            return Ok(Vec::new());
+        }
+        let eligible_ids = self
+            .verified_receipt_repository
+            .get_eligible_account_ids()
+            .await?;
+        Ok(filter_eligible_accounts(accounts, &eligible_ids))
     }
 
     fn latest_snapshots_with_positions(
@@ -309,7 +332,8 @@ pub fn filter_current_valuation_accounts(
         None => accounts
             .into_iter()
             .filter(|account| {
-                account_supports_portfolio_scope(account, AccountPurpose::Performance)
+                account.include_in_net_worth
+                    && account_supports_portfolio_scope(account, AccountPurpose::Performance)
                     && account_supports_portfolio_scope(account, AccountPurpose::Holdings)
             })
             .collect(),
@@ -322,7 +346,8 @@ pub fn filter_current_valuation_accounts(
             ids.iter()
                 .filter_map(|account_id| accounts_by_id.get(account_id).cloned())
                 .filter(|account| {
-                    account_supports_portfolio_scope(account, AccountPurpose::Performance)
+                    account.include_in_net_worth
+                        && account_supports_portfolio_scope(account, AccountPurpose::Performance)
                         && account_supports_portfolio_scope(account, AccountPurpose::Holdings)
                 })
                 .collect()

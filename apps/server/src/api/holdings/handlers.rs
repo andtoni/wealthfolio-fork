@@ -368,6 +368,7 @@ pub async fn get_current_valuation(
         state.asset_service.as_ref(),
         state.quote_service.as_ref(),
         state.fx_service.as_ref(),
+        state.verified_receipt_repository.as_ref(),
     );
     let valuation = service
         .get_current_valuation_for_scope(

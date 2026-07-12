@@ -22,6 +22,8 @@ pub struct Account {
     pub meta: Option<String>,
     pub provider: Option<String>,
     pub provider_account_id: Option<String>,
+    pub include_in_net_worth: bool,
+    pub name_source: String,
 }
 
 impl From<core_accounts::Account> for Account {
@@ -49,6 +51,8 @@ impl From<core_accounts::Account> for Account {
             meta: a.meta,
             provider: a.provider,
             provider_account_id: a.provider_account_id,
+            include_in_net_worth: a.include_in_net_worth,
+            name_source: a.name_source,
         }
     }
 }
@@ -64,19 +68,25 @@ pub struct NewAccount {
     pub currency: String,
     pub is_default: bool,
     pub is_active: bool,
-    #[serde(default)]
     pub is_archived: bool,
-    #[serde(default = "default_tracking_mode")]
     pub tracking_mode: String,
     pub platform_id: Option<String>,
     pub account_number: Option<String>,
     pub meta: Option<String>,
     pub provider: Option<String>,
     pub provider_account_id: Option<String>,
+    #[serde(default = "default_include_in_net_worth")]
+    pub include_in_net_worth: bool,
+    #[serde(default = "default_name_source")]
+    pub name_source: String,
 }
 
-fn default_tracking_mode() -> String {
-    "NOT_SET".to_string()
+fn default_include_in_net_worth() -> bool {
+    true
+}
+
+fn default_name_source() -> String {
+    "provider".to_string()
 }
 
 fn parse_tracking_mode(s: &str) -> core_accounts::TrackingMode {
@@ -104,6 +114,8 @@ impl From<NewAccount> for core_accounts::NewAccount {
             meta: a.meta,
             provider: a.provider,
             provider_account_id: a.provider_account_id,
+            include_in_net_worth: a.include_in_net_worth,
+            name_source: a.name_source,
         }
     }
 }
@@ -124,6 +136,9 @@ pub struct AccountUpdate {
     pub meta: Option<String>,
     pub provider: Option<String>,
     pub provider_account_id: Option<String>,
+    #[serde(default)]
+    pub include_in_net_worth: Option<bool>,
+    pub name_source: Option<String>,
 }
 
 impl From<AccountUpdate> for core_accounts::AccountUpdate {
@@ -142,6 +157,8 @@ impl From<AccountUpdate> for core_accounts::AccountUpdate {
             meta: a.meta,
             provider: a.provider,
             provider_account_id: a.provider_account_id,
+            include_in_net_worth: a.include_in_net_worth,
+            name_source: a.name_source,
         }
     }
 }

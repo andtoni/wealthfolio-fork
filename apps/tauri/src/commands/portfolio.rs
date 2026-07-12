@@ -538,12 +538,14 @@ pub async fn get_current_valuation(
     let asset_service = state.asset_service();
     let quote_service = state.quote_service();
     let fx_service = state.fx_service();
+    let verified_receipt_repository = state.verified_receipt_repository();
     let service = CurrentAccountValuationService::new(
         account_service.as_ref(),
         snapshot_repository.as_ref(),
         asset_service.as_ref(),
         quote_service.as_ref(),
         fx_service.as_ref(),
+        verified_receipt_repository.as_ref(),
     );
 
     service
@@ -1889,8 +1891,10 @@ mod tests {
 
     fn account(id: &str, account_type: &str) -> Account {
         Account {
+            include_in_net_worth: true,
             id: id.to_string(),
             name: id.to_string(),
+            name_source: "provider".to_string(),
             account_type: account_type.to_string(),
             group: None,
             currency: "USD".to_string(),

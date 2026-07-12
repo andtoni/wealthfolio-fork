@@ -248,6 +248,21 @@ pub struct Account {
     pub is_archived: bool,
     /// Tracking mode for the account
     pub tracking_mode: TrackingMode,
+    /// Whether the account is included in net worth and current financial aggregates.
+    /// Default true for normal accounts; provider-discovered accounts default to false.
+    #[serde(default = "default_include_in_net_worth")]
+    pub include_in_net_worth: bool,
+    /// Source of the account display name: "provider" (sync overwritable) or "user" (preserved).
+    #[serde(default = "default_name_source")]
+    pub name_source: String,
+}
+
+fn default_include_in_net_worth() -> bool {
+    true
+}
+
+fn default_name_source() -> String {
+    "provider".to_string()
 }
 
 impl Account {
@@ -287,6 +302,13 @@ pub struct NewAccount {
     pub is_archived: bool,
     #[serde(default)]
     pub tracking_mode: TrackingMode,
+    /// Whether this account is included in net worth and current financial aggregates.
+    /// Provider-discovered accounts should set this to false; defaults to true.
+    #[serde(default = "default_include_in_net_worth")]
+    pub include_in_net_worth: bool,
+    /// Source of the account display name: "provider" (sync overwritable) or "user" (preserved).
+    #[serde(default = "default_name_source")]
+    pub name_source: String,
 }
 
 impl NewAccount {
@@ -330,6 +352,13 @@ pub struct AccountUpdate {
     pub provider_account_id: Option<String>,
     pub is_archived: Option<bool>,
     pub tracking_mode: Option<TrackingMode>,
+    /// Whether this account is included in net worth and current financial aggregates.
+    /// None means unchanged.
+    pub include_in_net_worth: Option<bool>,
+    /// Source of the account display name: provider (sync overwritable) or user (preserved).
+    /// Set to user when the user renames; set to provider to revert the override.
+    /// None means unchanged.
+    pub name_source: Option<String>,
 }
 
 impl AccountUpdate {
@@ -354,4 +383,52 @@ impl AccountUpdate {
         }
         Ok(())
     }
+}
+
+/// Immutable provider identity for an account — discovered and persisted
+/// by the provider-ingestion layer. Not user-editable after creation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderIdentity {
+    pub account_id: String,
+    pub provider: String,
+    pub provider_account_id: String,
+    /// Lifecycle state of the provider account: active, closed, or suspended.
+    pub lifecycle_state: String,
+    /// The display name last returned by the provider during sync.
+    pub provider_display_name: Option<String>,
+    /// Timestamp of last successful sync with the provider.
+    pub last_sync_at: Option<String>,
+}
+
+/// Basis type for a verified receipt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum VerifiedReceiptBasis {
+    /// A current-point-in-time snapshot from the provider.
+    CurrentSnapshot,
+    /// An explicit opening baseline (e.g., at migration cutover).
+    OpeningBaseline,
+}
+
+/// A verified receipt makes an account eligible for current financial aggregates.
+///
+/// An account is eligible for current valuations, current net worth, holdings,
+/// allocation totals, and retirement portfolio resolution only when a verified
+/// receipt with `verification_state = "verified"` exists.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifiedReceipt {
+    pub id: String,
+    pub account_id: String,
+    pub basis: VerifiedReceiptBasis,
+    pub as_of: String,
+    /// Reference to the provider/import receipt that this verification is based on.
+    pub provider_receipt_ref: Option<String>,
+    /// Verification state: pending, verified, or rejected.
+    pub verification_state: String,
+    /// Optional descriptive coverage-start date for opening baselines.
+    pub coverage_start_date: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
 }

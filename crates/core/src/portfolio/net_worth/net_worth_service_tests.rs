@@ -1,7 +1,7 @@
 //! Unit tests for net worth service.
 
 use super::*;
-use crate::accounts::{account_types, Account, AccountRepositoryTrait, AccountUpdate, NewAccount};
+use crate::accounts::{account_types, Account, AccountRepositoryTrait, AccountUpdate, NewAccount, VerifiedReceipt, VerifiedReceiptRepositoryTrait};
 use crate::assets::{
     Asset, AssetKind, AssetRepositoryTrait, InstrumentType, NewAsset, ProviderProfile, QuoteMode,
     UpdateAssetProfile,
@@ -854,6 +854,8 @@ impl ValuationRepositoryTrait for MockValuationRepository {
 fn create_test_account(id: &str, account_type: &str, currency: &str) -> Account {
     let now = Utc::now().naive_utc();
     Account {
+        include_in_net_worth: true,
+        name_source: "provider".to_string(),
         id: id.to_string(),
         name: format!("Test Account {}", id),
         account_type: account_type.to_string(),
@@ -969,6 +971,38 @@ fn create_test_quote(symbol: &str, price: Decimal, date: NaiveDate, currency: &s
     }
 }
 
+
+// ---- Mock Verified Receipt Repository ----
+
+struct MockVerifiedReceiptRepository {
+    eligible_ids: Vec<String>,
+}
+
+impl MockVerifiedReceiptRepository {
+    #[allow(dead_code)]
+    fn new(eligible_ids: Vec<String>) -> Self {
+        Self { eligible_ids }
+    }
+}
+
+#[async_trait]
+impl VerifiedReceiptRepositoryTrait for MockVerifiedReceiptRepository {
+    async fn get_by_account(&self, _account_id: &str) -> Result<Option<VerifiedReceipt>> {
+        Ok(None)
+    }
+
+    async fn upsert(&self, _receipt: VerifiedReceipt) -> Result<VerifiedReceipt> {
+        unimplemented!()
+    }
+
+    async fn delete(&self, _id: &str) -> Result<bool> {
+        Ok(false)
+    }
+
+    async fn get_eligible_account_ids(&self) -> Result<Vec<String>> {
+        Ok(self.eligible_ids.clone())
+    }
+}
 fn create_net_worth_service(
     accounts: Vec<Account>,
     assets: Vec<Asset>,
@@ -997,6 +1031,15 @@ fn create_net_worth_service_with_valuations(
     } else {
         accounts
     };
+
+    // Default: all accounts with include_in_net_worth=true are eligible
+    let eligible_ids: Vec<String> = effective_accounts
+        .iter()
+        .filter(|a| a.include_in_net_worth)
+        .map(|a| a.id.clone())
+        .collect();
+    let receipt_repo = Arc::new(MockVerifiedReceiptRepository::new(eligible_ids));
+
     let account_repo = Arc::new(MockAccountRepository::new(effective_accounts));
     let asset_repo = Arc::new(MockAssetRepository::new(assets));
     let snapshot_repo = Arc::new(MockSnapshotRepository::new(snapshots));
@@ -1012,6 +1055,7 @@ fn create_net_worth_service_with_valuations(
         market_data_repo,
         valuation_repo,
         fx_service,
+        receipt_repo,
     )
 }
 
@@ -1113,6 +1157,49 @@ async fn test_empty_accounts_returns_zero_net_worth() {
     assert_eq!(result.assets.total, Decimal::ZERO);
     assert_eq!(result.liabilities.total, Decimal::ZERO);
     assert_eq!(result.currency, "USD");
+}
+
+#[tokio::test]
+async fn test_net_worth_excludes_accounts_opted_out_of_net_worth() {
+    let included = create_test_account("included", "SECURITIES", "USD");
+    let mut excluded = create_test_account("excluded", "SECURITIES", "USD");
+    excluded.include_in_net_worth = false;
+    let asset = create_test_asset("AAPL", AssetKind::Investment, "USD");
+    let included_snapshot = create_test_snapshot(
+        "included",
+        vec![create_test_position(
+            "included",
+            "AAPL",
+            dec!(1),
+            dec!(10),
+            "USD",
+        )],
+        HashMap::new(),
+    );
+    let excluded_snapshot = create_test_snapshot(
+        "excluded",
+        vec![create_test_position(
+            "excluded",
+            "AAPL",
+            dec!(2),
+            dec!(10),
+            "USD",
+        )],
+        HashMap::new(),
+    );
+    let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+    let quote = create_test_quote("AAPL", dec!(10), date, "USD");
+
+    let service = create_net_worth_service(
+        vec![included, excluded],
+        vec![asset],
+        vec![included_snapshot, excluded_snapshot],
+        vec![quote],
+    );
+    let result = service.get_net_worth(date).await.unwrap();
+
+    assert_eq!(result.net_worth, dec!(10));
+    assert_eq!(get_category_value(&result, "investments"), dec!(10));
 }
 
 #[tokio::test]
@@ -1316,7 +1403,7 @@ async fn test_credit_card_multi_currency_nets_before_liability_split() {
     assert_eq!(result.net_worth, dec!(-300));
     assert_eq!(get_category_value(&result, "cash"), Decimal::ZERO);
 
-    let history = service.get_net_worth_history(date, date).unwrap();
+    let history = service.get_net_worth_history(date, date).await.unwrap();
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].total_assets, Decimal::ZERO);
     assert_eq!(history[0].total_liabilities, dec!(300));
@@ -1582,8 +1669,8 @@ async fn test_no_quote_falls_back_to_cost_basis() {
 // Net Worth History Tests
 // ============================================================================
 
-#[test]
-fn test_history_basic_portfolio_with_alt_assets() {
+#[tokio::test]
+async fn test_history_basic_portfolio_with_alt_assets() {
     // Setup: Portfolio + Property + Liability over 5 days
     let d1 = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
     let d2 = NaiveDate::from_ymd_opt(2024, 1, 2).unwrap();
@@ -1624,7 +1711,7 @@ fn test_history_basic_portfolio_with_alt_assets() {
         valuations,
     );
 
-    let history = service.get_net_worth_history(d1, d5).unwrap();
+    let history = service.get_net_worth_history(d1, d5).await.unwrap();
 
     assert_eq!(history.len(), 5, "Should have 5 data points");
 
@@ -1668,8 +1755,8 @@ fn test_history_basic_portfolio_with_alt_assets() {
     assert_eq!(total_gain, dec!(10000));
 }
 
-#[test]
-fn test_history_portfolio_only_no_alt_assets() {
+#[tokio::test]
+async fn test_history_portfolio_only_no_alt_assets() {
     let d1 = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
     let d2 = NaiveDate::from_ymd_opt(2024, 1, 2).unwrap();
     let d3 = NaiveDate::from_ymd_opt(2024, 1, 3).unwrap();
@@ -1688,7 +1775,7 @@ fn test_history_portfolio_only_no_alt_assets() {
         valuations,
     );
 
-    let history = service.get_net_worth_history(d1, d3).unwrap();
+    let history = service.get_net_worth_history(d1, d3).await.unwrap();
 
     assert_eq!(history.len(), 3);
     assert_eq!(history[0].portfolio_value, dec!(50000));
@@ -1699,8 +1786,8 @@ fn test_history_portfolio_only_no_alt_assets() {
     assert_eq!(history[2].net_worth, dec!(52000));
 }
 
-#[test]
-fn test_history_credit_card_balance_is_split_to_liabilities() {
+#[tokio::test]
+async fn test_history_credit_card_balance_is_split_to_liabilities() {
     let d1 = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
 
     let valuations = vec![
@@ -1718,7 +1805,7 @@ fn test_history_credit_card_balance_is_split_to_liabilities() {
         valuations,
     );
 
-    let history = service.get_net_worth_history(d1, d1).unwrap();
+    let history = service.get_net_worth_history(d1, d1).await.unwrap();
 
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].portfolio_value, dec!(100000));
@@ -1732,8 +1819,8 @@ fn test_history_credit_card_balance_is_split_to_liabilities() {
     );
 }
 
-#[test]
-fn test_history_credit_card_balance_before_first_portfolio_date_is_seeded() {
+#[tokio::test]
+async fn test_history_credit_card_balance_before_first_portfolio_date_is_seeded() {
     let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
     let card_date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
     let first_portfolio_date = NaiveDate::from_ymd_opt(2024, 2, 1).unwrap();
@@ -1755,6 +1842,7 @@ fn test_history_credit_card_balance_before_first_portfolio_date_is_seeded() {
 
     let history = service
         .get_net_worth_history(start, first_portfolio_date)
+        .await
         .unwrap();
 
     assert_eq!(history.len(), 1);
@@ -1764,8 +1852,8 @@ fn test_history_credit_card_balance_before_first_portfolio_date_is_seeded() {
     assert_eq!(history[0].net_worth, dec!(99500));
 }
 
-#[test]
-fn test_history_credit_card_without_total_stays_liability_only() {
+#[tokio::test]
+async fn test_history_credit_card_without_total_stays_liability_only() {
     let d1 = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
 
     let account = create_test_account("card1", "CREDIT_CARD", "USD");
@@ -1774,7 +1862,7 @@ fn test_history_credit_card_without_total_stays_liability_only() {
     let service =
         create_net_worth_service_with_valuations(vec![account], vec![], vec![], vec![], valuations);
 
-    let history = service.get_net_worth_history(d1, d1).unwrap();
+    let history = service.get_net_worth_history(d1, d1).await.unwrap();
 
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].total_assets, Decimal::ZERO);
@@ -1782,8 +1870,8 @@ fn test_history_credit_card_without_total_stays_liability_only() {
     assert_eq!(history[0].net_worth, dec!(-500));
 }
 
-#[test]
-fn test_history_credit_card_positive_balance_without_total_is_cash_asset() {
+#[tokio::test]
+async fn test_history_credit_card_positive_balance_without_total_is_cash_asset() {
     let d1 = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
 
     let account = create_test_account("card1", "CREDIT_CARD", "USD");
@@ -1792,7 +1880,7 @@ fn test_history_credit_card_positive_balance_without_total_is_cash_asset() {
     let service =
         create_net_worth_service_with_valuations(vec![account], vec![], vec![], vec![], valuations);
 
-    let history = service.get_net_worth_history(d1, d1).unwrap();
+    let history = service.get_net_worth_history(d1, d1).await.unwrap();
 
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].total_assets, dec!(25));
@@ -1800,8 +1888,8 @@ fn test_history_credit_card_positive_balance_without_total_is_cash_asset() {
     assert_eq!(history[0].net_worth, dec!(25));
 }
 
-#[test]
-fn test_history_credit_card_liability_carries_forward_between_dates() {
+#[tokio::test]
+async fn test_history_credit_card_liability_carries_forward_between_dates() {
     let d1 = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
     let d2 = NaiveDate::from_ymd_opt(2024, 1, 2).unwrap();
     let d3 = NaiveDate::from_ymd_opt(2024, 1, 3).unwrap();
@@ -1826,7 +1914,7 @@ fn test_history_credit_card_liability_carries_forward_between_dates() {
         valuations,
     );
 
-    let history = service.get_net_worth_history(d1, d3).unwrap();
+    let history = service.get_net_worth_history(d1, d3).await.unwrap();
 
     assert_eq!(history.len(), 3);
 
@@ -1846,8 +1934,8 @@ fn test_history_credit_card_liability_carries_forward_between_dates() {
     assert_eq!(history[2].net_worth, dec!(98800));
 }
 
-#[test]
-fn test_history_mixed_securities_cash_and_credit_card() {
+#[tokio::test]
+async fn test_history_mixed_securities_cash_and_credit_card() {
     let d1 = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
 
     // Securities ($100K) + cash ($5K) both count toward portfolio_value; the
@@ -1869,7 +1957,7 @@ fn test_history_mixed_securities_cash_and_credit_card() {
         valuations,
     );
 
-    let history = service.get_net_worth_history(d1, d1).unwrap();
+    let history = service.get_net_worth_history(d1, d1).await.unwrap();
 
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].portfolio_value, dec!(105000));
@@ -1884,8 +1972,8 @@ fn test_history_mixed_securities_cash_and_credit_card() {
     );
 }
 
-#[test]
-fn test_history_alt_asset_quote_after_range_start_before_first_portfolio_date_seeds_first_point() {
+#[tokio::test]
+async fn test_history_alt_asset_quote_after_range_start_before_first_portfolio_date_seeds_first_point() {
     let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
     let quote_date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
     let first_portfolio_date = NaiveDate::from_ymd_opt(2024, 2, 1).unwrap();
@@ -1913,6 +2001,7 @@ fn test_history_alt_asset_quote_after_range_start_before_first_portfolio_date_se
 
     let history = service
         .get_net_worth_history(start, first_portfolio_date)
+        .await
         .unwrap();
 
     assert_eq!(history.len(), 1);
@@ -1922,8 +2011,8 @@ fn test_history_alt_asset_quote_after_range_start_before_first_portfolio_date_se
     assert_eq!(history[0].net_worth, dec!(550000));
 }
 
-#[test]
-fn test_history_includes_closed_non_archived_accounts() {
+#[tokio::test]
+async fn test_history_includes_closed_non_archived_accounts() {
     let d1 = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
     let closed_account =
         create_test_account_with_archive_state("closed-1", "SECURITIES", "USD", false, false);
@@ -1939,15 +2028,15 @@ fn test_history_includes_closed_non_archived_accounts() {
         vec![valuation],
     );
 
-    let history = service.get_net_worth_history(d1, d1).unwrap();
+    let history = service.get_net_worth_history(d1, d1).await.unwrap();
 
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].portfolio_value, dec!(50000));
     assert_eq!(history[0].net_worth, dec!(50000));
 }
 
-#[test]
-fn test_history_alt_assets_only_no_portfolio() {
+#[tokio::test]
+async fn test_history_alt_assets_only_no_portfolio() {
     // Edge case: user only has alternative assets, no portfolio
     let d1 = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
     let d2 = NaiveDate::from_ymd_opt(2024, 1, 2).unwrap();
@@ -1966,7 +2055,7 @@ fn test_history_alt_assets_only_no_portfolio() {
         vec![], // No portfolio valuations
     );
 
-    let history = service.get_net_worth_history(d1, d2).unwrap();
+    let history = service.get_net_worth_history(d1, d2).await.unwrap();
 
     assert_eq!(history.len(), 2);
     assert_eq!(history[0].portfolio_value, Decimal::ZERO);
@@ -1978,8 +2067,8 @@ fn test_history_alt_assets_only_no_portfolio() {
     assert_eq!(history[1].net_worth, dec!(410000));
 }
 
-#[test]
-fn test_history_forward_fill_alt_assets() {
+#[tokio::test]
+async fn test_history_forward_fill_alt_assets() {
     // Alt asset has quote on day 1 and day 5 only
     // Days 2-4 should forward-fill from day 1
     let d1 = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
@@ -2012,7 +2101,7 @@ fn test_history_forward_fill_alt_assets() {
         valuations,
     );
 
-    let history = service.get_net_worth_history(d1, d5).unwrap();
+    let history = service.get_net_worth_history(d1, d5).await.unwrap();
 
     assert_eq!(history.len(), 5);
 
@@ -2025,8 +2114,8 @@ fn test_history_forward_fill_alt_assets() {
     assert_eq!(history[4].alternative_assets_value, dec!(210000));
 }
 
-#[test]
-fn test_history_starts_from_first_portfolio_date() {
+#[tokio::test]
+async fn test_history_starts_from_first_portfolio_date() {
     // Alt assets have data before portfolio starts
     // History should only start from first portfolio date
     let d_before = NaiveDate::from_ymd_opt(2023, 12, 1).unwrap();
@@ -2055,7 +2144,7 @@ fn test_history_starts_from_first_portfolio_date() {
     );
 
     // Query includes d_before, but history should start from d1
-    let history = service.get_net_worth_history(d_before, d2).unwrap();
+    let history = service.get_net_worth_history(d_before, d2).await.unwrap();
 
     // Should only have 2 points (d1 and d2), not 3
     assert_eq!(history.len(), 2);
@@ -2067,8 +2156,8 @@ fn test_history_starts_from_first_portfolio_date() {
     assert_eq!(history[0].net_worth, dec!(350000));
 }
 
-#[test]
-fn test_history_empty_range() {
+#[tokio::test]
+async fn test_history_empty_range() {
     // Query range before any data exists
     let d1 = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
     let d2 = NaiveDate::from_ymd_opt(2024, 1, 5).unwrap();
@@ -2080,13 +2169,13 @@ fn test_history_empty_range() {
         create_net_worth_service_with_valuations(vec![], vec![], vec![], vec![], valuations);
 
     // Query before any data
-    let history = service.get_net_worth_history(d1, d2).unwrap();
+    let history = service.get_net_worth_history(d1, d2).await.unwrap();
 
     assert!(history.is_empty(), "Should return empty history");
 }
 
-#[test]
-fn test_history_single_day() {
+#[tokio::test]
+async fn test_history_single_day() {
     let d1 = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
 
     let valuations = vec![create_total_valuation(d1, dec!(100000), dec!(90000))];
@@ -2102,7 +2191,7 @@ fn test_history_single_day() {
         valuations,
     );
 
-    let history = service.get_net_worth_history(d1, d1).unwrap();
+    let history = service.get_net_worth_history(d1, d1).await.unwrap();
 
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].date, d1);
@@ -2112,8 +2201,8 @@ fn test_history_single_day() {
     assert_eq!(history[0].net_contribution, dec!(90000));
 }
 
-#[test]
-fn test_history_liability_reduction_is_positive_gain() {
+#[tokio::test]
+async fn test_history_liability_reduction_is_positive_gain() {
     // Test that paying down debt shows as positive contribution to net worth
     let d1 = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
     let d2 = NaiveDate::from_ymd_opt(2024, 1, 31).unwrap();
@@ -2137,7 +2226,7 @@ fn test_history_liability_reduction_is_positive_gain() {
         valuations,
     );
 
-    let history = service.get_net_worth_history(d1, d2).unwrap();
+    let history = service.get_net_worth_history(d1, d2).await.unwrap();
 
     assert_eq!(history.len(), 2);
 
@@ -2152,8 +2241,8 @@ fn test_history_liability_reduction_is_positive_gain() {
     assert_eq!(liability_reduction, dec!(5000));
 }
 
-#[test]
-fn test_history_contribution_adjusted_gain() {
+#[tokio::test]
+async fn test_history_contribution_adjusted_gain() {
     // Verify that deposits don't count as gain
     let d1 = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
     let d2 = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
@@ -2169,7 +2258,7 @@ fn test_history_contribution_adjusted_gain() {
     let service =
         create_net_worth_service_with_valuations(vec![], vec![], vec![], vec![], valuations);
 
-    let history = service.get_net_worth_history(d1, d2).unwrap();
+    let history = service.get_net_worth_history(d1, d2).await.unwrap();
 
     assert_eq!(history.len(), 2);
 
@@ -2186,8 +2275,8 @@ fn test_history_contribution_adjusted_gain() {
     assert_eq!(portfolio_gain, dec!(5000));
 }
 
-#[test]
-fn test_history_multiple_alt_assets() {
+#[tokio::test]
+async fn test_history_multiple_alt_assets() {
     // Multiple alternative assets, each with different update schedules
     let d1 = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
     let d2 = NaiveDate::from_ymd_opt(2024, 1, 2).unwrap();
@@ -2222,7 +2311,7 @@ fn test_history_multiple_alt_assets() {
         valuations,
     );
 
-    let history = service.get_net_worth_history(d1, d3).unwrap();
+    let history = service.get_net_worth_history(d1, d3).await.unwrap();
 
     assert_eq!(history.len(), 3);
 
@@ -2269,6 +2358,8 @@ fn create_test_account_with_archive_state(
 ) -> Account {
     let now = Utc::now().naive_utc();
     Account {
+        include_in_net_worth: true,
+        name_source: "provider".to_string(),
         id: id.to_string(),
         name: format!("Test Account {}", id),
         account_type: account_type.to_string(),
@@ -2445,6 +2536,99 @@ async fn test_newly_created_account_has_default_archive_values_net_worth() {
     );
 }
 
+
+
+// ============================================================================
+// Verified Receipt Eligibility Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_net_worth_excludes_account_without_verified_receipt() {
+    let account = create_test_account_with_archive_state("no_receipt", "SECURITIES", "USD", true, false);
+    let asset = create_test_asset("AAPL", AssetKind::Investment, "USD");
+    let position = create_test_position("no_receipt", "AAPL", dec!(100), dec!(15000), "USD");
+    let snapshot = create_test_snapshot("no_receipt", vec![position], HashMap::new());
+    let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+    let quote = create_test_quote("AAPL", dec!(185), date, "USD");
+
+    let empty_receipt_repo = Arc::new(MockVerifiedReceiptRepository::new(vec![]));
+    let base_currency = Arc::new(RwLock::new("USD".to_string()));
+    let account_repo = Arc::new(MockAccountRepository::new(vec![account]));
+    let asset_repo = Arc::new(MockAssetRepository::new(vec![asset]));
+    let snapshot_repo = Arc::new(MockSnapshotRepository::new(vec![snapshot]));
+    let market_data_repo = Arc::new(MockMarketDataRepository::new(vec![quote]));
+    let valuation_repo = Arc::new(MockValuationRepository::new(vec![]));
+    let fx_service = Arc::new(MockFxService::new("USD"));
+
+    let service = NetWorthService::new(
+        base_currency, account_repo, asset_repo, snapshot_repo,
+        market_data_repo, valuation_repo, fx_service, empty_receipt_repo,
+    );
+
+    let result = service.get_net_worth(date).await.unwrap();
+    assert_eq!(result.net_worth, Decimal::ZERO, "missing receipt => account contributes nothing");
+    assert_eq!(result.assets.total, Decimal::ZERO);
+}
+
+#[tokio::test]
+async fn test_net_worth_includes_account_with_verified_receipt() {
+    let account = create_test_account_with_archive_state("has_receipt", "SECURITIES", "USD", true, false);
+    let asset = create_test_asset("AAPL", AssetKind::Investment, "USD");
+    let position = create_test_position("has_receipt", "AAPL", dec!(100), dec!(15000), "USD");
+    let snapshot = create_test_snapshot("has_receipt", vec![position], HashMap::new());
+    let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+    let quote = create_test_quote("AAPL", dec!(185), date, "USD");
+
+    let eligible_receipt_repo = Arc::new(MockVerifiedReceiptRepository::new(vec!["has_receipt".to_string()]));
+    let base_currency = Arc::new(RwLock::new("USD".to_string()));
+    let account_repo = Arc::new(MockAccountRepository::new(vec![account]));
+    let asset_repo = Arc::new(MockAssetRepository::new(vec![asset]));
+    let snapshot_repo = Arc::new(MockSnapshotRepository::new(vec![snapshot]));
+    let market_data_repo = Arc::new(MockMarketDataRepository::new(vec![quote]));
+    let valuation_repo = Arc::new(MockValuationRepository::new(vec![]));
+    let fx_service = Arc::new(MockFxService::new("USD"));
+
+    let service = NetWorthService::new(
+        base_currency, account_repo, asset_repo, snapshot_repo,
+        market_data_repo, valuation_repo, fx_service, eligible_receipt_repo,
+    );
+
+    let result = service.get_net_worth(date).await.unwrap();
+    assert_eq!(result.net_worth, dec!(18500), "verified receipt => account contributes normally");
+    assert_eq!(result.assets.total, dec!(18500));
+}
+
+#[tokio::test]
+async fn test_net_worth_mixed_eligibility() {
+    let with_receipt = create_test_account_with_archive_state("with_receipt", "SECURITIES", "USD", true, false);
+    let without_receipt = create_test_account_with_archive_state("without_receipt", "SECURITIES", "USD", true, false);
+    let asset = create_test_asset("AAPL", AssetKind::Investment, "USD");
+    let pos_w = create_test_position("with_receipt", "AAPL", dec!(50), dec!(5000), "USD");
+    let pos_wo = create_test_position("without_receipt", "AAPL", dec!(100), dec!(10000), "USD");
+    let snap_w = create_test_snapshot("with_receipt", vec![pos_w], HashMap::new());
+    let snap_wo = create_test_snapshot("without_receipt", vec![pos_wo], HashMap::new());
+    let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+    let quote = create_test_quote("AAPL", dec!(200), date, "USD");
+
+    let eligible_receipt_repo = Arc::new(MockVerifiedReceiptRepository::new(vec!["with_receipt".to_string()]));
+    let base_currency = Arc::new(RwLock::new("USD".to_string()));
+    let account_repo = Arc::new(MockAccountRepository::new(vec![with_receipt, without_receipt]));
+    let asset_repo = Arc::new(MockAssetRepository::new(vec![asset]));
+    let snapshot_repo = Arc::new(MockSnapshotRepository::new(vec![snap_w, snap_wo]));
+    let market_data_repo = Arc::new(MockMarketDataRepository::new(vec![quote]));
+    let valuation_repo = Arc::new(MockValuationRepository::new(vec![]));
+    let fx_service = Arc::new(MockFxService::new("USD"));
+
+    let service = NetWorthService::new(
+        base_currency, account_repo, asset_repo, snapshot_repo,
+        market_data_repo, valuation_repo, fx_service, eligible_receipt_repo,
+    );
+
+    let result = service.get_net_worth(date).await.unwrap();
+    assert_eq!(result.net_worth, dec!(10000), "only receipt-holder contributes");
+    assert_eq!(result.assets.total, dec!(10000));
+}
+
 // ============================================================================
 // Regression Tests
 // ============================================================================
@@ -2505,4 +2689,213 @@ async fn test_liability_with_future_zero_quote_is_included_at_past_balance() {
     );
     // Net worth = assets (0) - liabilities (180_000) = -180_000
     assert_eq!(result.net_worth, dec!(-180000));
+}
+
+
+#[tokio::test]
+async fn test_net_worth_history_excludes_account_without_verified_receipt() {
+    let account_no_receipt = create_test_account_with_archive_state(
+        "hist-no-receipt", "SECURITIES", "USD", true, false,
+    );
+    let asset = create_test_asset("AAPL", AssetKind::Investment, "USD");
+    let pos = create_test_position("hist-no-receipt", "AAPL", dec!(100), dec!(15000), "USD");
+    let snapshot = create_test_snapshot("hist-no-receipt", vec![pos], HashMap::new());
+    let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+    let quote = create_test_quote("AAPL", dec!(185), date, "USD");
+
+    let empty_receipt_repo = Arc::new(MockVerifiedReceiptRepository::new(vec![]));
+    let base_currency = Arc::new(RwLock::new("USD".to_string()));
+    let account_repo = Arc::new(MockAccountRepository::new(vec![account_no_receipt]));
+    let asset_repo = Arc::new(MockAssetRepository::new(vec![asset]));
+    let snapshot_repo = Arc::new(MockSnapshotRepository::new(vec![snapshot]));
+    let market_data_repo = Arc::new(MockMarketDataRepository::new(vec![quote]));
+    let valuation_repo = Arc::new(MockValuationRepository::new(vec![]));
+    let fx_service = Arc::new(MockFxService::new("USD"));
+
+    let service = NetWorthService::new(
+        base_currency, account_repo, asset_repo, snapshot_repo,
+        market_data_repo, valuation_repo, fx_service, empty_receipt_repo,
+    );
+
+    let history = service
+        .get_net_worth_history(date, date)
+        .await
+        .expect("history query");
+    assert!(
+        history.is_empty() || history.iter().all(|p| p.net_worth == Decimal::ZERO),
+        "account without verified receipt must contribute nothing to history"
+    );
+}
+
+#[tokio::test]
+async fn test_net_worth_history_includes_account_with_verified_receipt() {
+    let d1 = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+    let d2 = NaiveDate::from_ymd_opt(2024, 1, 16).unwrap();
+    let d3 = NaiveDate::from_ymd_opt(2024, 1, 17).unwrap();
+
+    let account = create_test_account_with_archive_state(
+        "hist-has-receipt", "SECURITIES", "USD", true, false,
+    );
+    let asset = create_test_asset("AAPL", AssetKind::Investment, "USD");
+    let quote = create_test_quote("AAPL", dec!(185), d1, "USD");
+
+    let snap = create_test_snapshot(
+        "hist-has-receipt",
+        vec![create_test_position("hist-has-receipt", "AAPL", dec!(100), dec!(15000), "USD")],
+        HashMap::new(),
+    );
+
+    // Use the same DailyAccountValuation pattern as other history tests
+    fn mk_val(account_id: &str, date: NaiveDate, tv: Decimal) -> DailyAccountValuation {
+        DailyAccountValuation {
+            id: format!("{}_{}", account_id, date),
+            account_id: account_id.to_string(),
+            valuation_date: date,
+            account_currency: "USD".to_string(),
+            base_currency: "USD".to_string(),
+            fx_rate_to_base: dec!(1),
+            cash_balance: Decimal::ZERO,
+            investment_market_value: tv,
+            total_value: tv,
+            cost_basis: dec!(15000),
+            book_basis: dec!(15000),
+            net_contribution: dec!(15000),
+            cash_balance_base: Decimal::ZERO,
+            investment_market_value_base: tv,
+            total_value_base: tv,
+            cost_basis_base: dec!(15000),
+            book_basis_base: dec!(15000),
+            net_contribution_base: dec!(15000),
+            external_inflow_base: Decimal::ZERO,
+            external_outflow_base: Decimal::ZERO,
+            external_flow_source: ExternalFlowSource::NoFlow,
+            performance_eligible_value_base: tv,
+            value_status: ValuationStatus::Complete,
+            basis_status: BasisStatus::Complete,
+            calculated_at: DateTime::<Utc>::from_timestamp(1_776_480_000, 0).unwrap(),
+        }
+    }
+
+    let valuations = vec![
+        mk_val("hist-has-receipt", d1, dec!(18500)),
+        mk_val("hist-has-receipt", d2, dec!(18600)),
+        mk_val("hist-has-receipt", d3, dec!(18700)),
+    ];
+
+    let eligible_receipt_repo = Arc::new(
+        MockVerifiedReceiptRepository::new(vec!["hist-has-receipt".to_string()])
+    );
+    let base_currency = Arc::new(RwLock::new("USD".to_string()));
+    let account_repo = Arc::new(MockAccountRepository::new(vec![account]));
+    let asset_repo = Arc::new(MockAssetRepository::new(vec![asset]));
+    let snapshot_repo = Arc::new(MockSnapshotRepository::new(vec![snap]));
+    let market_data_repo = Arc::new(MockMarketDataRepository::new(vec![quote]));
+    let valuation_repo = Arc::new(MockValuationRepository::new(valuations));
+    let fx_service = Arc::new(MockFxService::new("USD"));
+
+    let service = NetWorthService::new(
+        base_currency, account_repo, asset_repo, snapshot_repo,
+        market_data_repo, valuation_repo, fx_service, eligible_receipt_repo,
+    );
+
+    let history = service
+        .get_net_worth_history(d1, d3)
+        .await
+        .expect("history query");
+    assert_eq!(history.len(), 3, "account with verified receipt must have 3 history points");
+    assert!(history.iter().all(|p| p.net_worth > Decimal::ZERO), "all points must have positive net worth");
+}
+
+#[tokio::test]
+async fn test_net_worth_mixed_receipt_status_isolation() {
+    // Two accounts, both include_in_net_worth=true, but only one has a verified receipt.
+    // Only the receipted account should contribute to net worth.
+    let receipt_acct = create_test_account_with_archive_state("receipt-acct", "SECURITIES", "USD", true, false);
+    let no_receipt_acct = create_test_account_with_archive_state("no-receipt-acct", "SECURITIES", "USD", true, false);
+
+    let asset = create_test_asset("AAPL", AssetKind::Investment, "USD");
+    let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+
+    let receipt_position = create_test_position("receipt-acct", "AAPL", dec!(50), dec!(10000), "USD");
+    let no_receipt_position = create_test_position("no-receipt-acct", "AAPL", dec!(100), dec!(20000), "USD");
+
+    let receipt_snapshot = create_test_snapshot("receipt-acct", vec![receipt_position], HashMap::new());
+    let no_receipt_snapshot = create_test_snapshot("no-receipt-acct", vec![no_receipt_position], HashMap::new());
+
+    let quote = create_test_quote("AAPL", dec!(200), date, "USD");
+
+    // Only grant eligibility to receipt-acct
+    let receipt_repo = Arc::new(MockVerifiedReceiptRepository::new(vec!["receipt-acct".to_string()]));
+    let base_currency = Arc::new(RwLock::new("USD".to_string()));
+    let account_repo = Arc::new(MockAccountRepository::new(vec![receipt_acct, no_receipt_acct]));
+    let asset_repo = Arc::new(MockAssetRepository::new(vec![asset]));
+    let snapshot_repo = Arc::new(MockSnapshotRepository::new(vec![receipt_snapshot, no_receipt_snapshot]));
+    let market_data_repo = Arc::new(MockMarketDataRepository::new(vec![quote]));
+    let valuation_repo = Arc::new(MockValuationRepository::new(vec![]));
+    let fx_service = Arc::new(MockFxService::new("USD"));
+
+    let service = NetWorthService::new(
+        base_currency, account_repo, asset_repo, snapshot_repo,
+        market_data_repo, valuation_repo, fx_service, receipt_repo,
+    );
+
+    let result = service.get_net_worth(date).await.unwrap();
+
+    // Only the receipted account's value (50 shares × $200 = $10,000) contributes
+    assert_eq!(
+        result.net_worth,
+        dec!(10000),
+        "only receipted account value contributes; non-receipted account must be excluded"
+    );
+    assert_eq!(
+        result.assets.breakdown.iter().map(|b| b.value).sum::<Decimal>(),
+        dec!(10000),
+        "assets breakdown must only reflect the receipted account"
+    );
+}
+// Regression: include_in_net_worth=false combined with receipt eligibility
+#[tokio::test]
+async fn test_net_worth_opted_out_with_receipt_still_excluded() {
+    // Even if an account has a receipt, if include_in_net_worth=false
+    // it must still be excluded. The get_eligible_account_ids() SQL query
+    // already filters for include_in_net_worth=1, so the account won't
+    // appear in the eligible_ids list. But this regression verifies the
+    // double-protection: the initial include_in_net_worth filter in
+    // get_net_worth() catches it before the receipt check.
+    let excluded = Account {
+        include_in_net_worth: false,
+        name_source: "provider".to_string(),
+        ..create_test_account("opted-out-receipt", "SECURITIES", "USD")
+    };
+    let included = create_test_account("included-account", "SECURITIES", "USD");
+    let asset = create_test_asset("AAPL", AssetKind::Investment, "USD");
+    let excluded_pos = create_test_position("opted-out-receipt", "AAPL", dec!(50), dec!(5000), "USD");
+    let included_pos = create_test_position("included-account", "AAPL", dec!(10), dec!(1000), "USD");
+    let excluded_snap = create_test_snapshot("opted-out-receipt", vec![excluded_pos], HashMap::new());
+    let included_snap = create_test_snapshot("included-account", vec![included_pos], HashMap::new());
+    let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+    let quote = create_test_quote("AAPL", dec!(200), date, "USD");
+
+    // Give BOTH accounts eligible IDs to test that the initial
+    // include_in_net_worth gate catches the excluded one
+    let receipt_repo = Arc::new(MockVerifiedReceiptRepository::new(
+        vec!["opted-out-receipt".to_string(), "included-account".to_string()]
+    ));
+    let base_currency = Arc::new(RwLock::new("USD".to_string()));
+    let account_repo = Arc::new(MockAccountRepository::new(vec![excluded, included]));
+    let asset_repo = Arc::new(MockAssetRepository::new(vec![asset]));
+    let snapshot_repo = Arc::new(MockSnapshotRepository::new(vec![excluded_snap, included_snap]));
+    let market_data_repo = Arc::new(MockMarketDataRepository::new(vec![quote]));
+    let valuation_repo = Arc::new(MockValuationRepository::new(vec![]));
+    let fx_service = Arc::new(MockFxService::new("USD"));
+
+    let service = NetWorthService::new(
+        base_currency, account_repo, asset_repo, snapshot_repo,
+        market_data_repo, valuation_repo, fx_service, receipt_repo,
+    );
+
+    let result = service.get_net_worth(date).await.unwrap();
+    // Only the include_in_net_worth=true account contributes
+    assert_eq!(result.net_worth, dec!(2000), "opted-out with receipt must still be excluded");
+    assert_eq!(result.assets.total, dec!(2000));
 }

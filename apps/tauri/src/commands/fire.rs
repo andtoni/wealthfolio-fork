@@ -62,12 +62,14 @@ async fn build_valuation_map(
     let asset_service = state.asset_service();
     let quote_service = state.quote_service();
     let fx_service = state.fx_service();
+    let verified_receipt_repository = state.verified_receipt_repository();
     let service = CurrentAccountValuationService::new(
         account_service.as_ref(),
         snapshot_repository.as_ref(),
         asset_service.as_ref(),
         quote_service.as_ref(),
         fx_service.as_ref(),
+        verified_receipt_repository.as_ref(),
     );
     let response = service
         .get_current_valuation_for_scope(

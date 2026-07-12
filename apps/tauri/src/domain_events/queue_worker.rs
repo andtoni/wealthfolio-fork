@@ -571,12 +571,14 @@ async fn refresh_all_goal_summaries(context: &Arc<ServiceContext>) {
     let asset_service = context.asset_service();
     let quote_service = context.quote_service();
     let fx_service = context.fx_service();
+    let verified_receipt_repository = context.verified_receipt_repository();
     let service = CurrentAccountValuationService::new(
         account_service.as_ref(),
         snapshot_repository.as_ref(),
         asset_service.as_ref(),
         quote_service.as_ref(),
         fx_service.as_ref(),
+        verified_receipt_repository.as_ref(),
     );
     let response = match service
         .get_current_valuation_for_scope(

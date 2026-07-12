@@ -542,8 +542,10 @@ mod tests {
 
     fn account(id: &str, account_type: &str) -> Account {
         Account {
+            include_in_net_worth: true,
             id: id.to_string(),
             name: id.to_string(),
+            name_source: "provider".to_string(),
             account_type: account_type.to_string(),
             group: None,
             currency: "USD".to_string(),

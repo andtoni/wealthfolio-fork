@@ -58,6 +58,7 @@ hyper = { version = "0.14", features = ["full"] }
 openidconnect = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
 rmcp = { workspace = true }
 subtle = "2"
+rusqlite = { workspace = true }
 
 [features]
 default = ["connect-sync", "device-sync"]

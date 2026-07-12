@@ -12,6 +12,8 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
+import { useQueryClient } from "@tanstack/react-query";
+import { mutationRegistry } from "@/features/household/household-provider";
 
 interface AuthContextValue {
   requiresAuth: boolean;
@@ -49,6 +51,7 @@ function resolveOidcError(t: TFunction, code: string): string {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = useQueryClient();
   const { t } = useTranslation();
   const [requiresPassword, setRequiresPassword] = useState(false);
   const [oidcEnabled, setOidcEnabled] = useState(false);
@@ -121,6 +124,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const handler = () => {
+      // G0-H item 7: abort in-flight mutations before clearing caches
+      mutationRegistry.abortAll();
+      void queryClient.cancelQueries();
+      queryClient.clear();
+      queryClient.getMutationCache().clear();
       const hadSession = cookieSessionRef.current;
       setCookieSession(false);
       if (hadSession) {
@@ -131,7 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       setUnauthorizedHandler(null);
     };
-  }, [t]);
+  }, [queryClient, t]);
 
   // Surface OIDC callback errors passed back as `?oidc_error=<code>`.
   useEffect(() => {
@@ -186,6 +194,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    // G0-H item 7: abort in-flight mutations before clearing caches
+    mutationRegistry.abortAll();
+    void queryClient.cancelQueries();
+
+    queryClient.clear();
+    queryClient.getMutationCache().clear();
     if (isWeb) {
       if (oidcEnabled) {
         // Full-page navigation: the server clears the session (and OIDC id-token
@@ -201,7 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setCookieSession(false);
     setLoginError(null);
-  }, [oidcEnabled]);
+  }, [oidcEnabled, queryClient]);
 
   const clearError = useCallback(() => setLoginError(null), []);
 

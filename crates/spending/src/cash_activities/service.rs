@@ -1590,8 +1590,10 @@ mod tests {
 
     fn account(account_type: &str) -> Account {
         Account {
+            include_in_net_worth: true,
             id: "account-1".to_string(),
             name: "Checking".to_string(),
+            name_source: "provider".to_string(),
             account_type: account_type.to_string(),
             group: None,
             currency: "USD".to_string(),

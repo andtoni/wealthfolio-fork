@@ -410,6 +410,9 @@ export const COMMANDS: CommandMap = {
   delete_agent_access_token: { method: "DELETE", path: "/agent-access/tokens" },
   list_agent_audit_log: { method: "GET", path: "/agent-access/audit" },
   purge_agent_audit_log: { method: "POST", path: "/agent-access/audit/purge" },
+  // Provider Connections (typed allowlist: investec, mercury, plaid, snaptrade)
+  list_provider_connections: { method: "GET", path: "/provider-connections" },
+  start_provider_connection: { method: "POST", path: "/provider-connections/{provider}/start" },
 };
 
 /**
@@ -491,6 +494,11 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
     case "delete_database_backup": {
       const { filename } = payload as { filename: string };
       url += `/${encodeURIComponent(filename)}`;
+      break;
+    }
+    case "start_provider_connection": {
+      const { provider } = payload as { provider: string };
+      url = `${API_PREFIX}/provider-connections/${encodeURIComponent(provider)}/start`;
       break;
     }
     case "update_settings": {

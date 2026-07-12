@@ -16,6 +16,7 @@ pub mod exports;
 pub mod fx;
 pub mod goals;
 pub mod health;
+pub mod household_policy;
 pub mod limits;
 pub mod lots;
 pub mod planning;

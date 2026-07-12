@@ -2191,6 +2191,8 @@ mod tests {
     fn health_account(id: &str, account_type: &str, tracking_mode: TrackingMode) -> Account {
         let now = Utc.with_ymd_and_hms(2026, 6, 8, 12, 0, 0).unwrap();
         Account {
+            include_in_net_worth: true,
+            name_source: "provider".to_string(),
             id: id.to_string(),
             name: "Business Investment".to_string(),
             account_type: account_type.to_string(),

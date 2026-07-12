@@ -11,6 +11,7 @@ use wealthfolio_connect::{
     BrokerSyncService, CoreImportRunRepositoryAdapter, ImportRunRepositoryTrait,
 };
 use wealthfolio_core::{
+    accounts::VerifiedReceiptRepositoryTrait,
     accounts::AccountService,
     activities::ActivityService,
     assets::{AlternativeAssetService, AssetClassificationService, AssetService},
@@ -36,6 +37,7 @@ use wealthfolio_core::{
 };
 use wealthfolio_device_sync::{engine::DeviceSyncRuntimeState, DeviceEnrollService};
 use wealthfolio_storage_sqlite::{
+    accounts::VerifiedReceiptRepository,
     accounts::AccountRepository,
     activities::ActivityRepository,
     agent::{McpAuditRepository, PatRepository},
@@ -105,6 +107,8 @@ pub async fn initialize_context(
     let platform_repository = Arc::new(PlatformRepository::new(pool.clone(), writer.clone()));
     let broker_sync_state_repository =
         Arc::new(BrokerSyncStateRepository::new(pool.clone(), writer.clone()));
+    let verified_receipt_repository: Arc<dyn VerifiedReceiptRepositoryTrait> =
+        Arc::new(VerifiedReceiptRepository::new(pool.clone()));
 
     // Domain event sink - TauriDomainEventSink sends events to a channel
     // The worker will be started by the caller after the context is managed
@@ -479,6 +483,7 @@ pub async fn initialize_context(
         quote_service.clone(),
         valuation_repository.clone(),
         fx_service.clone(),
+        verified_receipt_repository.clone(),
     ));
 
     let alternative_asset_repository = Arc::new(AlternativeAssetRepository::new(
@@ -626,6 +631,7 @@ pub async fn initialize_context(
             device_enroll_service,
             device_sync_runtime,
             broker_sync_running,
+            verified_receipt_repository,
             health_service,
             custom_provider_service,
             portfolio_service,

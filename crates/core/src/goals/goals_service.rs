@@ -909,6 +909,8 @@ mod tests {
 
     fn test_account(id: &str, account_type: &str) -> Account {
         Account {
+            include_in_net_worth: true,
+            name_source: "provider".to_string(),
             id: id.into(),
             name: format!("Account {id}"),
             account_type: account_type.into(),

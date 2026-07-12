@@ -125,6 +125,9 @@ export * from "../shared/addon-network";
 // Connect Commands (Broker + Device Sync + Auth)
 export * from "../shared/connect";
 
+// Provider Connections Commands
+export * from "../shared/provider-connections";
+
 // AI Providers Commands
 export * from "../shared/ai-providers";
 

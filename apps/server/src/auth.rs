@@ -21,6 +21,7 @@ use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, 
 use serde::{Deserialize, Serialize};
 
 use crate::main_lib::AppState;
+use axum::Router;
 
 /// Controls when the `Secure` attribute is set on session cookies.
 ///
@@ -49,6 +50,7 @@ pub struct AuthConfig {
     /// `None` when only OIDC is configured: the manager still signs sessions
     /// but password login is disabled.
     pub password_hash: Option<String>,
+    pub password_subject: String,
     pub jwt_secret: Vec<u8>,
     pub access_token_ttl: Duration,
     pub cookie_secure: CookieSecurePolicy,
@@ -61,6 +63,26 @@ pub struct AuthManager {
     validation: Validation,
     token_ttl: Duration,
     cookie_secure: CookieSecurePolicy,
+    password_principal: PasswordPrincipal,
+}
+
+#[derive(Clone, Debug)]
+struct PasswordPrincipal(String);
+
+#[derive(Clone, Debug)]
+pub(crate) struct OidcPrincipal(String);
+
+impl OidcPrincipal {
+    pub(crate) fn from_verified_callback(issuer: &str, subject: &str) -> Result<Self, AuthError> {
+        if issuer.trim().is_empty() || subject.trim().is_empty() || subject.contains('#') {
+            return Err(AuthError::Unauthorized);
+        }
+        Ok(Self(format!(
+            "{}#{}",
+            issuer.trim_end_matches('/'),
+            subject
+        )))
+    }
 }
 
 #[derive(Debug)]
@@ -84,6 +106,23 @@ pub(crate) struct Claims {
     iat: usize,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthenticatedSubject(String);
+
+impl AuthenticatedSubject {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    fn from_claims(claims: &Claims) -> Result<Self, AuthError> {
+        let value = claims.sub.trim();
+        if value.is_empty() || value == "wealthfolio-web" || !value.contains('#') {
+            return Err(AuthError::Unauthorized);
+        }
+        Ok(Self(value.to_owned()))
+    }
+}
+
 #[derive(Deserialize)]
 pub struct LoginRequest {
     pub password: String,
@@ -105,6 +144,13 @@ pub struct AuthStatusResponse {
 
 impl AuthManager {
     pub fn new(config: &AuthConfig) -> anyhow::Result<Self> {
+        let password_subject = config.password_subject.trim();
+        if password_subject.is_empty()
+            || password_subject == "wealthfolio-web"
+            || !password_subject.contains('#')
+        {
+            anyhow::bail!("password subject must be a non-empty issuer-qualified identity");
+        }
         if let Some(password_hash) = &config.password_hash {
             PasswordHash::new(password_hash).map_err(|e| {
                 anyhow::anyhow!(
@@ -126,6 +172,7 @@ impl AuthManager {
             validation,
             token_ttl: config.access_token_ttl,
             cookie_secure: config.cookie_secure.clone(),
+            password_principal: PasswordPrincipal(config.password_subject.clone()),
         })
     }
 
@@ -150,18 +197,22 @@ impl AuthManager {
             })
     }
 
-    pub fn issue_token(&self) -> Result<String, AuthError> {
+    fn issue_token_for_subject(&self, subject: &str) -> Result<String, AuthError> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|_| AuthError::Internal("System clock is before UNIX_EPOCH".into()))?;
         let exp = now + self.token_ttl;
         let claims = Claims {
-            sub: "wealthfolio-web".to_string(),
+            sub: subject.to_string(),
             iat: now.as_secs() as usize,
             exp: exp.as_secs() as usize,
         };
         encode(&Header::default(), &claims, &self.encoding_key)
             .map_err(|e| AuthError::Internal(format!("Failed to sign token: {e}")))
+    }
+
+    pub fn issue_password_token(&self) -> Result<String, AuthError> {
+        self.issue_token_for_subject(&self.password_principal.0)
     }
 
     pub(crate) fn validate_token(&self, token: &str) -> Result<Claims, AuthError> {
@@ -194,8 +245,27 @@ impl AuthManager {
     /// Mints a fresh session JWT and builds the `Set-Cookie` value for it.
     /// Shared by password login and OIDC callback so both yield the same session.
     /// Returns `(set_cookie_value, ttl_secs)`.
+    fn issue_session_cookie_for_subject(
+        &self,
+        headers: &HeaderMap,
+        subject: &str,
+    ) -> Result<(String, u64), AuthError> {
+        let token = self.issue_token_for_subject(subject)?;
+        let ttl_secs = self.expires_in().as_secs();
+        let cookie = build_session_cookie(&token, ttl_secs, self.should_secure_cookie(headers));
+        Ok((cookie, ttl_secs))
+    }
+
+    pub(crate) fn issue_oidc_session_cookie(
+        &self,
+        headers: &HeaderMap,
+        principal: &OidcPrincipal,
+    ) -> Result<(String, u64), AuthError> {
+        self.issue_session_cookie_for_subject(headers, &principal.0)
+    }
+
     pub fn issue_session_cookie(&self, headers: &HeaderMap) -> Result<(String, u64), AuthError> {
-        let token = self.issue_token()?;
+        let token = self.issue_password_token()?;
         let ttl_secs = self.expires_in().as_secs();
         let cookie = build_session_cookie(&token, ttl_secs, self.should_secure_cookie(headers));
         Ok((cookie, ttl_secs))
@@ -333,8 +403,8 @@ pub async fn auth_me(
         return Ok(Json(serde_json::json!({"authenticated": true})));
     };
     let token = extract_token(&request)?;
-    auth.validate_token(&token).map(|_| ())?;
-    Ok(Json(serde_json::json!({"authenticated": true})))
+    let claims = auth.validate_token(&token)?;
+    Ok(Json(serde_json::json!({"authenticated": true, "subject": claims.sub})))
 }
 
 pub async fn auth_status(
@@ -359,6 +429,8 @@ pub async fn require_jwt(
 
     let token = extract_token(&request)?;
     let claims = auth.validate_token(&token)?;
+    let subject = AuthenticatedSubject::from_claims(&claims)?;
+    request.extensions_mut().insert(subject);
 
     // Sliding session: refresh the cookie when past 50% of TTL
     let needs_refresh = auth.should_refresh(&claims);
@@ -367,7 +439,7 @@ pub async fn require_jwt(
     let mut response = next.run(request).await;
 
     if needs_refresh {
-        if let Ok(new_token) = auth.issue_token() {
+        if let Ok(new_token) = auth.issue_token_for_subject(&claims.sub) {
             let ttl_secs = auth.expires_in().as_secs();
             let cookie = build_session_cookie(&new_token, ttl_secs, secure.unwrap_or(false));
             if let Ok(val) = HeaderValue::from_str(&cookie) {
@@ -377,6 +449,27 @@ pub async fn require_jwt(
     }
 
     Ok(response)
+}
+
+async fn require_authenticated_subject(
+    State(auth): State<Arc<AuthManager>>,
+    mut request: Request<Body>,
+    next: Next,
+) -> Result<Response, AuthError> {
+    let token = extract_token(&request)?;
+    let claims = auth.validate_token(&token)?;
+    let subject = AuthenticatedSubject::from_claims(&claims)?;
+    request.extensions_mut().insert(subject);
+    Ok(next.run(request).await)
+}
+
+/// Explicit seam for household-enabled routes. No household routes are mounted
+/// by default; a caller must opt in by wrapping its router here.
+pub fn authenticated_router(router: Router, auth: Arc<AuthManager>) -> Router {
+    router.layer(axum::middleware::from_fn_with_state(
+        auth,
+        require_authenticated_subject,
+    ))
 }
 
 fn extract_token(request: &Request<Body>) -> Result<String, AuthError> {
@@ -429,6 +522,7 @@ mod tests {
             password_hash: Some(
                 "$argon2i$v=19$m=16,t=2,p=1$MTIzMjMyMzIz$/5nvsvwbwLNOxDtDae5XMQ".into(),
             ),
+            password_subject: "urn:wealthfolio:password#local".to_owned(),
             jwt_secret: vec![0u8; 32],
             access_token_ttl: Duration::from_secs(3600),
             cookie_secure: policy,

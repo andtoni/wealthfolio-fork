@@ -12,7 +12,7 @@ import {
 } from "@/addons/addons-runtime-context";
 import { AddonIframeRoute } from "@/addons/iframe/addon-iframe-route";
 import AuthCallbackPage from "@/features/wealthfolio-connect/pages/auth-callback-page";
-import ConnectPage from "@/features/wealthfolio-connect/pages/connect-page";
+import AccountIngestionPage from "@/features/account-ingestion/pages/account-ingestion-page";
 import useNavigationEventListener from "@/hooks/use-navigation-event-listener";
 import ActivityManagerPage from "@/pages/activity/activity-manager-page";
 import ActivityPage from "@/pages/activity/activity-page";
@@ -110,7 +110,7 @@ export function AppRoutes() {
           <Route path="insights" element={<PortfolioInsightsPage />} />
           <Route path="health" element={<HealthPage />} />
           <Route path="assistant" element={<AiAssistantPage />} />
-          <Route path="connect" element={<ConnectPage />} />
+          <Route path="connect" element={<AccountIngestionPage />} />
           <Route
             path="allocation-targets"
             element={<Navigate to="/insights?tab=overview" replace />}

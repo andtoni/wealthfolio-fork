@@ -18,6 +18,8 @@ diesel::table! {
         provider_account_id -> Nullable<Text>,
         is_archived -> Bool,
         tracking_mode -> Text,
+        include_in_net_worth -> Bool,
+        name_source -> Text,
     }
 }
 
@@ -819,6 +821,33 @@ diesel::table! {
 
 diesel::joinable!(allocation_target_constraints -> allocation_targets (target_id));
 
+diesel::table! {
+    provider_identities (account_id) {
+        account_id -> Text,
+        provider -> Text,
+        provider_account_id -> Text,
+        lifecycle_state -> Text,
+        last_sync_at -> Nullable<Text>,
+        provider_display_name -> Nullable<Text>,
+        created_at -> Text,
+        updated_at -> Text,
+    }
+}
+
+diesel::table! {
+    verified_receipts (id) {
+        id -> Text,
+        account_id -> Text,
+        basis -> Text,
+        as_of -> Text,
+        provider_receipt_ref -> Nullable<Text>,
+        verification_state -> Text,
+        coverage_start_date -> Nullable<Text>,
+        created_at -> Text,
+        updated_at -> Text,
+    }
+}
+
 diesel::joinable!(accounts -> platforms (platform_id));
 diesel::joinable!(activities -> accounts (account_id));
 diesel::joinable!(activities -> assets (asset_id));
@@ -844,6 +873,7 @@ diesel::joinable!(lot_disposals -> activities (disposal_activity_id));
 diesel::joinable!(taxonomy_categories -> taxonomies (taxonomy_id));
 diesel::joinable!(activity_taxonomy_assignments -> activities (activity_id));
 diesel::joinable!(activity_taxonomy_assignments -> taxonomies (taxonomy_id));
+diesel::joinable!(verified_receipts -> accounts (account_id));
 diesel::joinable!(spending_activity_events -> activities (activity_id));
 diesel::joinable!(spending_activity_events -> spending_events (event_id));
 diesel::joinable!(spending_activity_splits -> activities (activity_id));
@@ -915,4 +945,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     personal_access_tokens,
     mcp_audit_log,
     allocation_target_constraints,
+    provider_identities,
+    verified_receipts,
 );

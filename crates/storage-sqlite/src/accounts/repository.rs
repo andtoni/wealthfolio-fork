@@ -251,6 +251,8 @@ mod tests {
             provider_account_id: None,
             is_archived: false,
             tracking_mode: TrackingMode::Transactions,
+            include_in_net_worth: true,
+            name_source: "provider".to_string(),
         }
     }
 

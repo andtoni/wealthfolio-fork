@@ -10,6 +10,7 @@ mod main_lib;
 mod mcp;
 mod models;
 mod oidc;
+mod onboarding;
 mod scheduler;
 mod secrets;
 

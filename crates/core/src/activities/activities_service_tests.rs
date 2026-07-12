@@ -1881,6 +1881,8 @@ mod tests {
     // Helper to create a test account
     fn create_test_account(id: &str, currency: &str) -> Account {
         Account {
+            include_in_net_worth: true,
+            name_source: "provider".to_string(),
             id: id.to_string(),
             name: format!("Test Account {}", id),
             account_type: "SECURITIES".to_string(),

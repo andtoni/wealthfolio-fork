@@ -4608,4 +4608,124 @@ mod tests {
         assert_eq!(rows[0].3.as_deref(), Some("txn-1"));
         assert_eq!(rows[0].4.as_deref(), Some("idemp-2"));
     }
+
+    #[tokio::test]
+    async fn bulk_upsert_skips_user_modified_activity() {
+        let (pool, writer) = setup_db();
+        let repo = ActivityRepository::new(pool.clone(), writer);
+        let mut conn = get_connection(&pool).expect("conn");
+
+        insert_account(&mut conn, "acc-skip-modified");
+
+        let first = ActivityUpsert {
+            id: "pending-1".to_string(),
+            account_id: "acc-skip-modified".to_string(),
+            asset_id: None,
+            activity_type: "BUY".to_string(),
+            subtype: None,
+            activity_date: "2024-06-15".to_string(),
+            quantity: Some(Decimal::TEN),
+            unit_price: Some(Decimal::from(50)),
+            currency: "USD".to_string(),
+            fee: Some(Decimal::ZERO),
+            tax: None,
+            amount: Some(Decimal::from(500)),
+            status: Some(ActivityStatus::Pending),
+            notes: Some("dividend pending".to_string()),
+            fx_rate: None,
+            metadata: None,
+            needs_review: Some(true),
+            source_system: Some("SNAPTRADE".to_string()),
+            source_record_id: Some("txn-pending-1".to_string()),
+            source_group_id: None,
+            idempotency_key: Some("idemp-pending-1".to_string()),
+            import_run_id: None,
+        };
+
+        let create_result = repo
+            .bulk_upsert(vec![first])
+            .await
+            .expect("first upsert succeeds");
+        assert_eq!(create_result.created, 1);
+        assert_eq!(create_result.updated, 0);
+
+        // Simulate user reviewing the pending activity — set is_user_modified = 1
+        // and overlay the user's manual category.
+        diesel::update(activities::table.find("pending-1"))
+            .set((
+                activities::is_user_modified.eq(1),
+                activities::notes.eq("User classified: dividend"),
+                activities::needs_review.eq(0),
+            ))
+            .execute(&mut conn)
+            .expect("mark as user modified");
+
+        // Provider later sends the POSTED version of the same activity
+        // (same source_identity, updated status, updated economics).
+        let posted_activity = ActivityUpsert {
+            id: "posted-1".to_string(),
+            account_id: "acc-skip-modified".to_string(),
+            asset_id: None,
+            activity_type: "BUY".to_string(),
+            subtype: None,
+            activity_date: "2024-06-15".to_string(),
+            quantity: Some(Decimal::TEN),
+            unit_price: Some(Decimal::from(51)),
+            currency: "USD".to_string(),
+            fee: Some(Decimal::ZERO),
+            tax: None,
+            amount: Some(Decimal::from(510)),
+            status: Some(ActivityStatus::Posted),
+            notes: Some("dividend posted — provider version".to_string()),
+            fx_rate: None,
+            metadata: None,
+            needs_review: Some(false),
+            source_system: Some("SNAPTRADE".to_string()),
+            source_record_id: Some("txn-pending-1".to_string()),
+            source_group_id: None,
+            idempotency_key: Some("idemp-posted-1".to_string()),
+            import_run_id: None,
+        };
+
+        let update_result = repo
+            .bulk_upsert(vec![posted_activity])
+            .await
+            .expect("second upsert succeeds");
+
+        // The user-modified activity MUST be skipped — provider data must not
+        // overwrite the user's review overlay (notes, needs_review).
+        assert_eq!(
+            update_result.skipped, 1,
+            "user-modified activity must be skipped during pending→posted transition"
+        );
+        assert_eq!(
+            update_result.updated, 0,
+            "no rows should be updated for the user-modified activity"
+        );
+
+        // Verify the activity DB row preserved the user's overlay unchanged.
+        let row: (Option<String>, String, i32, i32) = activities::table
+            .find("pending-1")
+            .select((
+                activities::notes,
+                activities::status,
+                activities::is_user_modified,
+                activities::needs_review,
+            ))
+            .first(&mut conn)
+            .expect("load activity");
+
+        assert_eq!(
+            row.0,
+            Some("User classified: dividend".to_string()),
+            "user notes must survive pending→posted"
+        );
+        assert_eq!(
+            row.1,
+            "PENDING".to_string(),
+            "status from original pending activity is preserved because update was skipped"
+        );
+        assert_eq!(row.2, 1, "is_user_modified must remain 1");
+        assert_eq!(row.3, 0, "needs_review cleared by user must survive");
+    }
 }

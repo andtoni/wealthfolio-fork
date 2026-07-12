@@ -194,6 +194,7 @@ async fn build_valuation_map(state: &AppState) -> ApiResult<HashMap<String, f64>
         state.asset_service.as_ref(),
         state.quote_service.as_ref(),
         state.fx_service.as_ref(),
+        state.verified_receipt_repository.as_ref(),
     );
     let response = service
         .get_current_valuation_for_scope(

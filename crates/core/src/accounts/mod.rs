@@ -4,15 +4,20 @@ mod accounts_constants;
 mod accounts_model;
 mod accounts_service;
 mod accounts_traits;
+mod eligibility;
+mod receipts_traits;
 
 // Re-export the public interface
 pub use accounts_constants::*;
 pub use accounts_model::{
     Account, AccountAccountingSettings, AccountUpdate, CostBasisMethod, CostBasisProfile,
-    LotSelectionStrategy, NewAccount, PoolingScope, TrackingMode,
+    LotSelectionStrategy, NewAccount, PoolingScope, ProviderIdentity, TrackingMode,
+    VerifiedReceipt, VerifiedReceiptBasis,
 };
 pub use accounts_service::AccountService;
 pub use accounts_traits::{AccountRepositoryTrait, AccountServiceTrait};
+pub use eligibility::{account_is_eligible, filter_eligible_accounts};
+pub use receipts_traits::{ProviderIdentityRepositoryTrait, VerifiedReceiptRepositoryTrait};
 
 /// Returns true when an account belongs in portfolio totals/history.
 pub fn account_in_portfolio_scope(account: &Account) -> bool {

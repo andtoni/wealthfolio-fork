@@ -124,6 +124,8 @@ mod tests {
     fn mock_account(id: &str, account_type: &str, tracking_mode: TrackingMode) -> Account {
         let dt = NaiveDateTime::default();
         Account {
+            include_in_net_worth: true,
+            name_source: "provider".to_string(),
             id: id.to_string(),
             name: id.to_string(),
             account_type: account_type.to_string(),

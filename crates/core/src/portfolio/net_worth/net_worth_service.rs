@@ -12,7 +12,10 @@ use super::net_worth_model::{
     NetWorthResponse, StaleAssetInfo, ValuationInfo,
 };
 use super::net_worth_traits::NetWorthServiceTrait;
-use crate::accounts::{account_types, is_liability_account_type, AccountRepositoryTrait};
+use crate::accounts::{
+    account_types, filter_eligible_accounts, is_liability_account_type, AccountRepositoryTrait,
+    VerifiedReceiptRepositoryTrait,
+};
 use crate::assets::{Asset, AssetKind, AssetRepositoryTrait};
 use crate::constants::DECIMAL_PRECISION;
 use crate::errors::Result;
@@ -34,6 +37,7 @@ pub struct NetWorthService {
     quote_service: Arc<dyn QuoteServiceTrait>,
     valuation_repository: Arc<dyn ValuationRepositoryTrait>,
     fx_service: Arc<dyn FxServiceTrait>,
+    verified_receipt_repository: Arc<dyn VerifiedReceiptRepositoryTrait>,
 }
 
 impl NetWorthService {
@@ -47,6 +51,7 @@ impl NetWorthService {
         quote_service: Arc<dyn QuoteServiceTrait>,
         valuation_repository: Arc<dyn ValuationRepositoryTrait>,
         fx_service: Arc<dyn FxServiceTrait>,
+        verified_receipt_repository: Arc<dyn VerifiedReceiptRepositoryTrait>,
     ) -> Self {
         Self {
             base_currency,
@@ -56,6 +61,7 @@ impl NetWorthService {
             quote_service,
             valuation_repository,
             fx_service,
+            verified_receipt_repository,
         }
     }
 
@@ -350,7 +356,21 @@ impl NetWorthServiceTrait for NetWorthService {
         debug!("Calculating net worth as of {} in {}", date, base_currency);
 
         // Get all non-archived accounts (includes closed accounts for historical net worth)
-        let accounts = self.account_repository.list(None, Some(false), None)?;
+        let accounts: Vec<_> = self
+            .account_repository
+            .list(None, Some(false), None)?
+            .into_iter()
+            .filter(|account| account.include_in_net_worth)
+            .collect();
+        let accounts = if accounts.is_empty() {
+            accounts
+        } else {
+            let eligible_ids = self
+                .verified_receipt_repository
+                .get_eligible_account_ids()
+                .await?;
+            filter_eligible_accounts(accounts, &eligible_ids)
+        };
 
         if accounts.is_empty() {
             debug!("No non-archived accounts found. Returning empty net worth.");
@@ -693,7 +713,7 @@ impl NetWorthServiceTrait for NetWorthService {
         })
     }
 
-    fn get_net_worth_history(
+    async fn get_net_worth_history(
         &self,
         start_date: NaiveDate,
         end_date: NaiveDate,
@@ -719,8 +739,26 @@ impl NetWorthServiceTrait for NetWorthService {
         }
 
         let mut portfolio_by_date: BTreeMap<NaiveDate, PortfolioState> = BTreeMap::new();
-        let accounts = self.account_repository.list(None, Some(false), None)?;
-        for account in accounts {
+        let accounts: Vec<_> = self
+            .account_repository
+            .list(None, Some(false), None)?
+            .into_iter()
+            .filter(|account| account.include_in_net_worth)
+            .collect();
+        let receipt_eligible_ids: std::collections::HashSet<String> = if accounts.is_empty() {
+            std::collections::HashSet::new()
+        } else {
+            self
+                .verified_receipt_repository
+                .get_eligible_account_ids()
+                .await?
+                .into_iter()
+                .collect()
+        };
+        for account in accounts
+            .into_iter()
+            .filter(|a| receipt_eligible_ids.contains(&a.id))
+        {
             // Liability accounts (e.g. credit cards) are tracked separately as
             // liabilities/cash assets below; excluding them here avoids double-counting.
             if is_liability_account_type(&account.account_type) {
@@ -844,10 +882,25 @@ impl NetWorthServiceTrait for NetWorthService {
         // =====================================================================
         // 5. Load credit card liability valuations
         // =====================================================================
-        let accounts = self.account_repository.list(None, Some(false), None)?;
+        let accounts: Vec<_> = self
+            .account_repository
+            .list(None, Some(false), None)?
+            .into_iter()
+            .filter(|account| account.include_in_net_worth)
+            .collect();
+        let history_eligible_ids: std::collections::HashSet<String> = if accounts.is_empty() {
+            std::collections::HashSet::new()
+        } else {
+            self
+                .verified_receipt_repository
+                .get_eligible_account_ids()
+                .await?
+                .into_iter()
+                .collect()
+        };
         let credit_card_account_ids: Vec<String> = accounts
-            .iter()
-            .filter(|account| is_liability_account_type(&account.account_type))
+            .into_iter()
+            .filter(|a| history_eligible_ids.contains(&a.id) && is_liability_account_type(&a.account_type))
             .map(|account| account.id.clone())
             .collect();
 

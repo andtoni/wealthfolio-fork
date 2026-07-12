@@ -21,7 +21,7 @@ use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 use wealthfolio_core::accounts::{
-    account_types, Account, AccountServiceTrait, NewAccount, TrackingMode,
+    account_types, Account, AccountServiceTrait, AccountUpdate, NewAccount, TrackingMode,
 };
 use wealthfolio_core::activities::{
     compute_idempotency_key, ActivityRepositoryTrait, ActivityServiceTrait, ActivityUpsert,
@@ -199,7 +199,7 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
         broker_accounts: Vec<BrokerAccount>,
     ) -> Result<SyncAccountsResponse> {
         let mut created = 0;
-        let updated = 0; // Reserved for future use when we implement account updates
+        let mut updated = 0; // Reserved for future use when we implement account updates
         let mut skipped = 0;
         let mut created_accounts: Vec<(String, String)> = Vec::new();
         let mut new_accounts_info: Vec<NewAccountInfo> = Vec::new();
@@ -227,15 +227,44 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
             };
 
             // Check if account already exists by provider_account_id
-            if let Some(_existing) = provider_account_id_map.get(&provider_account_id) {
-                // Account exists - for now we skip updates to preserve user customizations
-                // In the future, we might want to update certain fields selectively
+            if let Some(existing) = provider_account_id_map.get(&provider_account_id) {
+                // Account exists - update provider metadata with name_source awareness.
+                // Only overwrite display name when name_source is "provider".
+                let provider_name = if existing.name_source == "provider" {
+                    Some(broker_account.display_name())
+                } else {
+                    None
+                };
+
+                let account_update = AccountUpdate {
+                    id: Some(existing.id.clone()),
+                    name: provider_name.clone().unwrap_or_else(|| existing.name.clone()),
+                    account_type: existing.account_type.clone(),
+                    group: existing.group.clone(),
+                    is_default: existing.is_default,
+                    is_active: broker_account.status.as_deref() != Some("closed"),
+                    is_archived: Some(existing.is_archived),
+                    tracking_mode: None,
+                    platform_id: existing.platform_id.clone(),
+                    account_number: existing.account_number.clone(),
+                    meta: existing.meta.clone(),
+                    provider: existing.provider.clone(),
+                    provider_account_id: existing.provider_account_id.clone(),
+                    include_in_net_worth: None,
+                    name_source: None,
+                };
+
+                self.account_service.update_account(account_update).await?;
+
                 debug!(
-                    "Account already synced, skipping: {} ({})",
+                    "Updated provider metadata for account {} ({}): name_source={}, provider_name={}",
+                    existing.name,
+                    provider_account_id,
+                    existing.name_source,
                     broker_account.display_name(),
-                    provider_account_id
                 );
-                skipped += 1;
+
+                updated += 1;
                 continue;
             }
 
@@ -262,6 +291,10 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                 provider_account_id: Some(provider_account_id.clone()),
                 is_archived: false,
                 tracking_mode,
+                // Provider-discovered accounts default to excluded from net worth
+                include_in_net_worth: false,
+                // Provider-discovered accounts default to provider-sourced name
+                name_source: "provider".to_string(),
             };
 
             // Create the account via AccountService (handles FX rate registration)

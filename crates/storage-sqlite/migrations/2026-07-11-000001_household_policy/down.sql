@@ -1,0 +1,15 @@
+DROP TABLE activity_disclosure_projections;
+DROP TABLE disclosure_receipts;
+DROP TABLE activity_attribution_overlays;
+DROP TABLE account_access_epochs;
+DROP TABLE account_ownership_participants;
+DROP TABLE account_ownership_arrangements;
+DROP TABLE household_membership_epochs;
+DROP TABLE households;
+DROP TABLE discovered_account_candidates;
+DROP TRIGGER credential_owner_immutable_delete;
+DROP TRIGGER credential_owner_immutable_update;
+DROP TABLE credential_owner_subjects;
+DROP TABLE native_account_deployments;
+DROP TABLE person_subjects;
+DROP TABLE policy_deployments;

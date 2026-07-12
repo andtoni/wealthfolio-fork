@@ -1335,6 +1335,8 @@ mod tests {
 
     fn create_test_account(id: &str, currency: &str, name: &str) -> Account {
         Account {
+            include_in_net_worth: true,
+            name_source: "provider".to_string(),
             id: id.to_string(),
             name: name.to_string(),
             currency: currency.to_string(),
