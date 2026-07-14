@@ -20,20 +20,35 @@ fn get_bridge(
 /// Reject the request when the authenticated subject does not match the
 /// subject the caller supplied in a path parameter or request body.
 ///
-/// When auth is not configured (`Extension` is `None`) the check is
-/// skipped — there is no authenticated identity to compare against.
+/// Bridge operations always require an authenticated subject. Household
+/// mode must never treat an absent identity as authorization, even when the
+/// global UI auth requirement is explicitly disabled.
 fn require_own_subject(
     auth: Option<Extension<AuthenticatedSubject>>,
     request_subject: &str,
 ) -> Result<(), ApiError> {
-    if let Some(Extension(subject)) = auth {
-        if subject.as_str() != request_subject {
-            return Err(ApiError::Forbidden(
-                "authenticated subject cannot act on behalf of another subject".into(),
-            ));
-        }
+    let Some(Extension(subject)) = auth else {
+        return Err(ApiError::Unauthorized(
+            "bridge authentication is required".into(),
+        ));
+    };
+    if subject.as_str() != request_subject {
+        return Err(ApiError::Forbidden(
+            "authenticated subject cannot act on behalf of another subject".into(),
+        ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bridge_requires_an_authenticated_subject() {
+        let err = require_own_subject(None, "subject").expect_err("missing auth must fail closed");
+        assert!(matches!(err, ApiError::Unauthorized(_)));
+    }
 }
 
 #[derive(serde::Serialize)]

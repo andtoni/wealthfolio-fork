@@ -132,6 +132,16 @@ impl Config {
         let deployment_id =
             std::env::var("WF_DEPLOYMENT_ID").unwrap_or_else(|_| "default".to_string());
 
+        // Household bridge operations are machine-facing security boundaries;
+        // unlike the UI, they may not rely on WF_AUTH_REQUIRED=false or an
+        // unauthenticated reverse proxy. Refuse to start without an auth
+        // manager so bridge routes cannot be reached in an identity-less mode.
+        if household_enabled && auth.is_none() {
+            panic!(
+                "Refusing to start: WF_HOUSEHOLD_ENABLED=true requires authentication"
+            );
+        }
+
         // When auth is enabled, wildcard CORS is incompatible with credentials
         if auth.is_some() && cors_allow.iter().any(|o| o == "*") {
             panic!(

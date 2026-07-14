@@ -93,6 +93,26 @@ async fn login(server: &TestServer) -> String {
 //    check is implemented in the bridge handlers ──
 
 #[tokio::test]
+async fn household_mode_without_auth_fails_closed_even_when_auth_required_is_false() {
+    let _guard = ENV_LOCK.lock().await;
+    let tmp = tempfile::tempdir().unwrap();
+    std::env::set_var("WF_DB_PATH", tmp.path().join("test.db"));
+    std::env::set_var("WF_SECRET_KEY", BASE64.encode([7u8; 32]));
+    std::env::set_var("WF_LISTEN_ADDR", "127.0.0.1:8088");
+    std::env::set_var("WF_HOUSEHOLD_ENABLED", "true");
+    std::env::set_var("WF_AUTH_REQUIRED", "false");
+    std::env::remove_var("WF_AUTH_PASSWORD_HASH");
+    std::env::remove_var("WF_OIDC_ISSUER_URL");
+    std::env::remove_var("WF_OIDC_CLIENT_ID");
+
+    let result = std::panic::catch_unwind(Config::from_env);
+    assert!(
+        result.is_err(),
+        "household mode must refuse startup without an authenticator"
+    );
+}
+
+#[tokio::test]
 async fn cross_subject_grant_is_forbidden() {
     let server = spawn_server().await;
     let cookie = login(&server).await;
