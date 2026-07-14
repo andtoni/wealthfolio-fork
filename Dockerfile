@@ -1,9 +1,9 @@
 # Global build args
-ARG RUST_IMAGE=rust:1.91-alpine
+ARG RUST_IMAGE=rust:1.91-alpine@sha256:45c1c35cd364b8055e9e86f8ecd3e8c874b2dcb658d8a4f94b5d111aa0d651a2
 
 # Stage 1: build frontend
 # Use --platform=$BUILDPLATFORM to run on the native runner (fast)
-FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend
+FROM --platform=$BUILDPLATFORM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS frontend
 
 # Wealthfolio Connect configuration (baked into JS bundle at build time)
 # Pass via --build-arg to enable; omit to build without Connect.
@@ -22,7 +22,7 @@ RUN npm install -g pnpm@10.33.4 && pnpm install --frozen-lockfile
 RUN pnpm --filter frontend... build && mv dist /web-dist
 
 # Stage 2: build server with cross-compilation
-FROM --platform=$BUILDPLATFORM tonistiigi/xx AS xx
+FROM --platform=$BUILDPLATFORM tonistiigi/xx:latest@sha256:c64defb9ed5a91eacb37f96ccc3d4cd72521c4bd18d5442905b95e2226b0e707 AS xx
 
 FROM --platform=$BUILDPLATFORM ${RUST_IMAGE} AS backend
 # Copy xx scripts to handle cross-compilation
@@ -71,7 +71,7 @@ RUN xx-cargo build --release --manifest-path apps/server/Cargo.toml && \
     cp target/$(xx-cargo --print-target-triple)/release/wealthfolio-server /wealthfolio-server
 
 # Final stage
-FROM alpine:3.19
+FROM alpine:3.19@sha256:6baf43584bcb78f2e5847d1de515f23499913ac9f12bdf834811a3145eb11ca1
 WORKDIR /app
 # Copy from backend (which is now build platform, but binary is target platform)
 COPY --from=backend /wealthfolio-server /usr/local/bin/wealthfolio-server
