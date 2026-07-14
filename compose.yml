@@ -8,7 +8,7 @@
 
 services:
   wealthfolio:
-    image: wealthfolio/wealthfolio:latest
+    image: git.example.com/andtoni/wealthfolio@sha256:576ac85dff557bbe9641baab2432e414a14436a7490da6b1a5e8010b5718db06
     container_name: wealthfolio
     restart: unless-stopped
     ports:
