@@ -52,6 +52,7 @@ tsconfig.node.tsbuildinfo
 .cache
 .temp
 .tmp
+.worktrees/
 .eslintcache
 .stylelintcache
 

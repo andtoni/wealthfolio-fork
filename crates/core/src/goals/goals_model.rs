@@ -115,5 +115,10 @@ pub struct PreparedRetirementSimulationInput {
     pub planner_mode: RetirementTimingMode,
 }
 
-/// Account valuations map: account_id → total value in base currency
+/// Account valuations map: account_id → total value in base currency.
+///
+/// Precondition: goal aggregate callers must build this only from
+/// `CurrentAccountValuationService` output after account and source-row
+/// aggregate eligibility filtering has succeeded. Missing or denied rows are
+/// omitted; policy errors must fail the caller before a map is supplied.
 pub type AccountValuationMap = HashMap<String, f64>;

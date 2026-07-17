@@ -1,5 +1,6 @@
 use super::{
-    Account, AccountUpdate, NewAccount, ProviderIdentity, TrackingMode, VerifiedReceipt, VerifiedReceiptBasis,
+    Account, AccountUpdate, NewAccount, ProvenanceRole, ProviderIdentity, TrackingMode,
+    VerifiedReceipt, VerifiedReceiptBasis,
 };
 
 fn new_account_defaults() -> NewAccount {
@@ -108,6 +109,30 @@ fn verified_receipt_opening_baseline() {
 }
 
 #[test]
+fn provenance_roles_exclude_history_and_context() {
+    for role in [
+        ProvenanceRole::HistoricalContext,
+        ProvenanceRole::ContextualReference,
+    ] {
+        assert!(!role.eligible_for_aggregate("2026-01-01", Some("2026-01-01"), true));
+    }
+}
+
+#[test]
+fn provenance_opening_baseline_starts_at_verified_coverage() {
+    let role = ProvenanceRole::OpeningBaseline;
+    assert!(!role.eligible_for_aggregate("2025-12-31", Some("2026-01-01"), false));
+    assert!(role.eligible_for_aggregate("2026-01-01", Some("2026-01-01"), false));
+}
+
+#[test]
+fn provenance_manual_current_requires_explicit_approval() {
+    let role = ProvenanceRole::ManualCurrent;
+    assert!(!role.eligible_for_aggregate("2026-01-01", None, false));
+    assert!(role.eligible_for_aggregate("2026-01-01", None, true));
+}
+
+#[test]
 fn provider_identity_holds_immutable_fields() {
     let i = ProviderIdentity {
         account_id: "a1".into(),
@@ -208,16 +233,21 @@ fn provider_discovered_account_defaults_to_excluded() {
     assert!(n.provider_account_id.is_some());
 }
 
-
 // ── name_source Override Tests ──
 
 #[test]
 fn account_default_name_source_is_provider() {
     let a = Account::default();
-    assert_eq!(a.name_source, "", "Default Account has empty string (serde default applies at deserialization)");
+    assert_eq!(
+        a.name_source, "",
+        "Default Account has empty string (serde default applies at deserialization)"
+    );
     // Via NewAccount defaults (the helper)
     let n = new_account_defaults();
-    assert_eq!(n.name_source, "provider", "NewAccount defaults to provider-sourced name");
+    assert_eq!(
+        n.name_source, "provider",
+        "NewAccount defaults to provider-sourced name"
+    );
 }
 
 #[test]
@@ -227,7 +257,10 @@ fn new_account_default_name_source_is_provider() {
         currency: "USD".into(),
         ..new_account_defaults()
     };
-    assert_eq!(n.name_source, "provider", "New account without explicit name_source defaults to provider");
+    assert_eq!(
+        n.name_source, "provider",
+        "New account without explicit name_source defaults to provider"
+    );
 }
 
 #[test]
@@ -238,7 +271,10 @@ fn new_account_can_set_name_source_to_user() {
         name_source: "user".to_string(),
         ..new_account_defaults()
     };
-    assert_eq!(n.name_source, "user", "New account can set name_source to user");
+    assert_eq!(
+        n.name_source, "user",
+        "New account can set name_source to user"
+    );
 }
 
 #[test]
@@ -252,8 +288,14 @@ fn new_account_provider_discovered_defaults_to_provider_name_source() {
         include_in_net_worth: false,
         ..new_account_defaults()
     };
-    assert_eq!(n.name_source, "provider", "Provider-discovered account defaults to provider name source");
-    assert_eq!(n.include_in_net_worth, false, "Provider-discovered defaults to excluded from net worth");
+    assert_eq!(
+        n.name_source, "provider",
+        "Provider-discovered account defaults to provider name source"
+    );
+    assert!(
+        !n.include_in_net_worth,
+        "Provider-discovered defaults to excluded from net worth"
+    );
 }
 
 #[test]
@@ -275,7 +317,10 @@ fn account_update_without_name_source_does_not_change_it() {
         include_in_net_worth: None,
         name_source: None,
     };
-    assert_eq!(update.name_source, None, "AccountUpdate without name_source leaves it unchanged");
+    assert_eq!(
+        update.name_source, None,
+        "AccountUpdate without name_source leaves it unchanged"
+    );
 }
 
 #[test]
@@ -297,7 +342,11 @@ fn account_update_with_name_source_user_explicitly_overrides() {
         include_in_net_worth: None,
         name_source: Some("user".to_string()),
     };
-    assert_eq!(update.name_source, Some("user".to_string()), "AccountUpdate with name_source=user overrides");
+    assert_eq!(
+        update.name_source,
+        Some("user".to_string()),
+        "AccountUpdate with name_source=user overrides"
+    );
 }
 
 #[test]
@@ -319,13 +368,22 @@ fn account_update_with_name_source_provider_reverts_override() {
         include_in_net_worth: None,
         name_source: Some("provider".to_string()),
     };
-    assert_eq!(update.name_source, Some("provider".to_string()), "AccountUpdate with name_source=provider clears override");
+    assert_eq!(
+        update.name_source,
+        Some("provider".to_string()),
+        "AccountUpdate with name_source=provider clears override"
+    );
 }
 
 // ── Provider-Parameterized Tests ──
 
 /// Helper to create a new account with a specific provider.
-fn new_provider_account(name: &str, provider: &str, provider_account_id: &str, name_source: &str) -> NewAccount {
+fn new_provider_account(
+    name: &str,
+    provider: &str,
+    provider_account_id: &str,
+    name_source: &str,
+) -> NewAccount {
     NewAccount {
         id: None,
         name: name.to_string(),
@@ -358,10 +416,24 @@ fn provider_discovery_sets_provider_name_source() {
             &format!("{}-001", provider),
             "provider",
         );
-        assert_eq!(n.name_source, "provider", "{provider}: initial discovery sets provider name source");
-        assert_eq!(n.name, format!("{} Checking", provider), "{provider}: name comes from provider");
-        assert_eq!(n.provider.as_deref(), Some(*provider), "{provider}: provider is set");
-        assert!(n.provider_account_id.as_deref() == Some(format!("{}-001", provider).as_str()), "{provider}: provider_account_id is set");
+        assert_eq!(
+            n.name_source, "provider",
+            "{provider}: initial discovery sets provider name source"
+        );
+        assert_eq!(
+            n.name,
+            format!("{} Checking", provider),
+            "{provider}: name comes from provider"
+        );
+        assert_eq!(
+            n.provider.as_deref(),
+            Some(*provider),
+            "{provider}: provider is set"
+        );
+        assert!(
+            n.provider_account_id.as_deref() == Some(format!("{}-001", provider).as_str()),
+            "{provider}: provider_account_id is set"
+        );
     }
 }
 
@@ -400,7 +472,10 @@ fn user_rename_preserved_across_all_providers() {
 
         // Simulate what the broker sync does: it checks name_source before overwriting
         let would_update_name = user_named.name_source == "provider";
-        assert!(!would_update_name, "{provider}: user override prevents name overwrite");
+        assert!(
+            !would_update_name,
+            "{provider}: user override prevents name overwrite"
+        );
 
         // The provider's suggested name should NOT replace the user's name
         let provider_suggested_name = format!("{provider} - Checking");
@@ -409,7 +484,10 @@ fn user_rename_preserved_across_all_providers() {
         } else {
             user_named.name.clone()
         };
-        assert_eq!(effective_name, "My Personal Name", "{provider}: user-chosen name survives provider resync");
+        assert_eq!(
+            effective_name, "My Personal Name",
+            "{provider}: user-chosen name survives provider resync"
+        );
     }
 }
 
@@ -435,8 +513,11 @@ fn provider_name_update_applied_when_name_source_is_provider() {
             provider_account.name.clone()
         };
 
-        assert_eq!(effective_name, format!("{provider} - New Name"),
-            "{provider}: provider-sourced name updates on resync");
+        assert_eq!(
+            effective_name,
+            format!("{provider} - New Name"),
+            "{provider}: provider-sourced name updates on resync"
+        );
     }
 }
 
@@ -462,16 +543,25 @@ fn provider_sync_does_not_use_name_for_matching() {
 
         // Matching must succeed by provider_account_id
         let matched = existing.provider_account_id.as_deref() == Some(&pa_id);
-        assert!(matched, "{provider}: account matched by immutable provider_account_id, not by name");
+        assert!(
+            matched,
+            "{provider}: account matched by immutable provider_account_id, not by name"
+        );
 
         // User override prevents the name from changing
         if existing.name_source == "user" {
-            assert_eq!(existing.name, "Original Name", "{provider}: user override preserved name despite provider rename");
+            assert_eq!(
+                existing.name, "Original Name",
+                "{provider}: user override preserved name despite provider rename"
+            );
         }
 
         // The different provider name is captured in provider_display_name
         // but does NOT overwrite the account name
-        assert_ne!(existing.name, different_name, "{provider}: account name unchanged by provider rename");
+        assert_ne!(
+            existing.name, different_name,
+            "{provider}: account name unchanged by provider rename"
+        );
     }
 }
 
@@ -482,25 +572,36 @@ fn duplicate_provider_account_id_not_possible() {
     // (enforced at the repository/DB level, but the model supports it).
     for provider in ALL_PROVIDERS {
         let acc1 = NewAccount {
-            name: format!("{provider} Account 1").into(),
+            name: format!("{provider} Account 1"),
             provider: Some(provider.to_string()),
             provider_account_id: Some(format!("{provider}-fixed-id")),
             ..new_provider_account("", provider, "{provider}-fixed-id", "provider")
         };
         let acc2 = NewAccount {
-            name: format!("{provider} Account 2").into(),
+            name: format!("{provider} Account 2"),
             provider: Some(provider.to_string()),
             provider_account_id: Some(format!("{provider}-fixed-id")),
             ..new_provider_account("", provider, "{provider}-fixed-id", "provider")
         };
 
         assert_eq!(acc1.provider, acc2.provider, "{provider}: same provider");
-        assert_eq!(acc1.provider_account_id, acc2.provider_account_id, "{provider}: same provider_account_id");
+        assert_eq!(
+            acc1.provider_account_id, acc2.provider_account_id,
+            "{provider}: same provider_account_id"
+        );
 
         // The model allows creating both (DB uniqueness constraint would reject second)
         // But the sync logic correctly matches the first by provider_account_id
-        assert_eq!(acc1.name, format!("{provider} Account 1"), "{provider}: first account gets different name");
-        assert_eq!(acc2.name, format!("{provider} Account 2"), "{provider}: second account would get different name");
+        assert_eq!(
+            acc1.name,
+            format!("{provider} Account 1"),
+            "{provider}: first account gets different name"
+        );
+        assert_eq!(
+            acc2.name,
+            format!("{provider} Account 2"),
+            "{provider}: second account would get different name"
+        );
     }
 }
 
@@ -520,11 +621,17 @@ fn stale_provider_rename_does_not_affect_user_override() {
         };
 
         // Provider now calls this account "Old Account Name (closed)"
-        let provider_new_name = format!("Old Account Name (closed)");
+        let provider_new_name = "Old Account Name (closed)".to_string();
 
         // The user override must prevent the provider rename from showing
-        assert_eq!(account.name_source, "user", "{provider}: user override is active");
-        assert_ne!(account.name, provider_new_name, "{provider}: user override prevents stale provider rename from appearing");
+        assert_eq!(
+            account.name_source, "user",
+            "{provider}: user override is active"
+        );
+        assert_ne!(
+            account.name, provider_new_name,
+            "{provider}: user override prevents stale provider rename from appearing"
+        );
 
         // The provider display name is tracked in provider_identities
         let identity = ProviderIdentity {
@@ -535,7 +642,10 @@ fn stale_provider_rename_does_not_affect_user_override() {
             provider_display_name: Some(provider_new_name),
             last_sync_at: Some("2026-07-12T12:00:00Z".into()),
         };
-        assert_eq!(identity.lifecycle_state, "closed", "{provider}: lifecycle reflects provider status");
+        assert_eq!(
+            identity.lifecycle_state, "closed",
+            "{provider}: lifecycle reflects provider status"
+        );
         assert_eq!(
             identity.provider_display_name.as_deref(),
             Some("Old Account Name (closed)"),
@@ -567,8 +677,15 @@ fn revert_override_restores_provider_name_source() {
             account.name = provider_suggested.clone();
         }
 
-        assert_eq!(account.name_source, "provider", "{provider}: override reverted");
-        assert_eq!(account.name, format!("{provider} - Current Name"), "{provider}: provider name picked up on next sync");
+        assert_eq!(
+            account.name_source, "provider",
+            "{provider}: override reverted"
+        );
+        assert_eq!(
+            account.name,
+            format!("{provider} - Current Name"),
+            "{provider}: provider name picked up on next sync"
+        );
     }
 }
 
@@ -585,10 +702,16 @@ fn name_source_round_trip_via_serde() {
     };
 
     let json = serde_json::to_string(&account).unwrap();
-    assert!(json.contains(r#""nameSource":"user""#), "nameSource=user serializes to camelCase JSON");
+    assert!(
+        json.contains(r#""nameSource":"user""#),
+        "nameSource=user serializes to camelCase JSON"
+    );
 
     let deserialized: Account = serde_json::from_str(&json).unwrap();
-    assert_eq!(deserialized.name_source, "user", "nameSource round-trips through serde");
+    assert_eq!(
+        deserialized.name_source, "user",
+        "nameSource round-trips through serde"
+    );
 }
 
 #[test]
@@ -599,7 +722,10 @@ fn name_source_default_serde_for_provider() {
     // Provide all required non-default fields for serde deserialization.
     let json = r#"{"id":"acc-1","name":"Test","accountType":"CASH","currency":"USD","isDefault":false,"isActive":true,"isArchived":false,"trackingMode":"NOT_SET","createdAt":"2026-01-01T00:00:00","updatedAt":"2026-01-01T00:00:00"}"#;
     let account: Account = serde_json::from_str(json).unwrap();
-    assert_eq!(account.name_source, "provider", "name_source defaults to provider via serde default");
+    assert_eq!(
+        account.name_source, "provider",
+        "name_source defaults to provider via serde default"
+    );
 }
 
 #[test]
@@ -627,5 +753,8 @@ fn account_update_name_source_provider_reverts_override_on_storage_conversion() 
     // When converting to storage model, the unwrap_or_else fallback
     // should not be used since name_source is Some
     let name_source_result = update.name_source.unwrap_or_else(|| "fallback".to_string());
-    assert_eq!(name_source_result, "provider", "Explicit name_source=provider in update is preserved");
+    assert_eq!(
+        name_source_result, "provider",
+        "Explicit name_source=provider in update is preserved"
+    );
 }

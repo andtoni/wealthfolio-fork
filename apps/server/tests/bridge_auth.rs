@@ -10,6 +10,7 @@ use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use rand::{rngs::OsRng, RngCore};
 use reqwest::header;
+use rusqlite::Connection;
 use tempfile::TempDir;
 use wealthfolio_server::{api::app_router, build_state, config::Config};
 
@@ -45,6 +46,30 @@ async fn spawn_server() -> TestServer {
 
         let config = Config::from_env();
         let state = build_state(&config).await.unwrap();
+        let connection = Connection::open(tmp.path().join("test.db")).unwrap();
+        connection.execute_batch("PRAGMA foreign_keys=ON").unwrap();
+        connection
+            .execute("INSERT INTO policy_deployments(id) VALUES(?)", ["default"])
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO households(deployment_id,id) VALUES(?,?)",
+                rusqlite::params!["default", "test-household"],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO person_subjects(deployment_id,id) VALUES(?,?)",
+                rusqlite::params!["default", "urn:wealthfolio:password#local"],
+            )
+            .unwrap();
+        connection.execute("INSERT INTO accounts(id,name,account_type,currency,is_default,is_active,is_archived,tracking_mode) VALUES(?,?, 'CASH','USD',0,1,0,'TRANSACTIONS')", rusqlite::params!["bridge-account", "bridge-account"]).unwrap();
+        connection
+            .execute(
+                "INSERT INTO native_account_deployments(account_id,deployment_id) VALUES(?,?)",
+                rusqlite::params!["bridge-account", "default"],
+            )
+            .unwrap();
         app_router(state, &config)
     };
 
@@ -136,6 +161,36 @@ async fn cross_subject_grant_is_forbidden() {
         response.status(),
         403,
         "cross-subject grant should be forbidden"
+    );
+}
+
+#[tokio::test]
+async fn bearer_bridge_commit_returns_accepted_receipt() {
+    let server = spawn_server().await;
+    let jwt = login(&server).await;
+    let subject = "urn:wealthfolio:password#local";
+    let grant = server
+        .client
+        .post(format!(
+            "{}/api/v1/bridge/grant/{}/bridge-account",
+            server.base,
+            urlencoding::encode(subject)
+        ))
+        .header(header::AUTHORIZATION, format!("Bearer {jwt}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(grant.status(), 200);
+    let access_generation = grant.json::<serde_json::Value>().await.unwrap()["accessGeneration"]
+        .as_i64()
+        .unwrap();
+    let idempotency_key = "bridge-positive-key";
+    let commit = server.client.post(format!("{}/api/v1/bridge/commit", server.base)).header(header::AUTHORIZATION, format!("Bearer {jwt}"))
+        .json(&serde_json::json!({"idempotency_key": idempotency_key, "subject": subject, "access_generation": access_generation, "kind": "ActivityUpsert", "resource_id": "bridge-activity", "activity": {"account_id": "bridge-account", "activity_type": "DEPOSIT", "status": "POSTED", "activity_date": "2026-01-01", "amount": "1", "currency": "USD", "notes": null, "activity_type_override": null, "needs_review": false}})).send().await.unwrap();
+    assert_eq!(commit.status(), 200);
+    assert_eq!(
+        commit.json::<serde_json::Value>().await.unwrap(),
+        serde_json::json!({"subject": subject, "idempotencyKey": idempotency_key, "accessGeneration": access_generation, "operation": "activity_upsert", "resourceId": "bridge-activity", "outcome": "Accepted"})
     );
 }
 

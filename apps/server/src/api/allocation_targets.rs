@@ -172,6 +172,7 @@ async fn get_drift_for_target(
     let resolved = state
         .portfolio_service
         .resolve_account_scope_for_purpose(&filter, &base_currency, AccountPurpose::Holdings)
+        .await
         .map_err(crate::error::ApiError::from)?;
 
     let report = if body.include_holdings {
@@ -210,7 +211,7 @@ struct CalculatePlanBody {
     filter: AccountScope,
 }
 
-fn resolve_rebalance_input(
+async fn resolve_rebalance_input(
     state: &Arc<AppState>,
     target_id: String,
     available_cash: Decimal,
@@ -221,6 +222,7 @@ fn resolve_rebalance_input(
     let resolved = state
         .portfolio_service
         .resolve_account_scope_for_purpose(filter, &base_currency, AccountPurpose::Holdings)
+        .await
         .map_err(crate::error::ApiError::from)?;
     Ok(CalculateRebalancePlanInput {
         target_id,
@@ -242,7 +244,8 @@ async fn calculate_plan(
         body.available_cash,
         body.scenario_mode,
         &body.filter,
-    )?;
+    )
+    .await?;
     let plan = state.rebalance_service.calculate_plan(input).await?;
     Ok(Json(plan))
 }

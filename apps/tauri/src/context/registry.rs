@@ -2,7 +2,9 @@ use std::sync::{atomic::AtomicBool, Arc, RwLock};
 use wealthfolio_ai::{AiProviderServiceTrait, ChatService};
 use wealthfolio_connect::BrokerSyncServiceTrait;
 use wealthfolio_core::{
-    self, accounts, accounts::VerifiedReceiptRepositoryTrait, activities,
+    self, accounts,
+    accounts::AggregateEligibilityServiceTrait,
+    activities,
     assets::{self, AlternativeAssetServiceTrait},
     events::DomainEventSink,
     fx, goals, health, limits,
@@ -52,7 +54,7 @@ pub struct ServiceContext {
     pub income_service: Arc<dyn portfolio::income::IncomeServiceTrait>,
     pub snapshot_service: Arc<dyn portfolio::snapshot::SnapshotServiceTrait>,
     pub snapshot_repository: Arc<SnapshotRepository>,
-    pub verified_receipt_repository: Arc<dyn VerifiedReceiptRepositoryTrait>,
+    pub aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
     pub lots_repository: Arc<dyn LotRepositoryTrait>,
     pub app_sync_repository: Arc<AppSyncRepository>,
     pub holdings_service: Arc<dyn portfolio::holdings::HoldingsServiceTrait>,
@@ -176,8 +178,8 @@ impl ServiceContext {
         Arc::clone(&self.snapshot_service)
     }
 
-    pub fn verified_receipt_repository(&self) -> Arc<dyn VerifiedReceiptRepositoryTrait> {
-        Arc::clone(&self.verified_receipt_repository)
+    pub fn aggregate_eligibility_service(&self) -> Arc<dyn AggregateEligibilityServiceTrait> {
+        Arc::clone(&self.aggregate_eligibility_service)
     }
 
     pub fn snapshot_repository(&self) -> Arc<SnapshotRepository> {

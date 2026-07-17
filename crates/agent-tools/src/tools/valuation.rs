@@ -125,6 +125,7 @@ impl AgentTool for GetValuationHistory {
                 if account_supports_purpose(&account.account_type, AccountPurpose::Holdings) {
                     env.valuation_service()
                         .get_historical_valuations(account_id, Some(start_date), Some(end_date))
+                        .await
                         .map_err(|e| AgentToolError::ExecutionFailed(e.to_string()))?
                 } else {
                     Vec::new()
@@ -159,6 +160,7 @@ impl AgentTool for GetValuationHistory {
                     Some(start_date),
                     Some(end_date),
                 )
+                .await
                 .map_err(|e| AgentToolError::ExecutionFailed(e.to_string()))?
                 .into_iter()
                 .map(|v| ValuationPointDto {

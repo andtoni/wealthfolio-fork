@@ -1,3 +1,4 @@
+use chrono::Utc;
 use std::{collections::HashSet, sync::Arc};
 
 use super::portfolios_model::{
@@ -6,7 +7,7 @@ use super::portfolios_model::{
 use super::portfolios_traits::{PortfolioRepositoryTrait, PortfolioServiceTrait};
 use crate::accounts::{
     account_in_portfolio_scope, account_supports_portfolio_scope, AccountPurpose,
-    AccountRepositoryTrait,
+    AccountRepositoryTrait, AggregateEligibilityServiceTrait,
 };
 use crate::errors::{DatabaseError, Result, ValidationError};
 use crate::Error;
@@ -24,16 +25,19 @@ fn map_unique_violation(e: Error) -> Error {
 pub struct PortfolioService {
     repository: Arc<dyn PortfolioRepositoryTrait>,
     account_repository: Arc<dyn AccountRepositoryTrait>,
+    aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
 }
 
 impl PortfolioService {
     pub fn new(
         repository: Arc<dyn PortfolioRepositoryTrait>,
         account_repository: Arc<dyn AccountRepositoryTrait>,
+        aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
     ) -> Self {
         Self {
             repository,
             account_repository,
+            aggregate_eligibility_service,
         }
     }
 
@@ -86,6 +90,53 @@ impl PortfolioService {
         ids.retain(|account_id| eligible_ids.contains(account_id));
         Ok(())
     }
+
+    fn resolve_raw_account_filter(&self, filter: &AccountScope) -> Result<Vec<String>> {
+        self.repository.resolve_account_ids(filter)
+    }
+
+    async fn resolve_account_scope_with_as_of(
+        &self,
+        filter: &AccountScope,
+        base_currency: &str,
+        as_of: chrono::NaiveDate,
+    ) -> Result<ResolvedAccountScope> {
+        let mut ids = match filter {
+            AccountScope::Account { account_id } => vec![account_id.clone()],
+            AccountScope::All | AccountScope::Portfolio { .. } | AccountScope::Accounts { .. } => {
+                self.resolve_raw_account_filter(filter)?
+            }
+        };
+        ids.sort();
+        ids.dedup();
+        self.validate_resolved_account_ids_exist(&ids)?;
+        self.retain_portfolio_scope_accounts(&mut ids)?;
+        if !ids.is_empty() {
+            let eligible_ids = self
+                .aggregate_eligibility_service
+                .eligible_account_ids(&ids, as_of)
+                .await?;
+            ids.retain(|account_id| eligible_ids.contains(account_id));
+        }
+
+        let scope_id = match filter {
+            AccountScope::All => "all".to_string(),
+            AccountScope::Account { account_id } => format!("account:{}", account_id),
+            AccountScope::Portfolio { portfolio_id } => format!("portfolio:{}", portfolio_id),
+            AccountScope::Accounts { .. } => {
+                use sha2::{Digest, Sha256};
+                let joined = ids.join("\n");
+                let digest = Sha256::digest(joined.as_bytes());
+                format!("accounts:{}", hex::encode(&digest[..8]))
+            }
+        };
+
+        Ok(ResolvedAccountScope {
+            scope_id,
+            account_ids: ids,
+            base_currency: base_currency.to_string(),
+        })
+    }
 }
 
 #[async_trait::async_trait]
@@ -123,52 +174,32 @@ impl PortfolioServiceTrait for PortfolioService {
         self.repository.list()
     }
 
-    fn resolve_account_filter(&self, filter: &AccountScope) -> Result<Vec<String>> {
-        self.repository.resolve_account_ids(filter)
-    }
-
-    fn resolve_account_scope(
+    async fn resolve_account_scope(
         &self,
         filter: &AccountScope,
         base_currency: &str,
     ) -> Result<ResolvedAccountScope> {
-        let mut ids = match filter {
-            AccountScope::Account { account_id } => vec![account_id.clone()],
-            AccountScope::All | AccountScope::Portfolio { .. } | AccountScope::Accounts { .. } => {
-                self.resolve_account_filter(filter)?
-            }
-        };
-        ids.sort();
-        ids.dedup();
-        self.validate_resolved_account_ids_exist(&ids)?;
-        self.retain_portfolio_scope_accounts(&mut ids)?;
-
-        let scope_id = match filter {
-            AccountScope::All => "all".to_string(),
-            AccountScope::Account { account_id } => format!("account:{}", account_id),
-            AccountScope::Portfolio { portfolio_id } => format!("portfolio:{}", portfolio_id),
-            AccountScope::Accounts { .. } => {
-                use sha2::{Digest, Sha256};
-                let joined = ids.join("\n");
-                let digest = Sha256::digest(joined.as_bytes());
-                format!("accounts:{}", hex::encode(&digest[..8]))
-            }
-        };
-
-        Ok(ResolvedAccountScope {
-            scope_id,
-            account_ids: ids,
-            base_currency: base_currency.to_string(),
-        })
+        self.resolve_account_scope_with_as_of(filter, base_currency, Utc::now().date_naive())
+            .await
     }
 
-    fn resolve_account_scope_for_purpose(
+    async fn resolve_account_scope_as_of(
+        &self,
+        filter: &AccountScope,
+        base_currency: &str,
+        as_of: chrono::NaiveDate,
+    ) -> Result<ResolvedAccountScope> {
+        self.resolve_account_scope_with_as_of(filter, base_currency, as_of)
+            .await
+    }
+
+    async fn resolve_account_scope_for_purpose(
         &self,
         filter: &AccountScope,
         base_currency: &str,
         purpose: AccountPurpose,
     ) -> Result<ResolvedAccountScope> {
-        let mut resolved = self.resolve_account_scope(filter, base_currency)?;
+        let mut resolved = self.resolve_account_scope(filter, base_currency).await?;
         if resolved.account_ids.is_empty() {
             return Ok(resolved);
         }

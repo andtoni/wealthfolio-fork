@@ -36,7 +36,7 @@ use super::dto::{
 };
 use super::mappers::{parse_date, parse_date_optional, snapshot_source_to_string};
 
-fn resolve_scope(
+async fn resolve_scope(
     filter: &AccountScope,
     state: &AppState,
 ) -> Result<ResolvedAccountScope, crate::error::ApiError> {
@@ -44,6 +44,7 @@ fn resolve_scope(
     state
         .portfolio_service
         .resolve_account_scope(filter, &base)
+        .await
         .map_err(crate::error::ApiError::from)
 }
 
@@ -55,7 +56,7 @@ fn unique_preserving_order(account_ids: impl IntoIterator<Item = String>) -> Vec
         .collect()
 }
 
-fn resolve_current_valuation_scope(
+async fn resolve_current_valuation_scope(
     filter: &AccountScope,
     state: &AppState,
 ) -> Result<ResolvedAccountScope, crate::error::ApiError> {
@@ -63,6 +64,7 @@ fn resolve_current_valuation_scope(
     let resolved = state
         .portfolio_service
         .resolve_account_scope(filter, &base)
+        .await
         .map_err(crate::error::ApiError::from)?;
 
     let account_ids = match filter {
@@ -107,7 +109,7 @@ async fn load_holdings_for_filter(
     filter: &AccountScope,
 ) -> ApiResult<Vec<Holding>> {
     let base = state.base_currency.read().unwrap().clone();
-    let resolved = resolve_scope(filter, state)?;
+    let resolved = resolve_scope(filter, state).await?;
     let account_ids = holdings_account_ids(state, &resolved.account_ids)?;
     let holdings = if account_ids.is_empty() {
         Vec::new()
@@ -276,7 +278,8 @@ pub async fn get_historical_valuations(
     }
     let vals = state
         .valuation_service
-        .get_historical_valuations(&account_ids[0], start, end)?;
+        .get_historical_valuations(&account_ids[0], start, end)
+        .await?;
     Ok(Json(vals))
 }
 
@@ -298,14 +301,15 @@ pub async fn get_historical_valuations_for_scope(
                 .map_err(|e| anyhow::anyhow!("Invalid endDate: {}", e))
         })
         .transpose()?;
-    let resolved = resolve_scope(&body.filter, &state)?;
+    let resolved = resolve_scope(&body.filter, &state).await?;
     let account_ids = holdings_account_ids(&state, &resolved.account_ids)?;
     let vals = if account_ids.is_empty() {
         Vec::new()
     } else if account_ids.len() == 1 {
         state
             .valuation_service
-            .get_historical_valuations(&account_ids[0], start, end)?
+            .get_historical_valuations(&account_ids[0], start, end)
+            .await?
     } else {
         state
             .valuation_service
@@ -315,7 +319,8 @@ pub async fn get_historical_valuations_for_scope(
                 &resolved.base_currency,
                 start,
                 end,
-            )?
+            )
+            .await?
     };
     Ok(Json(vals))
 }
@@ -350,7 +355,7 @@ pub async fn get_latest_valuations(
     if ids.is_empty() {
         return Ok(Json(vec![]));
     }
-    let vals = state.valuation_service.get_latest_valuations(&ids)?;
+    let vals = state.valuation_service.get_latest_valuations(&ids).await?;
     Ok(Json(vals))
 }
 
@@ -361,14 +366,14 @@ pub async fn get_current_valuation(
     let base_currency = state.base_currency.read().unwrap().clone();
     let timezone = state.timezone.read().unwrap().clone();
     let latest_snapshot_cutoff = user_today(parse_user_timezone_or_default(&timezone));
-    let resolved = resolve_current_valuation_scope(&body.filter, &state)?;
+    let resolved = resolve_current_valuation_scope(&body.filter, &state).await?;
     let service = CurrentAccountValuationService::new(
         state.account_service.as_ref(),
         state.snapshot_repository.as_ref(),
         state.asset_service.as_ref(),
         state.quote_service.as_ref(),
         state.fx_service.as_ref(),
-        state.verified_receipt_repository.as_ref(),
+        state.aggregate_eligibility_service.as_ref(),
     );
     let valuation = service
         .get_current_valuation_for_scope(
@@ -387,7 +392,7 @@ pub async fn get_portfolio_allocations(
     Json(body): Json<FilterBody>,
 ) -> ApiResult<Json<PortfolioAllocations>> {
     let base = state.base_currency.read().unwrap().clone();
-    let resolved = resolve_scope(&body.filter, &state)?;
+    let resolved = resolve_scope(&body.filter, &state).await?;
     let account_ids = holdings_account_ids(&state, &resolved.account_ids)?;
     let allocations = if account_ids.len() == 1 {
         state
@@ -408,7 +413,7 @@ pub async fn get_holdings_by_allocation(
     Json(body): Json<AllocationFilterBody>,
 ) -> ApiResult<Json<AllocationHoldings>> {
     let base = state.base_currency.read().unwrap().clone();
-    let resolved = resolve_scope(&body.filter, &state)?;
+    let resolved = resolve_scope(&body.filter, &state).await?;
     let account_ids = holdings_account_ids(&state, &resolved.account_ids)?;
     let result = if account_ids.len() == 1 {
         state

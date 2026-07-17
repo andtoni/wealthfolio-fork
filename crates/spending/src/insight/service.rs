@@ -4,9 +4,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Timelike, Utc};
 use rust_decimal::Decimal;
-use wealthfolio_core::accounts::{
-    account_supports_purpose, AccountPurpose, AccountRepositoryTrait,
-};
+use wealthfolio_core::accounts::{AccountRepositoryTrait, AggregateEligibilityServiceTrait};
 use wealthfolio_core::activities::{Activity, ActivityRepositoryTrait};
 use wealthfolio_core::fx::FxServiceTrait;
 use wealthfolio_core::taxonomies::TaxonomyServiceTrait;
@@ -26,6 +24,9 @@ use crate::activity_classification::{
     within_spending_transfer_groups,
 };
 use crate::activity_splits::ActivitySplitRepositoryTrait;
+use crate::aggregate_eligibility::{
+    filter_eligible_activity_rows, resolve_eligible_spending_accounts,
+};
 use crate::budget::service::{
     category_meta, resolve_group_for_category, top_category_id, top_level_categories, TargetIndex,
 };
@@ -56,6 +57,7 @@ pub struct InsightService {
     settings: Arc<SpendingSettingsService>,
     taxonomy_service: Arc<dyn TaxonomyServiceTrait>,
     fx_service: Arc<dyn FxServiceTrait>,
+    aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
 }
 
 impl InsightService {
@@ -69,6 +71,7 @@ impl InsightService {
         settings: Arc<SpendingSettingsService>,
         taxonomy_service: Arc<dyn TaxonomyServiceTrait>,
         fx_service: Arc<dyn FxServiceTrait>,
+        aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
     ) -> Self {
         Self {
             budget_repo,
@@ -79,6 +82,7 @@ impl InsightService {
             settings,
             taxonomy_service,
             fx_service,
+            aggregate_eligibility_service,
         }
     }
 
@@ -121,22 +125,21 @@ impl InsightService {
         if requested.is_empty() {
             return Ok(empty_insight(period, prior, currency));
         }
-        let accounts = self
-            .account_repo
-            .list(None, Some(false), Some(&settings.account_ids))
-            .map_err(|e| anyhow!(e.to_string()))?;
-        let account_types: HashMap<String, String> = accounts
-            .into_iter()
-            .filter(|a| account_supports_purpose(&a.account_type, AccountPurpose::Spending))
-            .map(|a| (a.id, a.account_type))
-            .collect();
-        if account_types.is_empty() {
+        let eligible_accounts = resolve_eligible_spending_accounts(
+            self.account_repo.as_ref(),
+            self.aggregate_eligibility_service.as_ref(),
+            &settings.account_ids,
+            end.date_naive(),
+        )
+        .await?;
+        if eligible_accounts.ids.is_empty() {
             return Ok(empty_insight(period, prior, currency));
         }
-        let all_spending_account_ids: Vec<String> = account_types.keys().cloned().collect();
+        let account_types = eligible_accounts.account_types;
+        let eligible_account_ids: HashSet<String> = eligible_accounts.ids.iter().cloned().collect();
         let account_ids: Vec<String> = requested
             .into_iter()
-            .filter(|id| account_types.contains_key(id))
+            .filter(|id| eligible_account_ids.contains(id))
             .collect();
         if account_ids.is_empty() {
             return Ok(empty_insight(period, prior, currency));
@@ -182,18 +185,24 @@ impl InsightService {
         // ── 4. Fetch activities and partition into current + prior windows ────
         let activities = self
             .activity_repo
-            .get_activities_by_account_ids(&all_spending_account_ids)
+            .get_activities_by_account_ids(&eligible_accounts.ids)
             .map_err(|e| anyhow!(e.to_string()))?;
-        let transfer_context_acts: Vec<&Activity> = activities.iter().collect();
+        let eligible_activities = filter_eligible_activity_rows(
+            self.aggregate_eligibility_service.as_ref(),
+            activities.clone(),
+            &activities,
+        )
+        .await?;
+        let transfer_context_acts: Vec<&Activity> = eligible_activities.iter().collect();
         let transfer_groups = within_spending_transfer_groups(&transfer_context_acts);
         let in_window = |a: &Activity, lo: DateTime<Utc>, hi: DateTime<Utc>| {
             a.activity_date >= lo && a.activity_date <= hi
         };
-        let current_acts: Vec<&Activity> = activities
+        let current_acts: Vec<&Activity> = eligible_activities
             .iter()
             .filter(|a| target_account_ids.contains(&a.account_id) && in_window(a, start, end))
             .collect();
-        let prior_acts: Vec<&Activity> = activities
+        let prior_acts: Vec<&Activity> = eligible_activities
             .iter()
             .filter(|a| {
                 target_account_ids.contains(&a.account_id)
@@ -1541,10 +1550,37 @@ fn empty_insight(period: PeriodMeta, prior: PeriodMeta, currency: &str) -> Spend
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::type_complexity)]
+
     use super::*;
     use async_trait::async_trait;
     use chrono::TimeZone;
+    use std::sync::Mutex;
+    use wealthfolio_core::accounts::{
+        account_types, Account, AccountRepositoryTrait, AccountUpdate,
+        AggregateEligibilityServiceTrait, NewAccount, TrackingMode, ENTITY_ACTIVITY,
+    };
+    use wealthfolio_core::activities::{
+        ActivityBulkMutationResult, ActivitySearchResponse, ActivityStatus, ActivityUpdate,
+        ActivityUpsert, ImportMapping, ImportTemplate, IncomeData, NewActivity, Sort,
+        ACTIVITY_TYPE_TRANSFER_IN, ACTIVITY_TYPE_TRANSFER_OUT,
+    };
     use wealthfolio_core::fx::{ExchangeRate, NewExchangeRate};
+    use wealthfolio_core::limits::ContributionActivity;
+    use wealthfolio_core::taxonomies::{
+        AssetTaxonomyAssignment, Category, NewAssetTaxonomyAssignment, NewCategory, NewTaxonomy,
+        Taxonomy, TaxonomyWithCategories,
+    };
+
+    use crate::activity_assignments::{ActivityTaxonomyAssignment, NewActivityTaxonomyAssignment};
+    use crate::activity_splits::{ActivitySplit, NewActivitySplit};
+    use crate::budget::{
+        BudgetGroup, BudgetGroupAssignment, BudgetRolloverSetting, BudgetTarget, NewBudgetGroup,
+        NewBudgetGroupAssignment, NewBudgetRolloverSetting, NewBudgetTarget, UpdateBudgetGroup,
+    };
+    use crate::settings::{
+        SpendingSettingsRepositoryTrait, SETTING_KEY_ACCOUNT_IDS, SETTING_KEY_ENABLED,
+    };
 
     fn dt(y: i32, m: u32, d: u32) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(y, m, d, 0, 0, 0).unwrap()
@@ -1634,6 +1670,969 @@ mod tests {
         PassthroughFx {
             fail_cross_currency: true,
         }
+    }
+
+    fn account(id: &str, account_type: &str) -> Account {
+        Account {
+            include_in_net_worth: true,
+            id: id.to_string(),
+            name: id.to_string(),
+            name_source: "manual".to_string(),
+            account_type: account_type.to_string(),
+            group: None,
+            currency: "USD".to_string(),
+            is_default: false,
+            is_active: true,
+            created_at: Utc::now().naive_utc(),
+            updated_at: Utc::now().naive_utc(),
+            platform_id: None,
+            account_number: None,
+            meta: None,
+            provider: None,
+            provider_account_id: None,
+            is_archived: false,
+            tracking_mode: TrackingMode::Transactions,
+        }
+    }
+
+    fn insight_activity(
+        id: &str,
+        account_id: &str,
+        activity_type: &str,
+        amount: i64,
+        date: DateTime<Utc>,
+    ) -> Activity {
+        Activity {
+            id: id.to_string(),
+            account_id: account_id.to_string(),
+            asset_id: None,
+            activity_type: activity_type.to_string(),
+            activity_type_override: None,
+            source_type: None,
+            subtype: None,
+            status: ActivityStatus::Posted,
+            activity_date: date,
+            settlement_date: None,
+            quantity: None,
+            unit_price: None,
+            amount: Some(Decimal::new(amount, 0)),
+            fee: None,
+            tax: None,
+            currency: "USD".to_string(),
+            fx_rate: None,
+            notes: None,
+            metadata: None::<serde_json::Value>,
+            source_system: None,
+            source_record_id: None,
+            source_group_id: None,
+            idempotency_key: None,
+            import_run_id: None,
+            is_user_modified: false,
+            needs_review: false,
+            created_at: date,
+            updated_at: date,
+        }
+    }
+
+    #[derive(Default)]
+    struct MockSettingsRepo {
+        account_ids: Vec<String>,
+    }
+
+    #[async_trait]
+    impl SpendingSettingsRepositoryTrait for MockSettingsRepo {
+        async fn get_setting(&self, key: &str) -> Result<Option<String>> {
+            match key {
+                SETTING_KEY_ENABLED => Ok(Some("true".to_string())),
+                SETTING_KEY_ACCOUNT_IDS => Ok(Some(serde_json::to_string(&self.account_ids)?)),
+                _ => Ok(None),
+            }
+        }
+
+        async fn set_setting(&self, _: &str, _: &str) -> Result<()> {
+            unimplemented!()
+        }
+
+        async fn set_settings(&self, _: Vec<(String, String)>) -> Result<()> {
+            unimplemented!()
+        }
+    }
+
+    struct MockAccountRepo {
+        accounts: Vec<Account>,
+    }
+
+    #[async_trait]
+    impl AccountRepositoryTrait for MockAccountRepo {
+        async fn create(&self, _: NewAccount) -> wealthfolio_core::Result<Account> {
+            unimplemented!()
+        }
+        async fn update(&self, _: AccountUpdate) -> wealthfolio_core::Result<Account> {
+            unimplemented!()
+        }
+        async fn delete(&self, _: &str) -> wealthfolio_core::Result<usize> {
+            unimplemented!()
+        }
+        fn get_by_id(&self, _: &str) -> wealthfolio_core::Result<Account> {
+            unimplemented!()
+        }
+        fn list(
+            &self,
+            is_active_filter: Option<bool>,
+            is_archived_filter: Option<bool>,
+            account_ids: Option<&[String]>,
+        ) -> wealthfolio_core::Result<Vec<Account>> {
+            Ok(self
+                .accounts
+                .iter()
+                .filter(|account| {
+                    account_ids
+                        .map(|ids| ids.iter().any(|id| id == &account.id))
+                        .unwrap_or(true)
+                        && is_active_filter
+                            .map(|active| active == account.is_active)
+                            .unwrap_or(true)
+                        && is_archived_filter
+                            .map(|archived| archived == account.is_archived)
+                            .unwrap_or(true)
+                })
+                .cloned()
+                .collect())
+        }
+    }
+
+    #[derive(Default)]
+    struct MockEligibility {
+        allowed_accounts: Mutex<HashSet<String>>,
+        allowed_activity_ids: Mutex<HashSet<String>>,
+        fail_accounts: Mutex<bool>,
+        fail_rows: Mutex<bool>,
+        account_calls: Mutex<Vec<(Vec<String>, NaiveDate)>>,
+        row_calls: Mutex<Vec<(String, Vec<(String, NaiveDate)>)>>,
+    }
+
+    #[async_trait]
+    impl AggregateEligibilityServiceTrait for MockEligibility {
+        async fn eligible_account_ids(
+            &self,
+            requested_account_ids: &[String],
+            as_of: NaiveDate,
+        ) -> wealthfolio_core::Result<HashSet<String>> {
+            self.account_calls
+                .lock()
+                .unwrap()
+                .push((requested_account_ids.to_vec(), as_of));
+            if *self.fail_accounts.lock().unwrap() {
+                return Err(wealthfolio_core::Error::Validation(
+                    wealthfolio_core::errors::ValidationError::InvalidInput(
+                        "account policy failed".to_string(),
+                    ),
+                ));
+            }
+            let allowed = self.allowed_accounts.lock().unwrap();
+            Ok(requested_account_ids
+                .iter()
+                .filter(|id| allowed.contains(*id))
+                .cloned()
+                .collect())
+        }
+
+        async fn eligible_entity_ids_for_rows(
+            &self,
+            entity_type: &str,
+            rows: &[(String, NaiveDate)],
+        ) -> wealthfolio_core::Result<HashSet<String>> {
+            self.row_calls
+                .lock()
+                .unwrap()
+                .push((entity_type.to_string(), rows.to_vec()));
+            if *self.fail_rows.lock().unwrap() {
+                return Err(wealthfolio_core::Error::Validation(
+                    wealthfolio_core::errors::ValidationError::InvalidInput(
+                        "row policy failed".to_string(),
+                    ),
+                ));
+            }
+            let allowed = self.allowed_activity_ids.lock().unwrap();
+            Ok(rows
+                .iter()
+                .filter(|(id, _)| allowed.contains(id))
+                .map(|(id, _)| id.clone())
+                .collect())
+        }
+    }
+
+    struct MockActivityRepo {
+        activities: Vec<Activity>,
+    }
+
+    #[async_trait]
+    impl ActivityRepositoryTrait for MockActivityRepo {
+        fn get_activity(&self, activity_id: &str) -> wealthfolio_core::Result<Activity> {
+            self.activities
+                .iter()
+                .find(|activity| activity.id == activity_id)
+                .cloned()
+                .ok_or_else(|| {
+                    wealthfolio_core::Error::Validation(
+                        wealthfolio_core::errors::ValidationError::InvalidInput(
+                            "not found".to_string(),
+                        ),
+                    )
+                })
+        }
+        fn find_transfer_counterpart(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> wealthfolio_core::Result<Option<Activity>> {
+            Ok(None)
+        }
+        fn get_activities(&self) -> wealthfolio_core::Result<Vec<Activity>> {
+            Ok(self.activities.clone())
+        }
+        fn get_activities_by_account_id(
+            &self,
+            account_id: &str,
+        ) -> wealthfolio_core::Result<Vec<Activity>> {
+            Ok(self
+                .activities
+                .iter()
+                .filter(|activity| activity.account_id == account_id)
+                .cloned()
+                .collect())
+        }
+        fn get_activities_by_account_ids(
+            &self,
+            account_ids: &[String],
+        ) -> wealthfolio_core::Result<Vec<Activity>> {
+            Ok(self
+                .activities
+                .iter()
+                .filter(|activity| account_ids.iter().any(|id| id == &activity.account_id))
+                .cloned()
+                .collect())
+        }
+        fn get_trading_activities(&self) -> wealthfolio_core::Result<Vec<Activity>> {
+            unimplemented!()
+        }
+        fn get_income_activities(&self) -> wealthfolio_core::Result<Vec<Activity>> {
+            unimplemented!()
+        }
+        fn get_contribution_activities(
+            &self,
+            _: &[String],
+            _: DateTime<Utc>,
+            _: DateTime<Utc>,
+        ) -> wealthfolio_core::Result<Vec<ContributionActivity>> {
+            unimplemented!()
+        }
+        fn search_activities(
+            &self,
+            _: i64,
+            _: i64,
+            _: Option<Vec<String>>,
+            _: Option<Vec<String>>,
+            _: Option<String>,
+            _: Option<Sort>,
+            _: Option<bool>,
+            _: Option<NaiveDate>,
+            _: Option<NaiveDate>,
+            _: Option<Vec<String>>,
+            _: Option<Vec<String>>,
+        ) -> wealthfolio_core::Result<ActivitySearchResponse> {
+            unimplemented!()
+        }
+        async fn create_activity(&self, _: NewActivity) -> wealthfolio_core::Result<Activity> {
+            unimplemented!()
+        }
+        async fn update_activity(&self, _: ActivityUpdate) -> wealthfolio_core::Result<Activity> {
+            unimplemented!()
+        }
+        async fn delete_activity(&self, _: String) -> wealthfolio_core::Result<Activity> {
+            unimplemented!()
+        }
+        async fn link_transfer_activities(
+            &self,
+            _: String,
+            _: String,
+        ) -> wealthfolio_core::Result<(Activity, Activity)> {
+            unimplemented!()
+        }
+        async fn unlink_transfer_activities(
+            &self,
+            _: String,
+            _: String,
+        ) -> wealthfolio_core::Result<(Activity, Activity)> {
+            unimplemented!()
+        }
+        async fn bulk_mutate_activities(
+            &self,
+            _: Vec<NewActivity>,
+            _: Vec<ActivityUpdate>,
+            _: Vec<String>,
+        ) -> wealthfolio_core::Result<ActivityBulkMutationResult> {
+            unimplemented!()
+        }
+        async fn create_activities(&self, _: Vec<NewActivity>) -> wealthfolio_core::Result<usize> {
+            unimplemented!()
+        }
+        fn get_first_activity_date(
+            &self,
+            _: Option<&[String]>,
+        ) -> wealthfolio_core::Result<Option<DateTime<Utc>>> {
+            unimplemented!()
+        }
+        fn get_import_mapping(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> wealthfolio_core::Result<Option<ImportMapping>> {
+            unimplemented!()
+        }
+        async fn save_import_mapping(&self, _: &ImportMapping) -> wealthfolio_core::Result<()> {
+            unimplemented!()
+        }
+        async fn link_account_template(
+            &self,
+            _: &str,
+            _: &str,
+            _: &str,
+        ) -> wealthfolio_core::Result<()> {
+            unimplemented!()
+        }
+        fn list_import_templates(&self) -> wealthfolio_core::Result<Vec<ImportTemplate>> {
+            unimplemented!()
+        }
+        fn get_import_template(&self, _: &str) -> wealthfolio_core::Result<Option<ImportTemplate>> {
+            unimplemented!()
+        }
+        async fn save_import_template(&self, _: &ImportTemplate) -> wealthfolio_core::Result<()> {
+            unimplemented!()
+        }
+        async fn delete_import_template(&self, _: &str) -> wealthfolio_core::Result<()> {
+            unimplemented!()
+        }
+        fn get_broker_sync_profile(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> wealthfolio_core::Result<Option<ImportTemplate>> {
+            unimplemented!()
+        }
+        async fn save_broker_sync_profile(
+            &self,
+            _: &ImportTemplate,
+        ) -> wealthfolio_core::Result<()> {
+            unimplemented!()
+        }
+        async fn link_broker_sync_profile(
+            &self,
+            _: &str,
+            _: &str,
+            _: &str,
+        ) -> wealthfolio_core::Result<()> {
+            unimplemented!()
+        }
+        fn calculate_average_cost(&self, _: &str, _: &str) -> wealthfolio_core::Result<Decimal> {
+            unimplemented!()
+        }
+        fn get_income_activities_data(
+            &self,
+            _: Option<&[String]>,
+        ) -> wealthfolio_core::Result<Vec<IncomeData>> {
+            unimplemented!()
+        }
+        fn get_first_activity_date_overall(&self) -> wealthfolio_core::Result<DateTime<Utc>> {
+            unimplemented!()
+        }
+        fn get_activity_bounds_for_assets(
+            &self,
+            _: &[String],
+        ) -> wealthfolio_core::Result<HashMap<String, (Option<NaiveDate>, Option<NaiveDate>)>>
+        {
+            unimplemented!()
+        }
+        fn get_holdings_snapshot_bounds_for_assets(
+            &self,
+            _: &[String],
+        ) -> wealthfolio_core::Result<HashMap<String, (Option<NaiveDate>, Option<NaiveDate>)>>
+        {
+            unimplemented!()
+        }
+        fn check_existing_duplicates(
+            &self,
+            _: &[String],
+        ) -> wealthfolio_core::Result<HashMap<String, String>> {
+            unimplemented!()
+        }
+        async fn bulk_upsert(
+            &self,
+            _: Vec<ActivityUpsert>,
+        ) -> wealthfolio_core::Result<wealthfolio_core::activities::BulkUpsertResult> {
+            unimplemented!()
+        }
+        async fn reassign_asset(&self, _: &str, _: &str) -> wealthfolio_core::Result<u32> {
+            unimplemented!()
+        }
+        async fn get_activity_accounts_and_currencies_by_asset_id(
+            &self,
+            _: &str,
+        ) -> wealthfolio_core::Result<(Vec<String>, Vec<String>)> {
+            unimplemented!()
+        }
+    }
+
+    #[derive(Default)]
+    struct MockAssignmentRepo {
+        calls: Mutex<Vec<Vec<String>>>,
+    }
+
+    #[async_trait]
+    impl ActivityTaxonomyAssignmentRepositoryTrait for MockAssignmentRepo {
+        async fn list_for_activity(&self, _: &str) -> Result<Vec<ActivityTaxonomyAssignment>> {
+            unimplemented!()
+        }
+        async fn list_for_activities(
+            &self,
+            activity_ids: &[String],
+        ) -> Result<Vec<ActivityTaxonomyAssignment>> {
+            self.calls.lock().unwrap().push(activity_ids.to_vec());
+            Ok(Vec::new())
+        }
+        async fn upsert(
+            &self,
+            _: NewActivityTaxonomyAssignment,
+        ) -> Result<ActivityTaxonomyAssignment> {
+            unimplemented!()
+        }
+        async fn assign_many_single_select(
+            &self,
+            _: Vec<NewActivityTaxonomyAssignment>,
+        ) -> Result<Vec<ActivityTaxonomyAssignment>> {
+            unimplemented!()
+        }
+        async fn assign_many_single_select_clearing_splits(
+            &self,
+            _: Vec<NewActivityTaxonomyAssignment>,
+        ) -> Result<Vec<ActivityTaxonomyAssignment>> {
+            unimplemented!()
+        }
+        async fn assign_rule_many_single_select(
+            &self,
+            _: Vec<NewActivityTaxonomyAssignment>,
+            _: bool,
+        ) -> Result<Vec<ActivityTaxonomyAssignment>> {
+            unimplemented!()
+        }
+        async fn delete(&self, _: &str) -> Result<()> {
+            unimplemented!()
+        }
+        async fn clear_for_taxonomy(&self, _: &str, _: &str) -> Result<()> {
+            unimplemented!()
+        }
+    }
+
+    #[derive(Default)]
+    struct MockSplitRepo {
+        calls: Mutex<Vec<Vec<String>>>,
+    }
+
+    #[async_trait]
+    impl ActivitySplitRepositoryTrait for MockSplitRepo {
+        async fn list_for_activity(&self, _: &str) -> Result<Vec<ActivitySplit>> {
+            unimplemented!()
+        }
+        async fn list_for_activities(&self, activity_ids: &[String]) -> Result<Vec<ActivitySplit>> {
+            self.calls.lock().unwrap().push(activity_ids.to_vec());
+            Ok(Vec::new())
+        }
+        async fn categories_belong_to_taxonomy(&self, _: &str, _: &[String]) -> Result<bool> {
+            unimplemented!()
+        }
+        async fn replace_for_activity(
+            &self,
+            _: &str,
+            _: Vec<NewActivitySplit>,
+        ) -> Result<Vec<ActivitySplit>> {
+            unimplemented!()
+        }
+        async fn replace_for_activity_clearing_assignment(
+            &self,
+            _: &str,
+            _: &str,
+            _: Vec<NewActivitySplit>,
+        ) -> Result<Vec<ActivitySplit>> {
+            unimplemented!()
+        }
+        async fn clear_for_activity(&self, _: &str) -> Result<()> {
+            unimplemented!()
+        }
+    }
+
+    struct MockBudgetRepo;
+
+    #[async_trait]
+    impl BudgetRepositoryTrait for MockBudgetRepo {
+        async fn list_groups(&self) -> Result<Vec<BudgetGroup>> {
+            Ok(vec![BudgetGroup {
+                id: "other-group".to_string(),
+                name: "Other".to_string(),
+                key: OTHER_GROUP_KEY.to_string(),
+                color: None,
+                icon: None,
+                sort_order: 0,
+                is_system: true,
+                created_at: Utc::now().naive_utc(),
+                updated_at: Utc::now().naive_utc(),
+            }])
+        }
+        async fn create_group(&self, _: NewBudgetGroup) -> Result<BudgetGroup> {
+            unimplemented!()
+        }
+        async fn update_group(&self, _: &str, _: UpdateBudgetGroup) -> Result<BudgetGroup> {
+            unimplemented!()
+        }
+        async fn delete_group(&self, _: &str) -> Result<()> {
+            unimplemented!()
+        }
+        async fn delete_group_and_reassign(
+            &self,
+            _: &str,
+            _: &str,
+            _: Vec<NewBudgetGroupAssignment>,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+        async fn upsert_system_groups(&self, _: Vec<NewBudgetGroup>) -> Result<Vec<BudgetGroup>> {
+            unimplemented!()
+        }
+        async fn list_group_assignments(&self) -> Result<Vec<BudgetGroupAssignment>> {
+            Ok(Vec::new())
+        }
+        async fn upsert_group_assignment(
+            &self,
+            _: NewBudgetGroupAssignment,
+        ) -> Result<BudgetGroupAssignment> {
+            unimplemented!()
+        }
+        async fn upsert_group_assignments(
+            &self,
+            _: Vec<NewBudgetGroupAssignment>,
+        ) -> Result<Vec<BudgetGroupAssignment>> {
+            unimplemented!()
+        }
+        async fn upsert_system_group_assignments(
+            &self,
+            _: Vec<NewBudgetGroupAssignment>,
+        ) -> Result<Vec<BudgetGroupAssignment>> {
+            unimplemented!()
+        }
+        async fn list_targets(&self) -> Result<Vec<BudgetTarget>> {
+            Ok(Vec::new())
+        }
+        async fn upsert_target(&self, _: NewBudgetTarget) -> Result<BudgetTarget> {
+            unimplemented!()
+        }
+        async fn delete_target(&self, _: &str) -> Result<()> {
+            unimplemented!()
+        }
+        async fn list_rollover_settings(&self) -> Result<Vec<BudgetRolloverSetting>> {
+            Ok(Vec::new())
+        }
+        async fn upsert_rollover_setting(
+            &self,
+            _: NewBudgetRolloverSetting,
+        ) -> Result<BudgetRolloverSetting> {
+            unimplemented!()
+        }
+        async fn delete_rollover_setting(&self, _: &str) -> Result<()> {
+            unimplemented!()
+        }
+        async fn disable_category_rollovers(
+            &self,
+            _: &str,
+            _: &[String],
+        ) -> Result<Vec<BudgetRolloverSetting>> {
+            unimplemented!()
+        }
+        async fn copy_period_targets(
+            &self,
+            _: &str,
+            _: &str,
+            _: bool,
+        ) -> Result<Vec<BudgetTarget>> {
+            unimplemented!()
+        }
+    }
+
+    struct MockTaxonomyService;
+
+    #[async_trait]
+    impl TaxonomyServiceTrait for MockTaxonomyService {
+        fn get_taxonomies(&self) -> wealthfolio_core::Result<Vec<Taxonomy>> {
+            Ok(Vec::new())
+        }
+        fn get_taxonomy(
+            &self,
+            _: &str,
+        ) -> wealthfolio_core::Result<Option<TaxonomyWithCategories>> {
+            Ok(None)
+        }
+        fn get_taxonomies_with_categories(
+            &self,
+        ) -> wealthfolio_core::Result<Vec<TaxonomyWithCategories>> {
+            Ok(Vec::new())
+        }
+        async fn create_taxonomy(&self, _: NewTaxonomy) -> wealthfolio_core::Result<Taxonomy> {
+            unimplemented!()
+        }
+        async fn update_taxonomy(&self, _: Taxonomy) -> wealthfolio_core::Result<Taxonomy> {
+            unimplemented!()
+        }
+        async fn delete_taxonomy(&self, _: &str) -> wealthfolio_core::Result<usize> {
+            unimplemented!()
+        }
+        async fn create_category(&self, _: NewCategory) -> wealthfolio_core::Result<Category> {
+            unimplemented!()
+        }
+        async fn update_category(&self, _: Category) -> wealthfolio_core::Result<Category> {
+            unimplemented!()
+        }
+        async fn delete_category(&self, _: &str, _: &str) -> wealthfolio_core::Result<usize> {
+            unimplemented!()
+        }
+        async fn move_category(
+            &self,
+            _: &str,
+            _: &str,
+            _: Option<String>,
+            _: i32,
+        ) -> wealthfolio_core::Result<Category> {
+            unimplemented!()
+        }
+        async fn import_taxonomy_json(&self, _: &str) -> wealthfolio_core::Result<Taxonomy> {
+            unimplemented!()
+        }
+        fn export_taxonomy_json(&self, _: &str) -> wealthfolio_core::Result<String> {
+            unimplemented!()
+        }
+        fn get_asset_assignments(
+            &self,
+            _: &str,
+        ) -> wealthfolio_core::Result<Vec<AssetTaxonomyAssignment>> {
+            unimplemented!()
+        }
+        fn get_category_assignments(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> wealthfolio_core::Result<Vec<AssetTaxonomyAssignment>> {
+            unimplemented!()
+        }
+        async fn assign_asset_to_category(
+            &self,
+            _: NewAssetTaxonomyAssignment,
+        ) -> wealthfolio_core::Result<AssetTaxonomyAssignment> {
+            unimplemented!()
+        }
+        async fn replace_asset_taxonomy_assignments(
+            &self,
+            _: &str,
+            _: &str,
+            _: Vec<NewAssetTaxonomyAssignment>,
+        ) -> wealthfolio_core::Result<Vec<AssetTaxonomyAssignment>> {
+            unimplemented!()
+        }
+        async fn remove_asset_assignment(&self, _: &str) -> wealthfolio_core::Result<usize> {
+            unimplemented!()
+        }
+    }
+
+    struct TestInsight {
+        service: InsightService,
+        eligibility: Arc<MockEligibility>,
+        assignments: Arc<MockAssignmentRepo>,
+        splits: Arc<MockSplitRepo>,
+    }
+
+    fn make_insight_service(
+        activities: Vec<Activity>,
+        accounts: Vec<Account>,
+        settings_account_ids: Vec<String>,
+        allowed_accounts: Vec<String>,
+        allowed_activity_ids: Vec<String>,
+    ) -> TestInsight {
+        let activity_repo = Arc::new(MockActivityRepo { activities });
+        let assignments = Arc::new(MockAssignmentRepo::default());
+        let splits = Arc::new(MockSplitRepo::default());
+        let settings = Arc::new(SpendingSettingsService::new(Arc::new(MockSettingsRepo {
+            account_ids: settings_account_ids,
+        })));
+        let eligibility = Arc::new(MockEligibility::default());
+        *eligibility.allowed_accounts.lock().unwrap() = allowed_accounts.into_iter().collect();
+        *eligibility.allowed_activity_ids.lock().unwrap() =
+            allowed_activity_ids.into_iter().collect();
+
+        TestInsight {
+            service: InsightService::new(
+                Arc::new(MockBudgetRepo),
+                activity_repo,
+                Arc::new(MockAccountRepo { accounts }),
+                assignments.clone(),
+                splits.clone(),
+                settings,
+                Arc::new(MockTaxonomyService),
+                Arc::new(fx()),
+                eligibility.clone(),
+            ),
+            eligibility,
+            assignments,
+            splits,
+        }
+    }
+
+    fn insight_req() -> SpendingInsightRequest {
+        SpendingInsightRequest {
+            start_date: "2026-07-01T00:00:00Z".to_string(),
+            end_date: "2026-07-31T23:59:59Z".to_string(),
+            compare_start_date: Some("2026-06-01T00:00:00Z".to_string()),
+            compare_end_date: Some("2026-06-30T23:59:59Z".to_string()),
+            account_ids: None,
+            compare: Some(CompareMode::Prior),
+        }
+    }
+
+    #[tokio::test]
+    async fn insight_filters_rows_before_current_prior_assignments_and_series() {
+        let current = insight_activity("current", "cash", "WITHDRAWAL", 100, dt(2026, 7, 10));
+        let current_denied =
+            insight_activity("current-denied", "cash", "WITHDRAWAL", 200, dt(2026, 7, 11));
+        let prior = insight_activity("prior", "cash", "WITHDRAWAL", 50, dt(2026, 6, 10));
+        let prior_denied =
+            insight_activity("prior-denied", "cash", "WITHDRAWAL", 80, dt(2026, 6, 11));
+        let insight = make_insight_service(
+            vec![current, current_denied, prior, prior_denied],
+            vec![account("cash", account_types::CASH)],
+            vec!["cash".to_string()],
+            vec!["cash".to_string()],
+            vec!["current".to_string(), "prior".to_string()],
+        );
+
+        let report = insight
+            .service
+            .compute(insight_req(), "USD", "UTC")
+            .await
+            .unwrap();
+
+        assert_eq!(report.headline.spent, 100.0);
+        assert_eq!(report.headline.prior_spent, 50.0);
+        assert_eq!(
+            report.by_day.iter().map(|bucket| bucket.spent).sum::<f64>(),
+            100.0
+        );
+        assert_eq!(report.by_month[0].spent, 100.0);
+        assert_eq!(
+            insight.assignments.calls.lock().unwrap().as_slice(),
+            &[vec!["current".to_string(), "prior".to_string()]]
+        );
+        assert_eq!(
+            insight.splits.calls.lock().unwrap().as_slice(),
+            &[vec!["current".to_string(), "prior".to_string()]]
+        );
+        assert_eq!(
+            insight.eligibility.account_calls.lock().unwrap().as_slice(),
+            &[(
+                vec!["cash".to_string()],
+                NaiveDate::from_ymd_opt(2026, 7, 31).unwrap(),
+            )]
+        );
+        assert_eq!(
+            insight.eligibility.row_calls.lock().unwrap().as_slice(),
+            &[(
+                ENTITY_ACTIVITY.to_string(),
+                vec![
+                    (
+                        "current".to_string(),
+                        NaiveDate::from_ymd_opt(2026, 7, 10).unwrap()
+                    ),
+                    (
+                        "current-denied".to_string(),
+                        NaiveDate::from_ymd_opt(2026, 7, 11).unwrap()
+                    ),
+                    (
+                        "prior".to_string(),
+                        NaiveDate::from_ymd_opt(2026, 6, 10).unwrap()
+                    ),
+                    (
+                        "prior-denied".to_string(),
+                        NaiveDate::from_ymd_opt(2026, 6, 11).unwrap()
+                    ),
+                ],
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn insight_account_gate_excludes_denied_account_before_row_batch() {
+        let allowed = insight_activity("allowed-row", "cash", "WITHDRAWAL", 100, dt(2026, 7, 10));
+        let denied = insight_activity(
+            "denied-account-row",
+            "other",
+            "WITHDRAWAL",
+            200,
+            dt(2026, 7, 10),
+        );
+        let insight = make_insight_service(
+            vec![allowed, denied],
+            vec![
+                account("cash", account_types::CASH),
+                account("other", account_types::CASH),
+            ],
+            vec!["cash".to_string(), "other".to_string()],
+            vec!["cash".to_string()],
+            vec!["allowed-row".to_string(), "denied-account-row".to_string()],
+        );
+
+        let report = insight
+            .service
+            .compute(insight_req(), "USD", "UTC")
+            .await
+            .unwrap();
+
+        assert_eq!(report.headline.spent, 100.0);
+        assert_eq!(
+            insight.eligibility.account_calls.lock().unwrap().as_slice(),
+            &[(
+                vec!["cash".to_string(), "other".to_string()],
+                NaiveDate::from_ymd_opt(2026, 7, 31).unwrap(),
+            )]
+        );
+        assert_eq!(
+            insight.eligibility.row_calls.lock().unwrap()[0].1,
+            vec![(
+                "allowed-row".to_string(),
+                NaiveDate::from_ymd_opt(2026, 7, 10).unwrap()
+            )]
+        );
+        assert_eq!(
+            insight.assignments.calls.lock().unwrap().as_slice(),
+            &[vec!["allowed-row".to_string()]]
+        );
+    }
+
+    #[tokio::test]
+    async fn insight_filters_mixed_role_rows_on_same_account() {
+        let live = insight_activity("live-row", "cash", "WITHDRAWAL", 100, dt(2026, 7, 10));
+        let contextual =
+            insight_activity("contextual-row", "cash", "WITHDRAWAL", 300, dt(2026, 7, 11));
+        let insight = make_insight_service(
+            vec![live, contextual],
+            vec![account("cash", account_types::CASH)],
+            vec!["cash".to_string()],
+            vec!["cash".to_string()],
+            vec!["live-row".to_string()],
+        );
+
+        let report = insight
+            .service
+            .compute(insight_req(), "USD", "UTC")
+            .await
+            .unwrap();
+
+        assert_eq!(report.headline.spent, 100.0);
+        assert_eq!(
+            insight.assignments.calls.lock().unwrap().as_slice(),
+            &[vec!["live-row".to_string()]]
+        );
+    }
+
+    #[tokio::test]
+    async fn insight_transfer_pair_is_all_or_none() {
+        let mut transfer_in = insight_activity(
+            "transfer-in",
+            "cash-a",
+            ACTIVITY_TYPE_TRANSFER_IN,
+            100,
+            dt(2026, 7, 10),
+        );
+        transfer_in.source_group_id = Some("pair".to_string());
+        let mut transfer_out = insight_activity(
+            "transfer-out",
+            "cash-b",
+            ACTIVITY_TYPE_TRANSFER_OUT,
+            100,
+            dt(2026, 7, 10),
+        );
+        transfer_out.source_group_id = Some("pair".to_string());
+        let insight = make_insight_service(
+            vec![transfer_in, transfer_out],
+            vec![
+                account("cash-a", account_types::CASH),
+                account("cash-b", account_types::CASH),
+            ],
+            vec!["cash-a".to_string(), "cash-b".to_string()],
+            vec!["cash-a".to_string(), "cash-b".to_string()],
+            vec!["transfer-in".to_string()],
+        );
+
+        let report = insight
+            .service
+            .compute(insight_req(), "USD", "UTC")
+            .await
+            .unwrap();
+
+        assert_eq!(report.headline.spent, 0.0);
+        assert_eq!(
+            insight.assignments.calls.lock().unwrap().as_slice(),
+            &[Vec::<String>::new()]
+        );
+    }
+
+    #[tokio::test]
+    async fn insight_propagates_row_policy_error_before_joins() {
+        let row = insight_activity("row", "cash", "WITHDRAWAL", 100, dt(2026, 7, 10));
+        let insight = make_insight_service(
+            vec![row],
+            vec![account("cash", account_types::CASH)],
+            vec!["cash".to_string()],
+            vec!["cash".to_string()],
+            vec!["row".to_string()],
+        );
+        *insight.eligibility.fail_rows.lock().unwrap() = true;
+
+        let err = insight
+            .service
+            .compute(insight_req(), "USD", "UTC")
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("row policy failed"));
+        assert!(insight.assignments.calls.lock().unwrap().is_empty());
+        assert!(insight.splits.calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn insight_propagates_account_policy_error_before_activity_rows() {
+        let row = insight_activity("row", "cash", "WITHDRAWAL", 100, dt(2026, 7, 10));
+        let insight = make_insight_service(
+            vec![row],
+            vec![account("cash", account_types::CASH)],
+            vec!["cash".to_string()],
+            vec!["cash".to_string()],
+            vec!["row".to_string()],
+        );
+        *insight.eligibility.fail_accounts.lock().unwrap() = true;
+
+        let err = insight
+            .service
+            .compute(insight_req(), "USD", "UTC")
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("account policy failed"));
+        assert!(insight.eligibility.row_calls.lock().unwrap().is_empty());
+        assert!(insight.assignments.calls.lock().unwrap().is_empty());
     }
 
     // ── PeriodMeta + months_in_window ─────────────────────────────────────────

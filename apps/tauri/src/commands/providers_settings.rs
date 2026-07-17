@@ -71,7 +71,6 @@ pub async fn list_provider_connections() -> Result<Vec<ProviderConnectionStatus>
     ])
 }
 
-
 #[tauri::command]
 pub async fn start_provider_connection(provider: String) -> Result<(), String> {
     Err(format!(

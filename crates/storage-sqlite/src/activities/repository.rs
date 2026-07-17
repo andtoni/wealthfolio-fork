@@ -49,6 +49,56 @@ pub struct ActivityRepository {
     writer: WriteHandle,
 }
 
+#[derive(QueryableByName, Debug)]
+struct RawIncomeData {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub date: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub income_type: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub asset_id: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub asset_kind: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub symbol: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub symbol_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub currency: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub account_id: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub account_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub account_type: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub amount: String,
+}
+
+fn raw_income_data_to_income_data(raw_results: Vec<RawIncomeData>) -> Result<Vec<IncomeData>> {
+    raw_results
+        .into_iter()
+        .filter_map(|raw| {
+            if !account_supports_purpose(&raw.account_type, AccountPurpose::Income) {
+                return None;
+            }
+            let amount = Decimal::from_str(&raw.amount).unwrap_or_else(|_| Decimal::zero());
+            Some(Ok(IncomeData {
+                date: raw.date,
+                income_type: raw.income_type,
+                asset_id: raw.asset_id,
+                asset_kind: raw.asset_kind,
+                symbol: raw.symbol,
+                symbol_name: raw.symbol_name,
+                currency: raw.currency,
+                amount,
+                account_id: raw.account_id,
+                account_name: raw.account_name,
+            }))
+        })
+        .collect::<Result<Vec<IncomeData>>>()
+}
+
 fn apply_decimal_patch(existing: Option<String>, patch: Option<Option<Decimal>>) -> Option<String> {
     match patch {
         None => existing,
@@ -2049,7 +2099,11 @@ impl ActivityRepositoryTrait for ActivityRepository {
 
         let query = format!(
             "SELECT strftime('%Y-%m', a.activity_date) as date,
-             a.activity_type as income_type,
+             CASE
+                 WHEN a.activity_type = 'INTEREST' AND UPPER(a.subtype) = 'STAKING_REWARD' THEN 'STAKING'
+                 WHEN a.activity_type = 'DIVIDEND' AND UPPER(a.subtype) = 'DRIP' THEN 'DRIP'
+                 ELSE a.activity_type
+             END as income_type,
              COALESCE(a.asset_id, 'CASH') as asset_id,
              COALESCE(ast.kind, 'CASH') as asset_kind,
              COALESCE(ast.display_code, 'CASH') as symbol,
@@ -2139,6 +2193,65 @@ impl ActivityRepositoryTrait for ActivityRepository {
             .collect::<Result<Vec<IncomeData>>>()?; // Collect into Result
 
         Ok(results)
+    }
+
+    fn get_income_activities_data_for_activity_ids(
+        &self,
+        activity_ids: &[String],
+    ) -> Result<Vec<IncomeData>> {
+        if activity_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut conn = get_connection(&self.pool)?;
+        let activity_ids_json = serde_json::to_string(activity_ids)
+            .map_err(|e| ActivityError::InvalidData(e.to_string()))?;
+
+        let query = "SELECT strftime('%Y-%m', a.activity_date) as date,
+             CASE
+                 WHEN a.activity_type = 'INTEREST' AND UPPER(a.subtype) = 'STAKING_REWARD' THEN 'STAKING'
+                 WHEN a.activity_type = 'DIVIDEND' AND UPPER(a.subtype) = 'DRIP' THEN 'DRIP'
+                 ELSE a.activity_type
+             END as income_type,
+             COALESCE(a.asset_id, 'CASH') as asset_id,
+             COALESCE(ast.kind, 'CASH') as asset_kind,
+             COALESCE(ast.display_code, 'CASH') as symbol,
+             COALESCE(ast.name, 'Cash') as symbol_name,
+             a.currency,
+             a.account_id,
+             acc.name as account_name,
+             acc.account_type,
+             CASE
+                 WHEN (
+                       (a.activity_type = 'INTEREST' AND UPPER(a.subtype) = 'STAKING_REWARD')
+                       OR (a.activity_type = 'DIVIDEND' AND UPPER(a.subtype) IN ('DRIP', 'DIVIDEND_IN_KIND'))
+                      )
+                      AND (a.amount IS NULL OR CAST(a.amount AS REAL) = 0)
+                 THEN CASE
+                     WHEN a.unit_price IS NOT NULL AND CAST(a.unit_price AS REAL) > 0
+                     THEN CAST(CAST(a.quantity AS REAL) * CAST(a.unit_price AS REAL) AS TEXT)
+                     WHEN q.close IS NOT NULL
+                     THEN CAST(CAST(a.quantity AS REAL) * CAST(q.close AS REAL) AS TEXT)
+                     ELSE '0'
+                 END
+                 ELSE COALESCE(a.amount, '0')
+             END as amount
+             FROM activities a
+             LEFT JOIN assets ast ON a.asset_id = ast.id
+             INNER JOIN accounts acc ON a.account_id = acc.id
+             LEFT JOIN quotes q ON a.asset_id = q.asset_id
+                 AND date(a.activity_date) = q.day
+             WHERE a.activity_type IN ('DIVIDEND', 'INTEREST', 'OTHER_INCOME')
+             AND acc.is_archived = 0
+             AND a.id IN (SELECT value FROM json_each(?))
+             ORDER BY a.activity_date";
+
+        let raw_results = diesel::sql_query(query)
+            .bind::<Text, _>(activity_ids_json)
+            .load::<RawIncomeData>(&mut conn)
+            .map_err(ActivityError::from)?;
+
+        raw_income_data_to_income_data(raw_results)
     }
 
     fn get_first_activity_date_overall(&self) -> Result<DateTime<Utc>> {
@@ -2716,9 +2829,14 @@ mod tests {
     use super::*;
     use crate::db::{create_pool, get_connection, init, run_migrations, write_actor::spawn_writer};
     use crate::schema::{spending_activity_splits, sync_outbox};
+    use async_trait::async_trait;
     use rust_decimal::Decimal;
+    use std::sync::RwLock;
     use tempfile::tempdir;
+    use wealthfolio_core::accounts::{AggregateEligibilityServiceTrait, ENTITY_ACTIVITY};
     use wealthfolio_core::activities::{import_type, ActivityStatus, ActivityUpsert};
+    use wealthfolio_core::fx::{ExchangeRate, FxServiceTrait, NewExchangeRate};
+    use wealthfolio_core::portfolio::income::{IncomeService, IncomeServiceTrait, IncomeSummary};
 
     fn setup_db() -> (Arc<Pool<ConnectionManager<SqliteConnection>>>, WriteHandle) {
         std::env::set_var("CONNECT_API_URL", "http://test.local");
@@ -3407,6 +3525,239 @@ mod tests {
             .expect("insert activity with subtype");
     }
 
+    fn insert_income_asset(conn: &mut SqliteConnection, id: &str, name: &str, symbol: &str) {
+        diesel::sql_query(format!(
+            "INSERT INTO assets \
+             (id, kind, name, display_code, notes, metadata, is_active, quote_mode, quote_ccy, \
+              instrument_type, instrument_symbol, instrument_exchange_mic, provider_config, \
+              created_at, updated_at) \
+             VALUES ('{}', 'INVESTMENT', '{}', '{}', NULL, NULL, 1, 'MANUAL', 'USD', \
+                     'EQUITY', '{}', NULL, NULL, \
+                     '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z')",
+            id, name, symbol, symbol
+        ))
+        .execute(conn)
+        .expect("insert income asset");
+    }
+
+    struct IncomeActivitySeed<'a> {
+        id: &'a str,
+        asset_id: &'a str,
+        activity_type: &'a str,
+        subtype: &'a str,
+        activity_date: &'a str,
+        quantity: &'a str,
+        unit_price: &'a str,
+    }
+
+    fn insert_income_activity(conn: &mut SqliteConnection, seed: IncomeActivitySeed<'_>) {
+        let activity = ActivityDB {
+            id: seed.id.to_string(),
+            account_id: "acc-income".to_string(),
+            asset_id: Some(seed.asset_id.to_string()),
+            activity_type: seed.activity_type.to_string(),
+            activity_type_override: None,
+            source_type: Some("BROKER".to_string()),
+            subtype: Some(seed.subtype.to_string()),
+            status: "POSTED".to_string(),
+            activity_date: seed.activity_date.to_string(),
+            settlement_date: None,
+            quantity: Some(seed.quantity.to_string()),
+            unit_price: Some(seed.unit_price.to_string()),
+            amount: Some("0".to_string()),
+            fee: Some("0".to_string()),
+            tax: None,
+            currency: "USD".to_string(),
+            fx_rate: Some("1".to_string()),
+            notes: None,
+            metadata: None,
+            source_system: Some("TEST_BROKER".to_string()),
+            source_record_id: Some(format!("source-{}", seed.id)),
+            source_group_id: None,
+            idempotency_key: Some(format!("idem-{}", seed.id)),
+            import_run_id: None,
+            is_user_modified: 0,
+            needs_review: 0,
+            created_at: "2026-07-01T00:00:00+00:00".to_string(),
+            updated_at: "2026-07-01T00:00:00+00:00".to_string(),
+        };
+
+        diesel::insert_into(activities::table)
+            .values(&activity)
+            .execute(conn)
+            .expect("insert income activity");
+    }
+
+    struct PassThroughFxService;
+
+    #[async_trait]
+    impl FxServiceTrait for PassThroughFxService {
+        fn initialize(&self) -> Result<()> {
+            Ok(())
+        }
+
+        fn get_historical_rates(
+            &self,
+            _from_currency: &str,
+            _to_currency: &str,
+            _days: i64,
+        ) -> Result<Vec<ExchangeRate>> {
+            Ok(Vec::new())
+        }
+
+        fn get_latest_exchange_rate(
+            &self,
+            _from_currency: &str,
+            _to_currency: &str,
+        ) -> Result<Decimal> {
+            Ok(Decimal::ONE)
+        }
+
+        fn get_exchange_rate_for_date(
+            &self,
+            _from_currency: &str,
+            _to_currency: &str,
+            _date: NaiveDate,
+        ) -> Result<Decimal> {
+            Ok(Decimal::ONE)
+        }
+
+        fn convert_currency(
+            &self,
+            amount: Decimal,
+            _from_currency: &str,
+            _to_currency: &str,
+        ) -> Result<Decimal> {
+            Ok(amount)
+        }
+
+        fn convert_currency_for_date(
+            &self,
+            amount: Decimal,
+            _from_currency: &str,
+            _to_currency: &str,
+            _date: NaiveDate,
+        ) -> Result<Decimal> {
+            Ok(amount)
+        }
+
+        fn get_latest_exchange_rates(&self) -> Result<Vec<ExchangeRate>> {
+            Ok(Vec::new())
+        }
+
+        async fn add_exchange_rate(&self, _new_rate: NewExchangeRate) -> Result<ExchangeRate> {
+            unimplemented!()
+        }
+
+        async fn update_exchange_rate(
+            &self,
+            _from_currency: &str,
+            _to_currency: &str,
+            _rate: Decimal,
+        ) -> Result<ExchangeRate> {
+            unimplemented!()
+        }
+
+        async fn delete_exchange_rate(&self, _rate_id: &str) -> Result<()> {
+            Ok(())
+        }
+
+        async fn register_currency_pair(
+            &self,
+            _from_currency: &str,
+            _to_currency: &str,
+        ) -> Result<()> {
+            Ok(())
+        }
+
+        async fn register_currency_pair_manual(
+            &self,
+            _from_currency: &str,
+            _to_currency: &str,
+        ) -> Result<()> {
+            Ok(())
+        }
+
+        async fn ensure_fx_pairs(&self, _pairs: Vec<(String, String)>) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    struct EligibilityOnlyPolicy;
+
+    #[async_trait]
+    impl AggregateEligibilityServiceTrait for EligibilityOnlyPolicy {
+        async fn eligible_account_ids(
+            &self,
+            requested_account_ids: &[String],
+            _as_of: NaiveDate,
+        ) -> Result<HashSet<String>> {
+            Ok(requested_account_ids.iter().cloned().collect())
+        }
+
+        async fn eligible_entity_ids_for_rows(
+            &self,
+            entity_type: &str,
+            rows: &[(String, NaiveDate)],
+        ) -> Result<HashSet<String>> {
+            assert_eq!(entity_type, ENTITY_ACTIVITY);
+            Ok(rows.iter().map(|(id, _)| id.clone()).collect())
+        }
+    }
+
+    fn assert_income_summary(
+        summary: &IncomeSummary,
+        period: &str,
+        monthly_average: Decimal,
+        yoy_growth: Option<Decimal>,
+    ) {
+        assert_eq!(summary.period, period);
+        assert_eq!(summary.total_income, Decimal::new(220, 0));
+        assert_eq!(summary.currency, "USD");
+        assert_eq!(summary.monthly_average, monthly_average);
+        assert_eq!(summary.yoy_growth, yoy_growth);
+        assert_eq!(
+            summary.by_month,
+            HashMap::from([("2026-07".to_string(), Decimal::new(220, 0))])
+        );
+        assert_eq!(
+            summary.by_type,
+            HashMap::from([
+                ("STAKING".to_string(), Decimal::new(100, 0)),
+                ("DRIP".to_string(), Decimal::new(120, 0)),
+            ])
+        );
+        assert_eq!(
+            summary.by_currency,
+            HashMap::from([("USD".to_string(), Decimal::new(220, 0))])
+        );
+
+        assert_eq!(summary.by_asset.len(), 2);
+        let staking_asset = summary.by_asset.get("asset-staking").unwrap();
+        assert_eq!(staking_asset.asset_id, "asset-staking");
+        assert_eq!(staking_asset.kind, "INVESTMENT");
+        assert_eq!(staking_asset.symbol, "STAKE");
+        assert_eq!(staking_asset.name, "Staking Asset");
+        assert_eq!(staking_asset.income, Decimal::new(100, 0));
+
+        let drip_asset = summary.by_asset.get("asset-drip").unwrap();
+        assert_eq!(drip_asset.asset_id, "asset-drip");
+        assert_eq!(drip_asset.kind, "INVESTMENT");
+        assert_eq!(drip_asset.symbol, "DRIP");
+        assert_eq!(drip_asset.name, "Drip Asset");
+        assert_eq!(drip_asset.income, Decimal::new(120, 0));
+
+        assert_eq!(summary.by_account.len(), 1);
+        let account = summary.by_account.get("acc-income").unwrap();
+        assert_eq!(account.account_id, "acc-income");
+        assert_eq!(account.account_name, "Test");
+        assert_eq!(
+            account.by_month,
+            HashMap::from([("2026-07".to_string(), Decimal::new(220, 0))])
+        );
+        assert_eq!(account.total, Decimal::new(220, 0));
+    }
+
     fn insert_spending_split(conn: &mut SqliteConnection, id: &str, activity_id: &str) {
         diesel::sql_query(format!(
             "INSERT INTO spending_activity_splits \
@@ -3656,9 +4007,26 @@ mod tests {
             Some("STAKING_REWARD"),
         );
 
+        insert_activity_with_subtype(
+            &mut conn,
+            "valid-drip",
+            "acc-income",
+            "DIVIDEND",
+            None,
+            Some("DRIP"),
+        );
+        insert_activity_with_subtype(
+            &mut conn,
+            "mismatched-drip",
+            "acc-income",
+            "INTEREST",
+            None,
+            Some("DRIP"),
+        );
+
         diesel::sql_query(
             "UPDATE activities SET amount = '0', quantity = '2', unit_price = '50' \
-             WHERE id IN ('valid-staking', 'metadata-only')",
+             WHERE id IN ('valid-staking', 'metadata-only', 'valid-drip', 'mismatched-drip')",
         )
         .execute(&mut conn)
         .expect("zero income amounts");
@@ -3666,17 +4034,168 @@ mod tests {
         let rows = repo
             .get_income_activities_data(Some(&[String::from("acc-income")]))
             .expect("income data");
-        let staking_amount = rows
-            .iter()
-            .find(|row| row.income_type == "INTEREST")
-            .map(|row| row.amount);
-        let metadata_amount = rows
-            .iter()
-            .find(|row| row.income_type == "DIVIDEND")
-            .map(|row| row.amount);
+        assert_eq!(
+            rows.iter()
+                .filter(|row| row.income_type == "STAKING")
+                .count(),
+            1
+        );
+        assert_eq!(
+            rows.iter().filter(|row| row.income_type == "DRIP").count(),
+            1
+        );
+        assert_eq!(
+            rows.iter()
+                .filter(|row| row.income_type == "DIVIDEND")
+                .count(),
+            1
+        );
+        assert_eq!(
+            rows.iter()
+                .filter(|row| row.income_type == "INTEREST")
+                .count(),
+            1
+        );
+        assert_eq!(
+            rows.iter()
+                .find(|row| row.income_type == "STAKING")
+                .unwrap()
+                .amount,
+            Decimal::new(100, 0)
+        );
+        assert_eq!(
+            rows.iter()
+                .find(|row| row.income_type == "DRIP")
+                .unwrap()
+                .amount,
+            Decimal::new(100, 0)
+        );
+        assert_eq!(
+            rows.iter()
+                .find(|row| row.income_type == "DIVIDEND")
+                .unwrap()
+                .amount,
+            Decimal::ZERO
+        );
+        assert_eq!(
+            rows.iter()
+                .find(|row| row.income_type == "INTEREST")
+                .unwrap()
+                .amount,
+            Decimal::ZERO
+        );
+    }
 
-        assert_eq!(staking_amount, Some(Decimal::new(100, 0)));
-        assert_eq!(metadata_amount, Some(Decimal::ZERO));
+    #[tokio::test]
+    async fn income_data_for_activity_ids_is_id_scoped() {
+        let (pool, writer) = setup_db();
+        let repo = ActivityRepository::new(pool.clone(), writer);
+        let mut conn = get_connection(&pool).expect("conn");
+
+        insert_account(&mut conn, "acc-income");
+        insert_activity_with_subtype(
+            &mut conn,
+            "included-income",
+            "acc-income",
+            "DIVIDEND",
+            None,
+            None,
+        );
+        insert_activity_with_subtype(
+            &mut conn,
+            "excluded-income",
+            "acc-income",
+            "DIVIDEND",
+            None,
+            None,
+        );
+
+        diesel::sql_query("UPDATE activities SET amount = '25' WHERE id = 'included-income'")
+            .execute(&mut conn)
+            .expect("set included amount");
+        diesel::sql_query("UPDATE activities SET amount = '900' WHERE id = 'excluded-income'")
+            .execute(&mut conn)
+            .expect("set excluded amount");
+
+        let rows = repo
+            .get_income_activities_data_for_activity_ids(&[String::from("included-income")])
+            .expect("income data");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].amount, Decimal::new(25, 0));
+    }
+
+    #[tokio::test]
+    async fn income_service_public_summary_uses_real_staking_and_drip_derivation() {
+        let (pool, writer) = setup_db();
+        let repo = Arc::new(ActivityRepository::new(pool.clone(), writer));
+
+        {
+            let mut conn = get_connection(&pool).expect("conn");
+            insert_account(&mut conn, "acc-income");
+            insert_income_asset(&mut conn, "asset-staking", "Staking Asset", "STAKE");
+            insert_income_asset(&mut conn, "asset-drip", "Drip Asset", "DRIP");
+            insert_income_activity(
+                &mut conn,
+                IncomeActivitySeed {
+                    id: "income-staking",
+                    asset_id: "asset-staking",
+                    activity_type: "INTEREST",
+                    subtype: "STAKING_REWARD",
+                    activity_date: "2026-07-02T00:00:00+00:00",
+                    quantity: "2",
+                    unit_price: "50",
+                },
+            );
+            insert_income_activity(
+                &mut conn,
+                IncomeActivitySeed {
+                    id: "income-drip",
+                    asset_id: "asset-drip",
+                    activity_type: "DIVIDEND",
+                    subtype: "DRIP",
+                    activity_date: "2026-07-09T00:00:00+00:00",
+                    quantity: "3",
+                    unit_price: "40",
+                },
+            );
+        }
+
+        let scoped_rows = repo
+            .get_income_activities_data_for_activity_ids(&[
+                "income-staking".to_string(),
+                "income-drip".to_string(),
+            ])
+            .expect("id-scoped income data");
+        assert_eq!(scoped_rows.len(), 2);
+        assert_eq!(scoped_rows[0].date, "2026-07");
+        assert_eq!(scoped_rows[0].income_type, "STAKING");
+        assert_eq!(scoped_rows[0].amount, Decimal::new(100, 0));
+        assert_eq!(scoped_rows[1].date, "2026-07");
+        assert_eq!(scoped_rows[1].income_type, "DRIP");
+        assert_eq!(scoped_rows[1].amount, Decimal::new(120, 0));
+
+        let service = IncomeService::new_with_timezone(
+            Arc::new(PassThroughFxService),
+            repo,
+            Arc::new(RwLock::new("USD".to_string())),
+            Arc::new(RwLock::new("UTC".to_string())),
+            Arc::new(EligibilityOnlyPolicy),
+        );
+        let account_ids = vec!["acc-income".to_string()];
+        let summaries = service
+            .get_income_summary(Some(&account_ids))
+            .await
+            .expect("income summary");
+
+        assert_eq!(summaries.len(), 4);
+        assert_income_summary(&summaries[0], "ALL", Decimal::ZERO, None);
+        assert_income_summary(
+            &summaries[1],
+            "YTD",
+            Decimal::new(3143, 2),
+            Some(Decimal::ZERO),
+        );
     }
 
     /// Regression: re-linking the same (account_id, context_kind, source_system) must preserve the row `id`

@@ -1,18 +1,26 @@
+#![allow(clippy::type_complexity)]
+
 use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Mutex;
 
 use crate::{
-    accounts::{Account, TrackingMode, filter_eligible_accounts},
+    accounts::{
+        filter_eligible_accounts, Account, AggregateEligibilityServiceTrait, TrackingMode,
+        ENTITY_SNAPSHOT,
+    },
     assets::{Asset, AssetKind, InstrumentType, QuoteMode},
+    errors::{Error, Result},
     portfolio::{
         economic_events::BasisStatus,
         snapshot::{AccountStateSnapshot, Position, SnapshotSource},
         valuation::{
             calculate_current_valuation_response_from_snapshots, filter_current_valuation_accounts,
-            unique_account_ids, CurrentValuationRate, DailyAccountValuation, ExternalFlowSource,
-            ValuationStatus,
+            filter_latest_snapshots_by_aggregate_policy,
+            filter_requested_accounts_by_aggregate_policy, unique_account_ids,
+            CurrentValuationRate, DailyAccountValuation, ExternalFlowSource, ValuationStatus,
         },
     },
     quotes::{LatestQuotePair, Quote},
@@ -106,6 +114,61 @@ fn snapshot(
             .unwrap()
             .naive_utc(),
         source: SnapshotSource::Calculated,
+    }
+}
+
+fn snapshot_on(
+    account_id: &str,
+    snapshot_id: &str,
+    snapshot_date: NaiveDate,
+) -> AccountStateSnapshot {
+    AccountStateSnapshot {
+        id: snapshot_id.to_string(),
+        snapshot_date,
+        ..snapshot(account_id, "USD", HashMap::new(), HashMap::new())
+    }
+}
+
+#[derive(Default)]
+struct MockAggregateEligibilityService {
+    eligible_account_ids: HashSet<String>,
+    eligible_entity_ids: HashSet<String>,
+    account_error: Option<String>,
+    entity_error: Option<String>,
+    account_requests: Mutex<Vec<(Vec<String>, NaiveDate)>>,
+    entity_requests: Mutex<Vec<(String, Vec<(String, NaiveDate)>)>>,
+}
+
+#[async_trait::async_trait]
+impl AggregateEligibilityServiceTrait for MockAggregateEligibilityService {
+    async fn eligible_account_ids(
+        &self,
+        requested_account_ids: &[String],
+        as_of: NaiveDate,
+    ) -> Result<HashSet<String>> {
+        self.account_requests
+            .lock()
+            .unwrap()
+            .push((requested_account_ids.to_vec(), as_of));
+        if let Some(message) = &self.account_error {
+            return Err(Error::Unexpected(message.clone()));
+        }
+        Ok(self.eligible_account_ids.clone())
+    }
+
+    async fn eligible_entity_ids_for_rows(
+        &self,
+        entity_type: &str,
+        rows: &[(String, NaiveDate)],
+    ) -> Result<HashSet<String>> {
+        self.entity_requests
+            .lock()
+            .unwrap()
+            .push((entity_type.to_string(), rows.to_vec()));
+        if let Some(message) = &self.entity_error {
+            return Err(Error::Unexpected(message.clone()));
+        }
+        Ok(self.eligible_entity_ids.clone())
     }
 }
 
@@ -798,4 +861,215 @@ fn test_eligible_composition_mixed_eligibility() {
     let after_receipt = filter_eligible_accounts(after_inclusion, &["a".to_string()]);
     assert_eq!(after_receipt.len(), 1);
     assert_eq!(after_receipt[0].id, "a");
+}
+
+#[tokio::test]
+async fn current_account_valuation_gates_requested_accounts_with_explicit_as_of() {
+    let as_of = NaiveDate::from_ymd_opt(2026, 3, 17).unwrap();
+    let policy = MockAggregateEligibilityService {
+        eligible_account_ids: HashSet::from(["eligible".to_string()]),
+        ..Default::default()
+    };
+
+    let accounts = filter_requested_accounts_by_aggregate_policy(
+        vec![account("denied", "USD"), account("eligible", "USD")],
+        as_of,
+        &policy,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        accounts
+            .iter()
+            .map(|account| account.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["eligible"]
+    );
+    assert_eq!(
+        *policy.account_requests.lock().unwrap(),
+        vec![(vec!["denied".to_string(), "eligible".to_string()], as_of)]
+    );
+}
+
+#[tokio::test]
+async fn current_account_valuation_filters_latest_snapshot_rows_with_actual_dates() {
+    let live_date = NaiveDate::from_ymd_opt(2026, 3, 17).unwrap();
+    let denied_date = NaiveDate::from_ymd_opt(2026, 3, 16).unwrap();
+    let policy = MockAggregateEligibilityService {
+        eligible_entity_ids: HashSet::from(["S-live".to_string()]),
+        ..Default::default()
+    };
+    let snapshots = HashMap::from([
+        ("live".to_string(), snapshot_on("live", "S-live", live_date)),
+        (
+            "denied".to_string(),
+            snapshot_on("denied", "S-denied", denied_date),
+        ),
+    ]);
+
+    let filtered = filter_latest_snapshots_by_aggregate_policy(snapshots, &policy)
+        .await
+        .unwrap();
+
+    assert_eq!(filtered.keys().cloned().collect::<Vec<_>>(), vec!["live"]);
+    let requests = policy.entity_requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].0, ENTITY_SNAPSHOT);
+    let mut rows = requests[0].1.clone();
+    rows.sort_by(|left, right| left.0.cmp(&right.0));
+    assert_eq!(
+        rows,
+        vec![
+            ("S-denied".to_string(), denied_date),
+            ("S-live".to_string(), live_date),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn current_account_valuation_does_not_use_account_eligibility_as_mixed_role_shortcut() {
+    let snapshot_date = NaiveDate::from_ymd_opt(2026, 3, 17).unwrap();
+    let policy = MockAggregateEligibilityService {
+        eligible_account_ids: HashSet::from(["account-1".to_string()]),
+        eligible_entity_ids: HashSet::new(),
+        ..Default::default()
+    };
+
+    let accounts = filter_requested_accounts_by_aggregate_policy(
+        vec![account("account-1", "USD")],
+        snapshot_date,
+        &policy,
+    )
+    .await
+    .unwrap();
+    let filtered = filter_latest_snapshots_by_aggregate_policy(
+        HashMap::from([(
+            "account-1".to_string(),
+            snapshot_on("account-1", "S-contextual", snapshot_date),
+        )]),
+        &policy,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(accounts.len(), 1);
+    assert!(filtered.is_empty());
+}
+
+#[tokio::test]
+async fn current_account_valuation_filters_opening_baseline_by_actual_snapshot_date() {
+    let before = NaiveDate::from_ymd_opt(2026, 3, 16).unwrap();
+    let equal = NaiveDate::from_ymd_opt(2026, 3, 17).unwrap();
+    let later = NaiveDate::from_ymd_opt(2026, 3, 18).unwrap();
+    let policy = MockAggregateEligibilityService {
+        eligible_entity_ids: HashSet::from(["S-equal".to_string(), "S-later".to_string()]),
+        ..Default::default()
+    };
+    let snapshots = HashMap::from([
+        (
+            "before".to_string(),
+            snapshot_on("before", "S-before", before),
+        ),
+        ("equal".to_string(), snapshot_on("equal", "S-equal", equal)),
+        ("later".to_string(), snapshot_on("later", "S-later", later)),
+    ]);
+
+    let filtered = filter_latest_snapshots_by_aggregate_policy(snapshots, &policy)
+        .await
+        .unwrap();
+
+    assert_eq!(filtered.len(), 2);
+    assert!(!filtered.contains_key("before"));
+    assert!(filtered.contains_key("equal"));
+    assert!(filtered.contains_key("later"));
+}
+
+#[tokio::test]
+async fn current_account_valuation_filters_manual_current_without_approval() {
+    let snapshot_date = NaiveDate::from_ymd_opt(2026, 3, 17).unwrap();
+    let policy = MockAggregateEligibilityService {
+        eligible_entity_ids: HashSet::from(["S-approved-manual".to_string()]),
+        ..Default::default()
+    };
+    let snapshots = HashMap::from([
+        (
+            "approved".to_string(),
+            snapshot_on("approved", "S-approved-manual", snapshot_date),
+        ),
+        (
+            "unapproved".to_string(),
+            snapshot_on("unapproved", "S-unapproved-manual", snapshot_date),
+        ),
+    ]);
+
+    let filtered = filter_latest_snapshots_by_aggregate_policy(snapshots, &policy)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        filtered.keys().cloned().collect::<Vec<_>>(),
+        vec!["approved"]
+    );
+}
+
+#[tokio::test]
+async fn current_account_valuation_excludes_missing_snapshot_provenance_without_receipt_fallback() {
+    let snapshot_date = NaiveDate::from_ymd_opt(2026, 3, 17).unwrap();
+    let policy = MockAggregateEligibilityService {
+        eligible_account_ids: HashSet::from(["verified-account".to_string()]),
+        eligible_entity_ids: HashSet::new(),
+        ..Default::default()
+    };
+
+    let accounts = filter_requested_accounts_by_aggregate_policy(
+        vec![account("verified-account", "USD")],
+        snapshot_date,
+        &policy,
+    )
+    .await
+    .unwrap();
+    let filtered = filter_latest_snapshots_by_aggregate_policy(
+        HashMap::from([(
+            "verified-account".to_string(),
+            snapshot_on("verified-account", "S-missing-provenance", snapshot_date),
+        )]),
+        &policy,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(accounts.len(), 1);
+    assert!(filtered.is_empty());
+}
+
+#[tokio::test]
+async fn current_account_valuation_propagates_policy_errors() {
+    let snapshot_date = NaiveDate::from_ymd_opt(2026, 3, 17).unwrap();
+    let account_policy = MockAggregateEligibilityService {
+        account_error: Some("account policy failed".to_string()),
+        ..Default::default()
+    };
+    let row_policy = MockAggregateEligibilityService {
+        entity_error: Some("row policy failed".to_string()),
+        ..Default::default()
+    };
+
+    let account_result = filter_requested_accounts_by_aggregate_policy(
+        vec![account("account-1", "USD")],
+        snapshot_date,
+        &account_policy,
+    )
+    .await;
+    let row_result = filter_latest_snapshots_by_aggregate_policy(
+        HashMap::from([(
+            "account-1".to_string(),
+            snapshot_on("account-1", "S-live", snapshot_date),
+        )]),
+        &row_policy,
+    )
+    .await;
+
+    assert!(account_result.is_err());
+    assert!(row_result.is_err());
 }

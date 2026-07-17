@@ -190,6 +190,7 @@ async fn resolve_scope(
     state
         .portfolio_service()
         .resolve_account_scope(filter, &base_currency)
+        .await
         .map_err(|e| e.to_string())
 }
 
@@ -201,6 +202,7 @@ async fn resolve_current_valuation_scope(
     let resolved = state
         .portfolio_service()
         .resolve_account_scope(filter, &base_currency)
+        .await
         .map_err(|e| e.to_string())?;
 
     let account_ids = match filter {
@@ -421,9 +423,11 @@ pub async fn get_historical_valuations(
     let result = if let Some(input) = filter {
         let base_currency = state.get_base_currency();
         let account_filter = input.into_account_filter()?;
+        let as_of = to_date_opt.unwrap_or_else(|| Utc::now().date_naive());
         let resolved = state
             .portfolio_service()
-            .resolve_account_scope(&account_filter, &base_currency)
+            .resolve_account_scope_as_of(&account_filter, &base_currency, as_of)
+            .await
             .map_err(|e| e.to_string())?;
         let account_ids = holdings_account_ids(state.inner().as_ref(), &resolved.account_ids)?;
         if account_ids.is_empty() {
@@ -432,6 +436,7 @@ pub async fn get_historical_valuations(
             state
                 .valuation_service()
                 .get_historical_valuations(&account_ids[0], from_date_opt, to_date_opt)
+                .await
                 .map_err(|e| e.to_string())
         } else {
             state
@@ -443,6 +448,7 @@ pub async fn get_historical_valuations(
                     from_date_opt,
                     to_date_opt,
                 )
+                .await
                 .map_err(|e| e.to_string())
         }
     } else if let Some(account_id) = account_id {
@@ -454,12 +460,15 @@ pub async fn get_historical_valuations(
         state
             .valuation_service()
             .get_historical_valuations(&account_id, from_date_opt, to_date_opt)
+            .await
             .map_err(|e| e.to_string())
     } else {
         let base_currency = state.get_base_currency();
+        let as_of = to_date_opt.unwrap_or_else(|| Utc::now().date_naive());
         let resolved = state
             .portfolio_service()
-            .resolve_account_scope(&AccountScope::All, &base_currency)
+            .resolve_account_scope_as_of(&AccountScope::All, &base_currency, as_of)
+            .await
             .map_err(|e| e.to_string())?;
         let account_ids = holdings_account_ids(state.inner().as_ref(), &resolved.account_ids)?;
         if account_ids.is_empty() {
@@ -474,6 +483,7 @@ pub async fn get_historical_valuations(
                 from_date_opt,
                 to_date_opt,
             )
+            .await
             .map_err(|e| e.to_string())
     };
 
@@ -517,6 +527,7 @@ pub async fn get_latest_valuations(
     state
         .valuation_service()
         .get_latest_valuations(&ids_to_process)
+        .await
         .map_err(|e| e.to_string())
 }
 
@@ -538,14 +549,14 @@ pub async fn get_current_valuation(
     let asset_service = state.asset_service();
     let quote_service = state.quote_service();
     let fx_service = state.fx_service();
-    let verified_receipt_repository = state.verified_receipt_repository();
+    let aggregate_eligibility_service = state.aggregate_eligibility_service();
     let service = CurrentAccountValuationService::new(
         account_service.as_ref(),
         snapshot_repository.as_ref(),
         asset_service.as_ref(),
         quote_service.as_ref(),
         fx_service.as_ref(),
-        verified_receipt_repository.as_ref(),
+        aggregate_eligibility_service.as_ref(),
     );
 
     service
@@ -588,6 +599,7 @@ pub async fn get_income_summary(
     state
         .income_service()
         .get_income_summary(Some(&account_ids))
+        .await
         .map_err(|e| e.to_string())
 }
 
@@ -624,6 +636,7 @@ pub async fn calculate_accounts_simple_performance(
     state
         .performance_service()
         .calculate_accounts_simple_performance(&ids_to_process) // Pass the potentially modified list
+        .await
         .map_err(|e| e.to_string())
 }
 
@@ -669,9 +682,11 @@ pub async fn calculate_performance_history(
     if let (true, Some(filter)) = (item_type == "account", filter) {
         let base_currency = state.get_base_currency();
         let account_filter = filter.into_account_filter()?;
+        let as_of = end_date_opt.unwrap_or_else(|| Utc::now().date_naive());
         let resolved = state
             .portfolio_service()
-            .resolve_account_scope(&account_filter, &base_currency)
+            .resolve_account_scope_as_of(&account_filter, &base_currency, as_of)
+            .await
             .map_err(|e| e.to_string())?;
         let accounts_by_id =
             performance_accounts_by_id(state.inner().as_ref(), &resolved.account_ids)?;
@@ -798,9 +813,11 @@ pub async fn calculate_performance_summary(
     if let (true, Some(filter)) = (item_type == "account", filter) {
         let base_currency = state.get_base_currency();
         let account_filter = filter.into_account_filter()?;
+        let as_of = end_date_opt.unwrap_or_else(|| Utc::now().date_naive());
         let resolved = state
             .portfolio_service()
-            .resolve_account_scope(&account_filter, &base_currency)
+            .resolve_account_scope_as_of(&account_filter, &base_currency, as_of)
+            .await
             .map_err(|e| e.to_string())?;
         let accounts_by_id =
             performance_accounts_by_id(state.inner().as_ref(), &resolved.account_ids)?;

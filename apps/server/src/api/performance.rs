@@ -9,6 +9,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use chrono::Utc;
 use wealthfolio_core::{
     accounts::{
         account_supports_portfolio_scope, account_supports_purpose, Account, AccountPurpose,
@@ -58,7 +59,8 @@ async fn calculate_accounts_simple_performance(
     }
     let metrics = state
         .performance_service
-        .calculate_accounts_simple_performance(&ids)?;
+        .calculate_accounts_simple_performance(&ids)
+        .await?;
     Ok(Json(metrics))
 }
 
@@ -151,9 +153,11 @@ async fn calculate_performance_history(
     let metrics = if let (true, Some(filter)) = (body.item_type == "account", body.filter.as_ref())
     {
         let base = state.base_currency.read().unwrap().clone();
+        let as_of = end.unwrap_or_else(|| Utc::now().date_naive());
         let resolved = state
             .portfolio_service
-            .resolve_account_scope(filter, &base)
+            .resolve_account_scope_as_of(filter, &base, as_of)
+            .await
             .map_err(crate::error::ApiError::from)?;
         let accounts_by_id = performance_accounts_by_id(&state, &resolved.account_ids)?;
         let account_ids = performance_account_ids_from_map(&accounts_by_id, &resolved.account_ids);
@@ -240,9 +244,11 @@ async fn calculate_performance_summary(
     let metrics = if let (true, Some(filter)) = (body.item_type == "account", body.filter.as_ref())
     {
         let base = state.base_currency.read().unwrap().clone();
+        let as_of = end.unwrap_or_else(|| Utc::now().date_naive());
         let resolved = state
             .portfolio_service
-            .resolve_account_scope(filter, &base)
+            .resolve_account_scope_as_of(filter, &base, as_of)
+            .await
             .map_err(crate::error::ApiError::from)?;
         let accounts_by_id = performance_accounts_by_id(&state, &resolved.account_ids)?;
         let account_ids = performance_account_ids_from_map(&accounts_by_id, &resolved.account_ids);
@@ -479,7 +485,8 @@ async fn get_income_summary_for_account(
     }
     let items = state
         .income_service
-        .get_income_summary(Some(&account_ids))?;
+        .get_income_summary(Some(&account_ids))
+        .await?;
     Ok(Json(items))
 }
 
@@ -508,6 +515,7 @@ async fn get_income_summary(
             let resolved = state
                 .portfolio_service
                 .resolve_account_scope(filter, &base)
+                .await
                 .map_err(crate::error::ApiError::from)?;
             account_ids_for_purpose(&state, &resolved.account_ids, AccountPurpose::Income)?
         }
@@ -517,7 +525,8 @@ async fn get_income_summary(
     }
     let items = state
         .income_service
-        .get_income_summary(Some(&account_ids))?;
+        .get_income_summary(Some(&account_ids))
+        .await?;
     Ok(Json(items))
 }
 

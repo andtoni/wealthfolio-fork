@@ -27,7 +27,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use events::{emit_app_ready, emit_portfolio_trigger_recalculate, PortfolioRequestPayload};
 use tauri_plugin_deep_link::DeepLinkExt;
 
-fn portfolio_history_backfill_needed(context: &Arc<context::ServiceContext>) -> bool {
+async fn portfolio_history_backfill_needed(context: &Arc<context::ServiceContext>) -> bool {
     let accounts = match context.account_service().get_non_archived_accounts() {
         Ok(accounts) => accounts,
         Err(err) => {
@@ -43,6 +43,7 @@ fn portfolio_history_backfill_needed(context: &Arc<context::ServiceContext>) -> 
     let latest = match context
         .valuation_service()
         .get_latest_valuations(&account_ids)
+        .await
     {
         Ok(latest) => latest,
         Err(err) => {
@@ -185,9 +186,16 @@ mod desktop {
         // The frontend will trigger the initial portfolio update and update check after it's mounted
         emit_app_ready(&handle);
 
-        if portfolio_history_backfill_needed(&context) {
-            emit_portfolio_trigger_recalculate(&handle, PortfolioRequestPayload::builder().build());
-        }
+        let backfill_context = Arc::clone(&context);
+        let backfill_handle = handle.clone();
+        tauri::async_runtime::spawn(async move {
+            if portfolio_history_backfill_needed(&backfill_context).await {
+                emit_portfolio_trigger_recalculate(
+                    &backfill_handle,
+                    PortfolioRequestPayload::builder().build(),
+                );
+            }
+        });
 
         // Trigger startup sync (async, non-blocking)
         // After this, user manually triggers sync via button
@@ -273,7 +281,7 @@ mod mobile {
                     // The frontend will trigger the initial portfolio update after it's mounted
                     emit_app_ready(&handle);
 
-                    if portfolio_history_backfill_needed(&context) {
+                    if portfolio_history_backfill_needed(&context).await {
                         emit_portfolio_trigger_recalculate(
                             &handle,
                             PortfolioRequestPayload::builder().build(),

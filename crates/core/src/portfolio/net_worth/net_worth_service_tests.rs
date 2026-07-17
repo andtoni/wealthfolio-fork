@@ -1,7 +1,13 @@
 //! Unit tests for net worth service.
 
+#![allow(clippy::type_complexity)]
+
 use super::*;
-use crate::accounts::{account_types, Account, AccountRepositoryTrait, AccountUpdate, NewAccount, VerifiedReceipt, VerifiedReceiptRepositoryTrait};
+use crate::accounts::{
+    account_types, Account, AccountRepositoryTrait, AccountUpdate,
+    AggregateEligibilityServiceTrait, NewAccount, ProvenanceRole, VerifiedReceipt,
+    VerifiedReceiptRepositoryTrait, ENTITY_DAILY_VALUATION, ENTITY_SNAPSHOT,
+};
 use crate::assets::{
     Asset, AssetKind, AssetRepositoryTrait, InstrumentType, NewAsset, ProviderProfile, QuoteMode,
     UpdateAssetProfile,
@@ -26,7 +32,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::json;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 // ============================================================================
 // Mock Implementations
@@ -971,7 +977,6 @@ fn create_test_quote(symbol: &str, price: Decimal, date: NaiveDate, currency: &s
     }
 }
 
-
 // ---- Mock Verified Receipt Repository ----
 
 struct MockVerifiedReceiptRepository {
@@ -1003,6 +1008,262 @@ impl VerifiedReceiptRepositoryTrait for MockVerifiedReceiptRepository {
         Ok(self.eligible_ids.clone())
     }
 }
+
+struct MockAggregateEligibilityService {
+    eligible_account_ids: HashSet<String>,
+    eligible_snapshot_ids: HashSet<String>,
+    eligible_valuation_ids: HashSet<String>,
+}
+
+impl MockAggregateEligibilityService {
+    fn allow_all_for(
+        accounts: &[Account],
+        snapshots: &[AccountStateSnapshot],
+        valuations: &[DailyAccountValuation],
+    ) -> Self {
+        Self {
+            eligible_account_ids: accounts
+                .iter()
+                .filter(|account| account.include_in_net_worth)
+                .map(|account| account.id.clone())
+                .collect(),
+            eligible_snapshot_ids: snapshots
+                .iter()
+                .map(|snapshot| snapshot.id.clone())
+                .collect(),
+            eligible_valuation_ids: valuations
+                .iter()
+                .map(|valuation| valuation.id.clone())
+                .collect(),
+        }
+    }
+
+    fn with_rows(
+        eligible_account_ids: &[&str],
+        eligible_snapshot_ids: &[&str],
+        eligible_valuation_ids: &[&str],
+    ) -> Self {
+        Self {
+            eligible_account_ids: eligible_account_ids
+                .iter()
+                .map(|id| (*id).to_string())
+                .collect(),
+            eligible_snapshot_ids: eligible_snapshot_ids
+                .iter()
+                .map(|id| (*id).to_string())
+                .collect(),
+            eligible_valuation_ids: eligible_valuation_ids
+                .iter()
+                .map(|id| (*id).to_string())
+                .collect(),
+        }
+    }
+}
+
+#[async_trait]
+impl AggregateEligibilityServiceTrait for MockAggregateEligibilityService {
+    async fn eligible_account_ids(
+        &self,
+        requested_account_ids: &[String],
+        _as_of: NaiveDate,
+    ) -> Result<HashSet<String>> {
+        Ok(requested_account_ids
+            .iter()
+            .filter(|id| self.eligible_account_ids.contains(*id))
+            .cloned()
+            .collect())
+    }
+
+    async fn eligible_entity_ids_for_rows(
+        &self,
+        entity_type: &str,
+        rows: &[(String, NaiveDate)],
+    ) -> Result<HashSet<String>> {
+        let allowed = match entity_type {
+            ENTITY_SNAPSHOT => &self.eligible_snapshot_ids,
+            ENTITY_DAILY_VALUATION => &self.eligible_valuation_ids,
+            _ => return Ok(HashSet::new()),
+        };
+        Ok(rows
+            .iter()
+            .filter(|&(id, _)| allowed.contains(id))
+            .map(|(id, _)| id.clone())
+            .collect())
+    }
+}
+
+#[derive(Clone)]
+struct SemanticPolicyRecord {
+    role: ProvenanceRole,
+    coverage_start_date: Option<NaiveDate>,
+    manual_current_approved: bool,
+}
+
+impl SemanticPolicyRecord {
+    fn live() -> Self {
+        Self {
+            role: ProvenanceRole::LiveCanonical,
+            coverage_start_date: None,
+            manual_current_approved: false,
+        }
+    }
+
+    fn historical_context() -> Self {
+        Self {
+            role: ProvenanceRole::HistoricalContext,
+            coverage_start_date: None,
+            manual_current_approved: false,
+        }
+    }
+
+    fn is_eligible(&self, date: NaiveDate) -> bool {
+        match self.role {
+            ProvenanceRole::LiveCanonical => true,
+            ProvenanceRole::OpeningBaseline => self
+                .coverage_start_date
+                .is_some_and(|coverage_start| date >= coverage_start),
+            ProvenanceRole::ManualCurrent => self.manual_current_approved,
+            ProvenanceRole::HistoricalContext | ProvenanceRole::ContextualReference => false,
+        }
+    }
+}
+
+#[derive(Default)]
+struct RecordingSemanticEligibilityService {
+    account_records: HashMap<String, SemanticPolicyRecord>,
+    row_records: HashMap<String, SemanticPolicyRecord>,
+    account_calls: Mutex<Vec<(Vec<String>, NaiveDate)>>,
+    row_calls: Mutex<Vec<(String, Vec<(String, NaiveDate)>)>>,
+}
+
+impl RecordingSemanticEligibilityService {
+    fn with_records(
+        account_records: HashMap<String, SemanticPolicyRecord>,
+        row_records: HashMap<String, SemanticPolicyRecord>,
+    ) -> Self {
+        Self {
+            account_records,
+            row_records,
+            ..Default::default()
+        }
+    }
+}
+
+#[async_trait]
+impl AggregateEligibilityServiceTrait for RecordingSemanticEligibilityService {
+    async fn eligible_account_ids(
+        &self,
+        requested_account_ids: &[String],
+        as_of: NaiveDate,
+    ) -> Result<HashSet<String>> {
+        self.account_calls
+            .lock()
+            .unwrap()
+            .push((requested_account_ids.to_vec(), as_of));
+        Ok(requested_account_ids
+            .iter()
+            .filter(|id| {
+                self.account_records
+                    .get(*id)
+                    .is_some_and(|record| record.is_eligible(as_of))
+            })
+            .cloned()
+            .collect())
+    }
+
+    async fn eligible_entity_ids_for_rows(
+        &self,
+        entity_type: &str,
+        rows: &[(String, NaiveDate)],
+    ) -> Result<HashSet<String>> {
+        self.row_calls
+            .lock()
+            .unwrap()
+            .push((entity_type.to_string(), rows.to_vec()));
+        Ok(rows
+            .iter()
+            .filter(|(id, date)| {
+                self.row_records
+                    .get(id)
+                    .is_some_and(|record| record.is_eligible(*date))
+            })
+            .map(|(id, _)| id.clone())
+            .collect())
+    }
+}
+
+#[derive(Default)]
+struct SemanticEligibilityServiceWithErrors {
+    account_records: HashMap<String, SemanticPolicyRecord>,
+    row_records: HashMap<String, SemanticPolicyRecord>,
+    account_calls: Mutex<Vec<(Vec<String>, NaiveDate)>>,
+    row_calls: Mutex<Vec<(String, Vec<(String, NaiveDate)>)>>,
+    account_error: Option<String>,
+    row_error: Option<String>,
+}
+
+impl SemanticEligibilityServiceWithErrors {
+    fn with_records(
+        account_records: HashMap<String, SemanticPolicyRecord>,
+        row_records: HashMap<String, SemanticPolicyRecord>,
+    ) -> Self {
+        Self {
+            account_records,
+            row_records,
+            ..Default::default()
+        }
+    }
+}
+
+#[async_trait]
+impl AggregateEligibilityServiceTrait for SemanticEligibilityServiceWithErrors {
+    async fn eligible_account_ids(
+        &self,
+        requested_account_ids: &[String],
+        as_of: NaiveDate,
+    ) -> Result<HashSet<String>> {
+        self.account_calls
+            .lock()
+            .unwrap()
+            .push((requested_account_ids.to_vec(), as_of));
+        if let Some(message) = &self.account_error {
+            return Err(crate::Error::ConstraintViolation(message.clone()));
+        }
+        Ok(requested_account_ids
+            .iter()
+            .filter(|id| {
+                self.account_records
+                    .get(*id)
+                    .is_some_and(|record| record.is_eligible(as_of))
+            })
+            .cloned()
+            .collect())
+    }
+
+    async fn eligible_entity_ids_for_rows(
+        &self,
+        entity_type: &str,
+        rows: &[(String, NaiveDate)],
+    ) -> Result<HashSet<String>> {
+        self.row_calls
+            .lock()
+            .unwrap()
+            .push((entity_type.to_string(), rows.to_vec()));
+        if let Some(message) = &self.row_error {
+            return Err(crate::Error::ConstraintViolation(message.clone()));
+        }
+        Ok(rows
+            .iter()
+            .filter(|(id, date)| {
+                self.row_records
+                    .get(id)
+                    .is_some_and(|record| record.is_eligible(*date))
+            })
+            .map(|(id, _)| id.clone())
+            .collect())
+    }
+}
+
 fn create_net_worth_service(
     accounts: Vec<Account>,
     assets: Vec<Asset>,
@@ -1032,13 +1293,12 @@ fn create_net_worth_service_with_valuations(
         accounts
     };
 
-    // Default: all accounts with include_in_net_worth=true are eligible
-    let eligible_ids: Vec<String> = effective_accounts
-        .iter()
-        .filter(|a| a.include_in_net_worth)
-        .map(|a| a.id.clone())
-        .collect();
-    let receipt_repo = Arc::new(MockVerifiedReceiptRepository::new(eligible_ids));
+    // Default: all accounts with include_in_net_worth=true are eligible.
+    let aggregate_eligibility_service = Arc::new(MockAggregateEligibilityService::allow_all_for(
+        &effective_accounts,
+        &snapshots,
+        &valuations,
+    ));
 
     let account_repo = Arc::new(MockAccountRepository::new(effective_accounts));
     let asset_repo = Arc::new(MockAssetRepository::new(assets));
@@ -1055,7 +1315,7 @@ fn create_net_worth_service_with_valuations(
         market_data_repo,
         valuation_repo,
         fx_service,
-        receipt_repo,
+        aggregate_eligibility_service,
     )
 }
 
@@ -1157,6 +1417,98 @@ async fn test_empty_accounts_returns_zero_net_worth() {
     assert_eq!(result.assets.total, Decimal::ZERO);
     assert_eq!(result.liabilities.total, Decimal::ZERO);
     assert_eq!(result.currency, "USD");
+}
+
+#[tokio::test]
+async fn test_net_worth_filters_snapshot_rows_through_aggregate_policy() {
+    let allowed = create_test_account("allowed", "SECURITIES", "USD");
+    let denied = create_test_account("denied", "SECURITIES", "USD");
+    let asset = create_test_asset("AAPL", AssetKind::Investment, "USD");
+    let allowed_snapshot = create_test_snapshot(
+        "allowed",
+        vec![create_test_position(
+            "allowed",
+            "AAPL",
+            dec!(1),
+            dec!(100),
+            "USD",
+        )],
+        HashMap::new(),
+    );
+    let denied_snapshot = create_test_snapshot(
+        "denied",
+        vec![create_test_position(
+            "denied",
+            "AAPL",
+            dec!(10),
+            dec!(1000),
+            "USD",
+        )],
+        HashMap::new(),
+    );
+    let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+    let quote = create_test_quote("AAPL", dec!(100), date, "USD");
+    let policy = Arc::new(MockAggregateEligibilityService::with_rows(
+        &["allowed", "denied"],
+        &[allowed_snapshot.id.as_str()],
+        &[],
+    ));
+
+    let service = NetWorthService::new(
+        Arc::new(RwLock::new("USD".to_string())),
+        Arc::new(MockAccountRepository::new(vec![allowed, denied])),
+        Arc::new(MockAssetRepository::new(vec![asset])),
+        Arc::new(MockSnapshotRepository::new(vec![
+            allowed_snapshot,
+            denied_snapshot,
+        ])),
+        Arc::new(MockMarketDataRepository::new(vec![quote])),
+        Arc::new(MockValuationRepository::new(vec![])),
+        Arc::new(MockFxService::new("USD")),
+        policy,
+    );
+
+    let result = service.get_net_worth(date).await.unwrap();
+
+    assert_eq!(result.assets.total, dec!(100));
+    assert_eq!(result.net_worth, dec!(100));
+}
+
+#[tokio::test]
+async fn test_net_worth_history_filters_valuation_rows_through_aggregate_policy() {
+    let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+    let allowed_account = create_test_account("allowed", "SECURITIES", "USD");
+    let denied_account = create_test_account("denied", "SECURITIES", "USD");
+    let allowed_valuation = create_account_valuation("allowed", date, dec!(100));
+    let denied_valuation = create_account_valuation("denied", date, dec!(900));
+    let policy = Arc::new(MockAggregateEligibilityService::with_rows(
+        &["allowed", "denied"],
+        &[],
+        &[allowed_valuation.id.as_str()],
+    ));
+
+    let service = NetWorthService::new(
+        Arc::new(RwLock::new("USD".to_string())),
+        Arc::new(MockAccountRepository::new(vec![
+            allowed_account,
+            denied_account,
+        ])),
+        Arc::new(MockAssetRepository::new(vec![])),
+        Arc::new(MockSnapshotRepository::new(vec![])),
+        Arc::new(MockMarketDataRepository::new(vec![])),
+        Arc::new(MockValuationRepository::new(vec![
+            allowed_valuation,
+            denied_valuation,
+        ])),
+        Arc::new(MockFxService::new("USD")),
+        policy,
+    );
+
+    let history = service.get_net_worth_history(date, date).await.unwrap();
+
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].total_assets, dec!(100));
+    assert_eq!(history[0].net_worth, dec!(100));
 }
 
 #[tokio::test]
@@ -1973,7 +2325,8 @@ async fn test_history_mixed_securities_cash_and_credit_card() {
 }
 
 #[tokio::test]
-async fn test_history_alt_asset_quote_after_range_start_before_first_portfolio_date_seeds_first_point() {
+async fn test_history_alt_asset_quote_after_range_start_before_first_portfolio_date_seeds_first_point(
+) {
     let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
     let quote_date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
     let first_portfolio_date = NaiveDate::from_ymd_opt(2024, 2, 1).unwrap();
@@ -2536,22 +2889,21 @@ async fn test_newly_created_account_has_default_archive_values_net_worth() {
     );
 }
 
-
-
 // ============================================================================
 // Verified Receipt Eligibility Tests
 // ============================================================================
 
 #[tokio::test]
 async fn test_net_worth_excludes_account_without_verified_receipt() {
-    let account = create_test_account_with_archive_state("no_receipt", "SECURITIES", "USD", true, false);
+    let account =
+        create_test_account_with_archive_state("no_receipt", "SECURITIES", "USD", true, false);
     let asset = create_test_asset("AAPL", AssetKind::Investment, "USD");
     let position = create_test_position("no_receipt", "AAPL", dec!(100), dec!(15000), "USD");
     let snapshot = create_test_snapshot("no_receipt", vec![position], HashMap::new());
     let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
     let quote = create_test_quote("AAPL", dec!(185), date, "USD");
 
-    let empty_receipt_repo = Arc::new(MockVerifiedReceiptRepository::new(vec![]));
+    let policy = Arc::new(MockAggregateEligibilityService::with_rows(&[], &[], &[]));
     let base_currency = Arc::new(RwLock::new("USD".to_string()));
     let account_repo = Arc::new(MockAccountRepository::new(vec![account]));
     let asset_repo = Arc::new(MockAssetRepository::new(vec![asset]));
@@ -2561,25 +2913,40 @@ async fn test_net_worth_excludes_account_without_verified_receipt() {
     let fx_service = Arc::new(MockFxService::new("USD"));
 
     let service = NetWorthService::new(
-        base_currency, account_repo, asset_repo, snapshot_repo,
-        market_data_repo, valuation_repo, fx_service, empty_receipt_repo,
+        base_currency,
+        account_repo,
+        asset_repo,
+        snapshot_repo,
+        market_data_repo,
+        valuation_repo,
+        fx_service,
+        policy,
     );
 
     let result = service.get_net_worth(date).await.unwrap();
-    assert_eq!(result.net_worth, Decimal::ZERO, "missing receipt => account contributes nothing");
+    assert_eq!(
+        result.net_worth,
+        Decimal::ZERO,
+        "missing receipt => account contributes nothing"
+    );
     assert_eq!(result.assets.total, Decimal::ZERO);
 }
 
 #[tokio::test]
 async fn test_net_worth_includes_account_with_verified_receipt() {
-    let account = create_test_account_with_archive_state("has_receipt", "SECURITIES", "USD", true, false);
+    let account =
+        create_test_account_with_archive_state("has_receipt", "SECURITIES", "USD", true, false);
     let asset = create_test_asset("AAPL", AssetKind::Investment, "USD");
     let position = create_test_position("has_receipt", "AAPL", dec!(100), dec!(15000), "USD");
     let snapshot = create_test_snapshot("has_receipt", vec![position], HashMap::new());
     let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
     let quote = create_test_quote("AAPL", dec!(185), date, "USD");
 
-    let eligible_receipt_repo = Arc::new(MockVerifiedReceiptRepository::new(vec!["has_receipt".to_string()]));
+    let policy = Arc::new(MockAggregateEligibilityService::with_rows(
+        &["has_receipt"],
+        &[snapshot.id.as_str()],
+        &[],
+    ));
     let base_currency = Arc::new(RwLock::new("USD".to_string()));
     let account_repo = Arc::new(MockAccountRepository::new(vec![account]));
     let asset_repo = Arc::new(MockAssetRepository::new(vec![asset]));
@@ -2589,19 +2956,31 @@ async fn test_net_worth_includes_account_with_verified_receipt() {
     let fx_service = Arc::new(MockFxService::new("USD"));
 
     let service = NetWorthService::new(
-        base_currency, account_repo, asset_repo, snapshot_repo,
-        market_data_repo, valuation_repo, fx_service, eligible_receipt_repo,
+        base_currency,
+        account_repo,
+        asset_repo,
+        snapshot_repo,
+        market_data_repo,
+        valuation_repo,
+        fx_service,
+        policy,
     );
 
     let result = service.get_net_worth(date).await.unwrap();
-    assert_eq!(result.net_worth, dec!(18500), "verified receipt => account contributes normally");
+    assert_eq!(
+        result.net_worth,
+        dec!(18500),
+        "verified receipt => account contributes normally"
+    );
     assert_eq!(result.assets.total, dec!(18500));
 }
 
 #[tokio::test]
 async fn test_net_worth_mixed_eligibility() {
-    let with_receipt = create_test_account_with_archive_state("with_receipt", "SECURITIES", "USD", true, false);
-    let without_receipt = create_test_account_with_archive_state("without_receipt", "SECURITIES", "USD", true, false);
+    let with_receipt =
+        create_test_account_with_archive_state("with_receipt", "SECURITIES", "USD", true, false);
+    let without_receipt =
+        create_test_account_with_archive_state("without_receipt", "SECURITIES", "USD", true, false);
     let asset = create_test_asset("AAPL", AssetKind::Investment, "USD");
     let pos_w = create_test_position("with_receipt", "AAPL", dec!(50), dec!(5000), "USD");
     let pos_wo = create_test_position("without_receipt", "AAPL", dec!(100), dec!(10000), "USD");
@@ -2610,9 +2989,16 @@ async fn test_net_worth_mixed_eligibility() {
     let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
     let quote = create_test_quote("AAPL", dec!(200), date, "USD");
 
-    let eligible_receipt_repo = Arc::new(MockVerifiedReceiptRepository::new(vec!["with_receipt".to_string()]));
+    let policy = Arc::new(MockAggregateEligibilityService::with_rows(
+        &["with_receipt"],
+        &[snap_w.id.as_str()],
+        &[],
+    ));
     let base_currency = Arc::new(RwLock::new("USD".to_string()));
-    let account_repo = Arc::new(MockAccountRepository::new(vec![with_receipt, without_receipt]));
+    let account_repo = Arc::new(MockAccountRepository::new(vec![
+        with_receipt,
+        without_receipt,
+    ]));
     let asset_repo = Arc::new(MockAssetRepository::new(vec![asset]));
     let snapshot_repo = Arc::new(MockSnapshotRepository::new(vec![snap_w, snap_wo]));
     let market_data_repo = Arc::new(MockMarketDataRepository::new(vec![quote]));
@@ -2620,12 +3006,22 @@ async fn test_net_worth_mixed_eligibility() {
     let fx_service = Arc::new(MockFxService::new("USD"));
 
     let service = NetWorthService::new(
-        base_currency, account_repo, asset_repo, snapshot_repo,
-        market_data_repo, valuation_repo, fx_service, eligible_receipt_repo,
+        base_currency,
+        account_repo,
+        asset_repo,
+        snapshot_repo,
+        market_data_repo,
+        valuation_repo,
+        fx_service,
+        policy,
     );
 
     let result = service.get_net_worth(date).await.unwrap();
-    assert_eq!(result.net_worth, dec!(10000), "only receipt-holder contributes");
+    assert_eq!(
+        result.net_worth,
+        dec!(10000),
+        "only receipt-holder contributes"
+    );
     assert_eq!(result.assets.total, dec!(10000));
 }
 
@@ -2691,19 +3087,17 @@ async fn test_liability_with_future_zero_quote_is_included_at_past_balance() {
     assert_eq!(result.net_worth, dec!(-180000));
 }
 
-
 #[tokio::test]
 async fn test_net_worth_history_excludes_account_without_verified_receipt() {
-    let account_no_receipt = create_test_account_with_archive_state(
-        "hist-no-receipt", "SECURITIES", "USD", true, false,
-    );
+    let account_no_receipt =
+        create_test_account_with_archive_state("hist-no-receipt", "SECURITIES", "USD", true, false);
     let asset = create_test_asset("AAPL", AssetKind::Investment, "USD");
     let pos = create_test_position("hist-no-receipt", "AAPL", dec!(100), dec!(15000), "USD");
     let snapshot = create_test_snapshot("hist-no-receipt", vec![pos], HashMap::new());
     let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
     let quote = create_test_quote("AAPL", dec!(185), date, "USD");
 
-    let empty_receipt_repo = Arc::new(MockVerifiedReceiptRepository::new(vec![]));
+    let policy = Arc::new(MockAggregateEligibilityService::with_rows(&[], &[], &[]));
     let base_currency = Arc::new(RwLock::new("USD".to_string()));
     let account_repo = Arc::new(MockAccountRepository::new(vec![account_no_receipt]));
     let asset_repo = Arc::new(MockAssetRepository::new(vec![asset]));
@@ -2713,8 +3107,14 @@ async fn test_net_worth_history_excludes_account_without_verified_receipt() {
     let fx_service = Arc::new(MockFxService::new("USD"));
 
     let service = NetWorthService::new(
-        base_currency, account_repo, asset_repo, snapshot_repo,
-        market_data_repo, valuation_repo, fx_service, empty_receipt_repo,
+        base_currency,
+        account_repo,
+        asset_repo,
+        snapshot_repo,
+        market_data_repo,
+        valuation_repo,
+        fx_service,
+        policy,
     );
 
     let history = service
@@ -2734,14 +3134,24 @@ async fn test_net_worth_history_includes_account_with_verified_receipt() {
     let d3 = NaiveDate::from_ymd_opt(2024, 1, 17).unwrap();
 
     let account = create_test_account_with_archive_state(
-        "hist-has-receipt", "SECURITIES", "USD", true, false,
+        "hist-has-receipt",
+        "SECURITIES",
+        "USD",
+        true,
+        false,
     );
     let asset = create_test_asset("AAPL", AssetKind::Investment, "USD");
     let quote = create_test_quote("AAPL", dec!(185), d1, "USD");
 
     let snap = create_test_snapshot(
         "hist-has-receipt",
-        vec![create_test_position("hist-has-receipt", "AAPL", dec!(100), dec!(15000), "USD")],
+        vec![create_test_position(
+            "hist-has-receipt",
+            "AAPL",
+            dec!(100),
+            dec!(15000),
+            "USD",
+        )],
         HashMap::new(),
     );
 
@@ -2782,9 +3192,15 @@ async fn test_net_worth_history_includes_account_with_verified_receipt() {
         mk_val("hist-has-receipt", d3, dec!(18700)),
     ];
 
-    let eligible_receipt_repo = Arc::new(
-        MockVerifiedReceiptRepository::new(vec!["hist-has-receipt".to_string()])
-    );
+    let eligible_valuation_ids: Vec<&str> = valuations
+        .iter()
+        .map(|valuation| valuation.id.as_str())
+        .collect();
+    let policy = Arc::new(MockAggregateEligibilityService::with_rows(
+        &["hist-has-receipt"],
+        &[snap.id.as_str()],
+        &eligible_valuation_ids,
+    ));
     let base_currency = Arc::new(RwLock::new("USD".to_string()));
     let account_repo = Arc::new(MockAccountRepository::new(vec![account]));
     let asset_repo = Arc::new(MockAssetRepository::new(vec![asset]));
@@ -2794,49 +3210,511 @@ async fn test_net_worth_history_includes_account_with_verified_receipt() {
     let fx_service = Arc::new(MockFxService::new("USD"));
 
     let service = NetWorthService::new(
-        base_currency, account_repo, asset_repo, snapshot_repo,
-        market_data_repo, valuation_repo, fx_service, eligible_receipt_repo,
+        base_currency,
+        account_repo,
+        asset_repo,
+        snapshot_repo,
+        market_data_repo,
+        valuation_repo,
+        fx_service,
+        policy,
     );
 
     let history = service
         .get_net_worth_history(d1, d3)
         .await
         .expect("history query");
-    assert_eq!(history.len(), 3, "account with verified receipt must have 3 history points");
-    assert!(history.iter().all(|p| p.net_worth > Decimal::ZERO), "all points must have positive net worth");
+    assert_eq!(
+        history.len(),
+        3,
+        "account with verified receipt must have 3 history points"
+    );
+    assert!(
+        history.iter().all(|p| p.net_worth > Decimal::ZERO),
+        "all points must have positive net worth"
+    );
+}
+
+#[tokio::test]
+async fn test_net_worth_history_batches_row_policy_and_filters_semantic_roles() {
+    let d0 = NaiveDate::from_ymd_opt(2024, 1, 14).unwrap();
+    let d1 = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+    let d2 = NaiveDate::from_ymd_opt(2024, 1, 16).unwrap();
+
+    let inv_live = create_test_account_with_archive_state(
+        "hist-live",
+        account_types::SECURITIES,
+        "USD",
+        true,
+        false,
+    );
+    let inv_context = create_test_account_with_archive_state(
+        "hist-context",
+        account_types::SECURITIES,
+        "USD",
+        true,
+        false,
+    );
+    let card = create_test_account_with_archive_state(
+        "hist-card",
+        account_types::CREDIT_CARD,
+        "USD",
+        true,
+        false,
+    );
+
+    fn credit_card_valuation(
+        account_id: &str,
+        date: NaiveDate,
+        liability: Decimal,
+    ) -> DailyAccountValuation {
+        let mut valuation = create_account_valuation(account_id, date, -liability);
+        valuation.cash_balance = -liability;
+        valuation.cash_balance_base = -liability;
+        valuation.total_value = -liability;
+        valuation.total_value_base = -liability;
+        valuation
+    }
+
+    let valuations = vec![
+        create_account_valuation("hist-live", d1, dec!(100)),
+        create_account_valuation("hist-live", d2, dec!(200)),
+        create_account_valuation("hist-context", d1, dec!(1000)),
+        credit_card_valuation("hist-card", d0, dec!(20)),
+        credit_card_valuation("hist-card", d1, dec!(30)),
+        credit_card_valuation("hist-card", d2, dec!(40)),
+    ];
+
+    let account_records = HashMap::from([
+        ("hist-live".to_string(), SemanticPolicyRecord::live()),
+        (
+            "hist-context".to_string(),
+            SemanticPolicyRecord::historical_context(),
+        ),
+        ("hist-card".to_string(), SemanticPolicyRecord::live()),
+    ]);
+    let row_records = HashMap::from([
+        (
+            "hist-live_2024-01-15".to_string(),
+            SemanticPolicyRecord::live(),
+        ),
+        (
+            "hist-live_2024-01-16".to_string(),
+            SemanticPolicyRecord::historical_context(),
+        ),
+        (
+            "hist-card_2024-01-14".to_string(),
+            SemanticPolicyRecord::live(),
+        ),
+        (
+            "hist-card_2024-01-15".to_string(),
+            SemanticPolicyRecord::live(),
+        ),
+        (
+            "hist-card_2024-01-16".to_string(),
+            SemanticPolicyRecord::historical_context(),
+        ),
+    ]);
+    let policy = Arc::new(RecordingSemanticEligibilityService::with_records(
+        account_records,
+        row_records,
+    ));
+    let service = NetWorthService::new(
+        Arc::new(RwLock::new("USD".to_string())),
+        Arc::new(MockAccountRepository::new(vec![
+            inv_live,
+            inv_context,
+            card,
+        ])),
+        Arc::new(MockAssetRepository::new(vec![])),
+        Arc::new(MockSnapshotRepository::new(vec![])),
+        Arc::new(MockMarketDataRepository::new(vec![])),
+        Arc::new(MockValuationRepository::new(valuations)),
+        Arc::new(MockFxService::new("USD")),
+        policy.clone(),
+    );
+
+    let history = service.get_net_worth_history(d1, d2).await.unwrap();
+
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].date, d1);
+    assert_eq!(history[0].net_worth, dec!(70));
+
+    let mut account_calls = policy.account_calls.lock().unwrap().clone();
+    for (account_ids, _) in &mut account_calls {
+        account_ids.sort();
+    }
+    assert_eq!(
+        account_calls,
+        vec![(
+            vec![
+                "hist-card".to_string(),
+                "hist-context".to_string(),
+                "hist-live".to_string(),
+            ],
+            d2,
+        )]
+    );
+    assert_eq!(
+        *policy.row_calls.lock().unwrap(),
+        vec![(
+            ENTITY_DAILY_VALUATION.to_string(),
+            vec![
+                ("hist-live_2024-01-15".to_string(), d1),
+                ("hist-live_2024-01-16".to_string(), d2),
+                ("hist-context_2024-01-15".to_string(), d1),
+                ("hist-card_2024-01-14".to_string(), d0),
+                ("hist-card_2024-01-15".to_string(), d1),
+                ("hist-card_2024-01-16".to_string(), d2),
+            ],
+        )]
+    );
+}
+
+#[tokio::test]
+async fn net_worth_history_exact_account_date_pairs_filter_before_aggregation() {
+    let d1 = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+    let d2 = NaiveDate::from_ymd_opt(2024, 1, 16).unwrap();
+
+    let live_account = create_test_account_with_archive_state(
+        "pair-live",
+        account_types::SECURITIES,
+        "USD",
+        true,
+        false,
+    );
+    let contextual_account = create_test_account_with_archive_state(
+        "pair-context",
+        account_types::SECURITIES,
+        "USD",
+        true,
+        false,
+    );
+    let valuations = vec![
+        create_account_valuation("pair-live", d1, dec!(100)),
+        create_account_valuation("pair-live", d2, dec!(200)),
+        create_account_valuation("pair-context", d1, dec!(1000)),
+    ];
+    let account_records = HashMap::from([
+        ("pair-live".to_string(), SemanticPolicyRecord::live()),
+        (
+            "pair-context".to_string(),
+            SemanticPolicyRecord::historical_context(),
+        ),
+    ]);
+    let row_records = HashMap::from([
+        (
+            "pair-live_2024-01-15".to_string(),
+            SemanticPolicyRecord::live(),
+        ),
+        (
+            "pair-live_2024-01-16".to_string(),
+            SemanticPolicyRecord::historical_context(),
+        ),
+        (
+            "pair-context_2024-01-15".to_string(),
+            SemanticPolicyRecord::historical_context(),
+        ),
+    ]);
+    let policy = Arc::new(RecordingSemanticEligibilityService::with_records(
+        account_records,
+        row_records,
+    ));
+    let service = NetWorthService::new(
+        Arc::new(RwLock::new("USD".to_string())),
+        Arc::new(MockAccountRepository::new(vec![
+            live_account,
+            contextual_account,
+        ])),
+        Arc::new(MockAssetRepository::new(vec![])),
+        Arc::new(MockSnapshotRepository::new(vec![])),
+        Arc::new(MockMarketDataRepository::new(vec![])),
+        Arc::new(MockValuationRepository::new(valuations)),
+        Arc::new(MockFxService::new("USD")),
+        policy.clone(),
+    );
+
+    let history = service.get_net_worth_history(d1, d2).await.unwrap();
+
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].date, d1);
+    assert_eq!(history[0].net_worth, dec!(100));
+
+    let mut account_calls = policy.account_calls.lock().unwrap().clone();
+    for (account_ids, _) in &mut account_calls {
+        account_ids.sort();
+    }
+    assert_eq!(
+        account_calls,
+        vec![(
+            vec!["pair-context".to_string(), "pair-live".to_string()],
+            d2
+        )]
+    );
+    assert_eq!(
+        *policy.row_calls.lock().unwrap(),
+        vec![(
+            ENTITY_DAILY_VALUATION.to_string(),
+            vec![
+                ("pair-live_2024-01-15".to_string(), d1),
+                ("pair-live_2024-01-16".to_string(), d2),
+                ("pair-context_2024-01-15".to_string(), d1),
+            ],
+        )]
+    );
+}
+
+#[tokio::test]
+async fn net_worth_account_policy_error_propagates_without_partial_result() {
+    let d1 = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+    let account = create_test_account_with_archive_state(
+        "account-policy",
+        account_types::SECURITIES,
+        "USD",
+        true,
+        false,
+    );
+    let valuation = create_account_valuation("account-policy", d1, dec!(100));
+    let mut policy = SemanticEligibilityServiceWithErrors::with_records(
+        HashMap::from([("account-policy".to_string(), SemanticPolicyRecord::live())]),
+        HashMap::from([(
+            "account-policy_2024-01-15".to_string(),
+            SemanticPolicyRecord::live(),
+        )]),
+    );
+    policy.account_error = Some("account-policy".to_string());
+    let policy = Arc::new(policy);
+    let service = NetWorthService::new(
+        Arc::new(RwLock::new("USD".to_string())),
+        Arc::new(MockAccountRepository::new(vec![account])),
+        Arc::new(MockAssetRepository::new(vec![])),
+        Arc::new(MockSnapshotRepository::new(vec![])),
+        Arc::new(MockMarketDataRepository::new(vec![])),
+        Arc::new(MockValuationRepository::new(vec![valuation])),
+        Arc::new(MockFxService::new("USD")),
+        policy.clone(),
+    );
+
+    let error = service.get_net_worth_history(d1, d1).await.unwrap_err();
+
+    assert!(matches!(
+        error,
+        crate::Error::ConstraintViolation(message) if message == "account-policy"
+    ));
+    assert_eq!(
+        *policy.account_calls.lock().unwrap(),
+        vec![(vec!["account-policy".to_string()], d1)]
+    );
+    assert!(policy.row_calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn net_worth_row_policy_error_propagates_without_partial_history() {
+    let d1 = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+    let account = create_test_account_with_archive_state(
+        "row-policy",
+        account_types::SECURITIES,
+        "USD",
+        true,
+        false,
+    );
+    let valuation = create_account_valuation("row-policy", d1, dec!(100));
+    let mut policy = SemanticEligibilityServiceWithErrors::with_records(
+        HashMap::from([(String::from("row-policy"), SemanticPolicyRecord::live())]),
+        HashMap::from([(
+            String::from("row-policy_2024-01-15"),
+            SemanticPolicyRecord::live(),
+        )]),
+    );
+    policy.row_error = Some("row-policy".to_string());
+    let policy = Arc::new(policy);
+    let service = NetWorthService::new(
+        Arc::new(RwLock::new("USD".to_string())),
+        Arc::new(MockAccountRepository::new(vec![account])),
+        Arc::new(MockAssetRepository::new(vec![])),
+        Arc::new(MockSnapshotRepository::new(vec![])),
+        Arc::new(MockMarketDataRepository::new(vec![])),
+        Arc::new(MockValuationRepository::new(vec![valuation])),
+        Arc::new(MockFxService::new("USD")),
+        policy.clone(),
+    );
+
+    let error = service.get_net_worth_history(d1, d1).await.unwrap_err();
+
+    assert!(matches!(
+        error,
+        crate::Error::ConstraintViolation(message) if message == "row-policy"
+    ));
+    assert_eq!(
+        *policy.account_calls.lock().unwrap(),
+        vec![(vec!["row-policy".to_string()], d1)]
+    );
+    assert_eq!(
+        *policy.row_calls.lock().unwrap(),
+        vec![(
+            ENTITY_DAILY_VALUATION.to_string(),
+            vec![("row-policy_2024-01-15".to_string(), d1)],
+        )]
+    );
+}
+
+#[tokio::test]
+async fn net_worth_semantic_public_path_matrix_fails_closed_by_role_and_date() {
+    let before = NaiveDate::from_ymd_opt(2024, 1, 14).unwrap();
+    let covered = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+    let account_ids = [
+        "live",
+        "baseline",
+        "manual-locked",
+        "manual-open",
+        "missing",
+        "unknown",
+        "context",
+        "reference",
+    ];
+    let accounts = account_ids
+        .iter()
+        .map(|id| {
+            create_test_account_with_archive_state(
+                id,
+                account_types::SECURITIES,
+                "USD",
+                true,
+                false,
+            )
+        })
+        .collect::<Vec<_>>();
+    let valuations = account_ids
+        .iter()
+        .map(|id| create_account_valuation(id, covered, dec!(10)))
+        .collect::<Vec<_>>();
+    let account_records = HashMap::from([
+        ("live".to_string(), SemanticPolicyRecord::live()),
+        (
+            "baseline".to_string(),
+            SemanticPolicyRecord {
+                role: ProvenanceRole::OpeningBaseline,
+                coverage_start_date: Some(covered),
+                manual_current_approved: false,
+            },
+        ),
+        (
+            "manual-locked".to_string(),
+            SemanticPolicyRecord {
+                role: ProvenanceRole::ManualCurrent,
+                coverage_start_date: None,
+                manual_current_approved: false,
+            },
+        ),
+        (
+            "manual-open".to_string(),
+            SemanticPolicyRecord {
+                role: ProvenanceRole::ManualCurrent,
+                coverage_start_date: None,
+                manual_current_approved: true,
+            },
+        ),
+        (
+            "context".to_string(),
+            SemanticPolicyRecord::historical_context(),
+        ),
+        (
+            "reference".to_string(),
+            SemanticPolicyRecord {
+                role: ProvenanceRole::ContextualReference,
+                coverage_start_date: None,
+                manual_current_approved: false,
+            },
+        ),
+    ]);
+    let row_records = valuations
+        .iter()
+        .map(|v| {
+            (
+                v.id.clone(),
+                account_records
+                    .get(&v.account_id)
+                    .cloned()
+                    .unwrap_or_else(SemanticPolicyRecord::historical_context),
+            )
+        })
+        .collect();
+    let policy = Arc::new(RecordingSemanticEligibilityService::with_records(
+        account_records,
+        row_records,
+    ));
+    let service = NetWorthService::new(
+        Arc::new(RwLock::new("USD".to_string())),
+        Arc::new(MockAccountRepository::new(accounts)),
+        Arc::new(MockAssetRepository::new(vec![])),
+        Arc::new(MockSnapshotRepository::new(vec![])),
+        Arc::new(MockMarketDataRepository::new(vec![])),
+        Arc::new(MockValuationRepository::new(valuations)),
+        Arc::new(MockFxService::new("USD")),
+        policy,
+    );
+    let history = service
+        .get_net_worth_history(before, covered)
+        .await
+        .unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].date, covered);
+    assert_eq!(history[0].net_worth, dec!(30));
 }
 
 #[tokio::test]
 async fn test_net_worth_mixed_receipt_status_isolation() {
     // Two accounts, both include_in_net_worth=true, but only one has a verified receipt.
     // Only the receipted account should contribute to net worth.
-    let receipt_acct = create_test_account_with_archive_state("receipt-acct", "SECURITIES", "USD", true, false);
-    let no_receipt_acct = create_test_account_with_archive_state("no-receipt-acct", "SECURITIES", "USD", true, false);
+    let receipt_acct =
+        create_test_account_with_archive_state("receipt-acct", "SECURITIES", "USD", true, false);
+    let no_receipt_acct =
+        create_test_account_with_archive_state("no-receipt-acct", "SECURITIES", "USD", true, false);
 
     let asset = create_test_asset("AAPL", AssetKind::Investment, "USD");
     let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
 
-    let receipt_position = create_test_position("receipt-acct", "AAPL", dec!(50), dec!(10000), "USD");
-    let no_receipt_position = create_test_position("no-receipt-acct", "AAPL", dec!(100), dec!(20000), "USD");
+    let receipt_position =
+        create_test_position("receipt-acct", "AAPL", dec!(50), dec!(10000), "USD");
+    let no_receipt_position =
+        create_test_position("no-receipt-acct", "AAPL", dec!(100), dec!(20000), "USD");
 
-    let receipt_snapshot = create_test_snapshot("receipt-acct", vec![receipt_position], HashMap::new());
-    let no_receipt_snapshot = create_test_snapshot("no-receipt-acct", vec![no_receipt_position], HashMap::new());
+    let receipt_snapshot =
+        create_test_snapshot("receipt-acct", vec![receipt_position], HashMap::new());
+    let no_receipt_snapshot =
+        create_test_snapshot("no-receipt-acct", vec![no_receipt_position], HashMap::new());
 
     let quote = create_test_quote("AAPL", dec!(200), date, "USD");
 
     // Only grant eligibility to receipt-acct
-    let receipt_repo = Arc::new(MockVerifiedReceiptRepository::new(vec!["receipt-acct".to_string()]));
+    let policy = Arc::new(MockAggregateEligibilityService::with_rows(
+        &["receipt-acct"],
+        &[receipt_snapshot.id.as_str()],
+        &[],
+    ));
     let base_currency = Arc::new(RwLock::new("USD".to_string()));
-    let account_repo = Arc::new(MockAccountRepository::new(vec![receipt_acct, no_receipt_acct]));
+    let account_repo = Arc::new(MockAccountRepository::new(vec![
+        receipt_acct,
+        no_receipt_acct,
+    ]));
     let asset_repo = Arc::new(MockAssetRepository::new(vec![asset]));
-    let snapshot_repo = Arc::new(MockSnapshotRepository::new(vec![receipt_snapshot, no_receipt_snapshot]));
+    let snapshot_repo = Arc::new(MockSnapshotRepository::new(vec![
+        receipt_snapshot,
+        no_receipt_snapshot,
+    ]));
     let market_data_repo = Arc::new(MockMarketDataRepository::new(vec![quote]));
     let valuation_repo = Arc::new(MockValuationRepository::new(vec![]));
     let fx_service = Arc::new(MockFxService::new("USD"));
 
     let service = NetWorthService::new(
-        base_currency, account_repo, asset_repo, snapshot_repo,
-        market_data_repo, valuation_repo, fx_service, receipt_repo,
+        base_currency,
+        account_repo,
+        asset_repo,
+        snapshot_repo,
+        market_data_repo,
+        valuation_repo,
+        fx_service,
+        policy,
     );
 
     let result = service.get_net_worth(date).await.unwrap();
@@ -2848,7 +3726,12 @@ async fn test_net_worth_mixed_receipt_status_isolation() {
         "only receipted account value contributes; non-receipted account must be excluded"
     );
     assert_eq!(
-        result.assets.breakdown.iter().map(|b| b.value).sum::<Decimal>(),
+        result
+            .assets
+            .breakdown
+            .iter()
+            .map(|b| b.value)
+            .sum::<Decimal>(),
         dec!(10000),
         "assets breakdown must only reflect the receipted account"
     );
@@ -2869,33 +3752,52 @@ async fn test_net_worth_opted_out_with_receipt_still_excluded() {
     };
     let included = create_test_account("included-account", "SECURITIES", "USD");
     let asset = create_test_asset("AAPL", AssetKind::Investment, "USD");
-    let excluded_pos = create_test_position("opted-out-receipt", "AAPL", dec!(50), dec!(5000), "USD");
-    let included_pos = create_test_position("included-account", "AAPL", dec!(10), dec!(1000), "USD");
-    let excluded_snap = create_test_snapshot("opted-out-receipt", vec![excluded_pos], HashMap::new());
-    let included_snap = create_test_snapshot("included-account", vec![included_pos], HashMap::new());
+    let excluded_pos =
+        create_test_position("opted-out-receipt", "AAPL", dec!(50), dec!(5000), "USD");
+    let included_pos =
+        create_test_position("included-account", "AAPL", dec!(10), dec!(1000), "USD");
+    let excluded_snap =
+        create_test_snapshot("opted-out-receipt", vec![excluded_pos], HashMap::new());
+    let included_snap =
+        create_test_snapshot("included-account", vec![included_pos], HashMap::new());
     let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
     let quote = create_test_quote("AAPL", dec!(200), date, "USD");
 
     // Give BOTH accounts eligible IDs to test that the initial
     // include_in_net_worth gate catches the excluded one
-    let receipt_repo = Arc::new(MockVerifiedReceiptRepository::new(
-        vec!["opted-out-receipt".to_string(), "included-account".to_string()]
+    let policy = Arc::new(MockAggregateEligibilityService::with_rows(
+        &["opted-out-receipt", "included-account"],
+        &[excluded_snap.id.as_str(), included_snap.id.as_str()],
+        &[],
     ));
     let base_currency = Arc::new(RwLock::new("USD".to_string()));
     let account_repo = Arc::new(MockAccountRepository::new(vec![excluded, included]));
     let asset_repo = Arc::new(MockAssetRepository::new(vec![asset]));
-    let snapshot_repo = Arc::new(MockSnapshotRepository::new(vec![excluded_snap, included_snap]));
+    let snapshot_repo = Arc::new(MockSnapshotRepository::new(vec![
+        excluded_snap,
+        included_snap,
+    ]));
     let market_data_repo = Arc::new(MockMarketDataRepository::new(vec![quote]));
     let valuation_repo = Arc::new(MockValuationRepository::new(vec![]));
     let fx_service = Arc::new(MockFxService::new("USD"));
 
     let service = NetWorthService::new(
-        base_currency, account_repo, asset_repo, snapshot_repo,
-        market_data_repo, valuation_repo, fx_service, receipt_repo,
+        base_currency,
+        account_repo,
+        asset_repo,
+        snapshot_repo,
+        market_data_repo,
+        valuation_repo,
+        fx_service,
+        policy,
     );
 
     let result = service.get_net_worth(date).await.unwrap();
     // Only the include_in_net_worth=true account contributes
-    assert_eq!(result.net_worth, dec!(2000), "opted-out with receipt must still be excluded");
+    assert_eq!(
+        result.net_worth,
+        dec!(2000),
+        "opted-out with receipt must still be excluded"
+    );
     assert_eq!(result.assets.total, dec!(2000));
 }

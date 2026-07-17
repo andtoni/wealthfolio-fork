@@ -1,6 +1,7 @@
 # Ignore VCS and local tooling metadata
 .git
 .gitignore
+.worktrees
 .env*
 
 # Node workspace artifacts

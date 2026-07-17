@@ -13,8 +13,8 @@ use super::net_worth_model::{
 };
 use super::net_worth_traits::NetWorthServiceTrait;
 use crate::accounts::{
-    account_types, filter_eligible_accounts, is_liability_account_type, AccountRepositoryTrait,
-    VerifiedReceiptRepositoryTrait,
+    account_types, is_liability_account_type, AccountRepositoryTrait,
+    AggregateEligibilityServiceTrait, ENTITY_DAILY_VALUATION, ENTITY_SNAPSHOT,
 };
 use crate::assets::{Asset, AssetKind, AssetRepositoryTrait};
 use crate::constants::DECIMAL_PRECISION;
@@ -37,7 +37,7 @@ pub struct NetWorthService {
     quote_service: Arc<dyn QuoteServiceTrait>,
     valuation_repository: Arc<dyn ValuationRepositoryTrait>,
     fx_service: Arc<dyn FxServiceTrait>,
-    verified_receipt_repository: Arc<dyn VerifiedReceiptRepositoryTrait>,
+    aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
 }
 
 impl NetWorthService {
@@ -51,7 +51,7 @@ impl NetWorthService {
         quote_service: Arc<dyn QuoteServiceTrait>,
         valuation_repository: Arc<dyn ValuationRepositoryTrait>,
         fx_service: Arc<dyn FxServiceTrait>,
-        verified_receipt_repository: Arc<dyn VerifiedReceiptRepositoryTrait>,
+        aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
     ) -> Self {
         Self {
             base_currency,
@@ -61,7 +61,7 @@ impl NetWorthService {
             quote_service,
             valuation_repository,
             fx_service,
-            verified_receipt_repository,
+            aggregate_eligibility_service,
         }
     }
 
@@ -346,6 +346,19 @@ impl NetWorthService {
             Decimal::ZERO
         }
     }
+
+    fn push_unique_row_request(
+        rows: &mut Vec<(String, NaiveDate)>,
+        seen: &mut HashMap<String, NaiveDate>,
+        id: &str,
+        date: NaiveDate,
+    ) {
+        if matches!(seen.get(id), Some(existing_date) if *existing_date == date) {
+            return;
+        }
+        seen.insert(id.to_string(), date);
+        rows.push((id.to_string(), date));
+    }
 }
 
 #[async_trait]
@@ -362,15 +375,17 @@ impl NetWorthServiceTrait for NetWorthService {
             .into_iter()
             .filter(|account| account.include_in_net_worth)
             .collect();
-        let accounts = if accounts.is_empty() {
-            accounts
-        } else {
-            let eligible_ids = self
-                .verified_receipt_repository
-                .get_eligible_account_ids()
-                .await?;
-            filter_eligible_accounts(accounts, &eligible_ids)
-        };
+        let mut account_ids: Vec<String> =
+            accounts.iter().map(|account| account.id.clone()).collect();
+        account_ids.sort();
+        let eligible_account_ids = self
+            .aggregate_eligibility_service
+            .eligible_account_ids(&account_ids, date)
+            .await?;
+        let accounts: Vec<_> = accounts
+            .into_iter()
+            .filter(|account| eligible_account_ids.contains(&account.id))
+            .collect();
 
         if accounts.is_empty() {
             debug!("No non-archived accounts found. Returning empty net worth.");
@@ -384,6 +399,18 @@ impl NetWorthServiceTrait for NetWorthService {
         let snapshots = self
             .snapshot_repository
             .get_latest_snapshots_before_date(&account_ids, date)?;
+        let snapshot_rows: Vec<(String, NaiveDate)> = snapshots
+            .values()
+            .map(|snapshot| (snapshot.id.clone(), snapshot.snapshot_date))
+            .collect();
+        let eligible_snapshot_ids = self
+            .aggregate_eligibility_service
+            .eligible_entity_ids_for_rows(ENTITY_SNAPSHOT, &snapshot_rows)
+            .await?;
+        let snapshots: HashMap<String, _> = snapshots
+            .into_iter()
+            .filter(|(_, snapshot)| eligible_snapshot_ids.contains(&snapshot.id))
+            .collect();
 
         // Build a map of account_id -> account for easy lookup
         let account_map: HashMap<String, _> = accounts.iter().map(|a| (a.id.clone(), a)).collect();
@@ -391,12 +418,23 @@ impl NetWorthServiceTrait for NetWorthService {
         // Get all assets for lookup
         let all_assets = self.asset_repository.list()?;
         let asset_map: HashMap<String, _> = all_assets.iter().map(|a| (a.id.clone(), a)).collect();
-        let stored_valuations_by_account: HashMap<String, DailyAccountValuation> = self
+        let stored_valuations = self
             .valuation_repository
-            .get_valuations_on_date(&account_ids, date)?
-            .into_iter()
-            .map(|valuation| (valuation.account_id.clone(), valuation))
+            .get_valuations_on_date(&account_ids, date)?;
+        let valuation_rows: Vec<(String, NaiveDate)> = stored_valuations
+            .iter()
+            .map(|valuation| (valuation.id.clone(), valuation.valuation_date))
             .collect();
+        let eligible_valuation_ids = self
+            .aggregate_eligibility_service
+            .eligible_entity_ids_for_rows(ENTITY_DAILY_VALUATION, &valuation_rows)
+            .await?;
+        let stored_valuations_by_account: HashMap<String, DailyAccountValuation> =
+            stored_valuations
+                .into_iter()
+                .filter(|valuation| eligible_valuation_ids.contains(&valuation.id))
+                .map(|valuation| (valuation.account_id.clone(), valuation))
+                .collect();
 
         let mut valuations: Vec<ValuationInfo> = Vec::new();
 
@@ -738,51 +776,122 @@ impl NetWorthServiceTrait for NetWorthService {
             investments: Decimal,
         }
 
-        let mut portfolio_by_date: BTreeMap<NaiveDate, PortfolioState> = BTreeMap::new();
         let accounts: Vec<_> = self
             .account_repository
             .list(None, Some(false), None)?
             .into_iter()
             .filter(|account| account.include_in_net_worth)
             .collect();
-        let receipt_eligible_ids: std::collections::HashSet<String> = if accounts.is_empty() {
-            std::collections::HashSet::new()
-        } else {
-            self
-                .verified_receipt_repository
-                .get_eligible_account_ids()
-                .await?
-                .into_iter()
-                .collect()
-        };
-        for account in accounts
-            .into_iter()
-            .filter(|a| receipt_eligible_ids.contains(&a.id))
-        {
-            // Liability accounts (e.g. credit cards) are tracked separately as
-            // liabilities/cash assets below; excluding them here avoids double-counting.
-            if is_liability_account_type(&account.account_type) {
-                continue;
-            }
-            let valuations = self.valuation_repository.get_historical_valuations(
-                &account.id,
+        let mut portfolio_account_ids: Vec<String> = accounts
+            .iter()
+            .filter(|account| !is_liability_account_type(&account.account_type))
+            .map(|account| account.id.clone())
+            .collect();
+        portfolio_account_ids.sort();
+        let mut credit_card_account_ids: Vec<String> = accounts
+            .iter()
+            .filter(|account| is_liability_account_type(&account.account_type))
+            .map(|account| account.id.clone())
+            .collect();
+        credit_card_account_ids.sort();
+
+        let portfolio_valuations = self
+            .valuation_repository
+            .get_historical_valuations_for_accounts(
+                &portfolio_account_ids,
                 Some(start_date),
                 Some(end_date),
             )?;
-            for val in valuations {
-                let entry = portfolio_by_date
-                    .entry(val.valuation_date)
-                    .or_insert_with(|| PortfolioState {
-                        value: Decimal::ZERO,
-                        net_contribution: Decimal::ZERO,
-                        cash: Decimal::ZERO,
-                        investments: Decimal::ZERO,
-                    });
-                entry.value += val.total_value_base;
-                entry.net_contribution += val.net_contribution_base;
-                entry.cash += val.cash_balance_base;
-                entry.investments += val.investment_market_value_base;
+        let mut initial_credit_card_valuations: BTreeMap<String, Vec<DailyAccountValuation>> =
+            BTreeMap::new();
+        let mut credit_card_valuations: BTreeMap<String, Vec<DailyAccountValuation>> =
+            BTreeMap::new();
+        let mut valuation_rows = Vec::new();
+        let mut seen_valuation_rows = HashMap::new();
+        for valuation in &portfolio_valuations {
+            Self::push_unique_row_request(
+                &mut valuation_rows,
+                &mut seen_valuation_rows,
+                &valuation.id,
+                valuation.valuation_date,
+            );
+        }
+        for account_id in &credit_card_account_ids {
+            let initial_valuations = self
+                .valuation_repository
+                .get_historical_valuations(account_id, None, Some(end_date))?
+                .into_iter()
+                .collect::<Vec<_>>();
+            for valuation in &initial_valuations {
+                Self::push_unique_row_request(
+                    &mut valuation_rows,
+                    &mut seen_valuation_rows,
+                    &valuation.id,
+                    valuation.valuation_date,
+                );
             }
+            initial_credit_card_valuations.insert(account_id.clone(), initial_valuations);
+
+            let valuations = self.valuation_repository.get_historical_valuations(
+                account_id,
+                Some(start_date),
+                Some(end_date),
+            )?;
+            for valuation in &valuations {
+                Self::push_unique_row_request(
+                    &mut valuation_rows,
+                    &mut seen_valuation_rows,
+                    &valuation.id,
+                    valuation.valuation_date,
+                );
+            }
+            credit_card_valuations.insert(account_id.clone(), valuations);
+        }
+        let mut account_rows: Vec<(String, NaiveDate)> = portfolio_valuations
+            .iter()
+            .map(|valuation| (valuation.account_id.clone(), valuation.valuation_date))
+            .chain(
+                initial_credit_card_valuations
+                    .values()
+                    .flatten()
+                    .map(|valuation| (valuation.account_id.clone(), valuation.valuation_date)),
+            )
+            .chain(
+                credit_card_valuations
+                    .values()
+                    .flatten()
+                    .map(|valuation| (valuation.account_id.clone(), valuation.valuation_date)),
+            )
+            .collect();
+        account_rows.sort();
+        let eligible_account_rows = self
+            .aggregate_eligibility_service
+            .eligible_account_rows(&account_rows)
+            .await?;
+
+        let eligible_valuation_ids = self
+            .aggregate_eligibility_service
+            .eligible_entity_ids_for_rows(ENTITY_DAILY_VALUATION, &valuation_rows)
+            .await?;
+
+        let mut portfolio_by_date: BTreeMap<NaiveDate, PortfolioState> = BTreeMap::new();
+        for val in portfolio_valuations.into_iter().filter(|valuation| {
+            eligible_account_rows
+                .contains(&(valuation.account_id.clone(), valuation.valuation_date))
+                && eligible_valuation_ids.contains(&valuation.id)
+        }) {
+            let entry = portfolio_by_date
+                .entry(val.valuation_date)
+                .or_insert_with(|| PortfolioState {
+                    value: Decimal::ZERO,
+                    net_contribution: Decimal::ZERO,
+                    cash: Decimal::ZERO,
+                    investments: Decimal::ZERO,
+                });
+            entry.value += val.total_value_base;
+            entry.net_contribution += val.net_contribution_base;
+            entry.cash += val.cash_balance_base;
+            entry.investments += val.investment_market_value_base;
         }
         let first_portfolio_date = portfolio_by_date.keys().next().copied();
         let history_seed_date = first_portfolio_date.unwrap_or(start_date);
@@ -882,28 +991,6 @@ impl NetWorthServiceTrait for NetWorthService {
         // =====================================================================
         // 5. Load credit card liability valuations
         // =====================================================================
-        let accounts: Vec<_> = self
-            .account_repository
-            .list(None, Some(false), None)?
-            .into_iter()
-            .filter(|account| account.include_in_net_worth)
-            .collect();
-        let history_eligible_ids: std::collections::HashSet<String> = if accounts.is_empty() {
-            std::collections::HashSet::new()
-        } else {
-            self
-                .verified_receipt_repository
-                .get_eligible_account_ids()
-                .await?
-                .into_iter()
-                .collect()
-        };
-        let credit_card_account_ids: Vec<String> = accounts
-            .into_iter()
-            .filter(|a| history_eligible_ids.contains(&a.id) && is_liability_account_type(&a.account_type))
-            .map(|account| account.id.clone())
-            .collect();
-
         let mut initial_credit_card_assets: HashMap<String, Decimal> = HashMap::new();
         let mut initial_credit_card_liabilities: HashMap<String, Decimal> = HashMap::new();
         let mut credit_card_assets_by_date: BTreeMap<NaiveDate, HashMap<String, Decimal>> =
@@ -912,10 +999,16 @@ impl NetWorthServiceTrait for NetWorthService {
             BTreeMap::new();
 
         for account_id in &credit_card_account_ids {
-            if let Some(initial_valuation) = self
-                .valuation_repository
-                .get_historical_valuations(account_id, None, Some(history_seed_date))?
+            if let Some(initial_valuation) = initial_credit_card_valuations
+                .remove(account_id)
+                .unwrap_or_default()
                 .into_iter()
+                .filter(|valuation| {
+                    valuation.valuation_date <= history_seed_date
+                        && eligible_account_rows
+                            .contains(&(valuation.account_id.clone(), valuation.valuation_date))
+                        && eligible_valuation_ids.contains(&valuation.id)
+                })
                 .max_by_key(|valuation| valuation.valuation_date)
             {
                 initial_credit_card_assets.insert(
@@ -928,11 +1021,16 @@ impl NetWorthServiceTrait for NetWorthService {
                 );
             }
 
-            for valuation in self.valuation_repository.get_historical_valuations(
-                account_id,
-                Some(start_date),
-                Some(end_date),
-            )? {
+            for valuation in credit_card_valuations
+                .remove(account_id)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|valuation| {
+                    eligible_account_rows
+                        .contains(&(valuation.account_id.clone(), valuation.valuation_date))
+                        && eligible_valuation_ids.contains(&valuation.id)
+                })
+            {
                 credit_card_assets_by_date
                     .entry(valuation.valuation_date)
                     .or_default()

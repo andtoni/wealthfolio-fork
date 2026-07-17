@@ -238,7 +238,9 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
 
                 let account_update = AccountUpdate {
                     id: Some(existing.id.clone()),
-                    name: provider_name.clone().unwrap_or_else(|| existing.name.clone()),
+                    name: provider_name
+                        .clone()
+                        .unwrap_or_else(|| existing.name.clone()),
                     account_type: existing.account_type.clone(),
                     group: existing.group.clone(),
                     is_default: existing.is_default,

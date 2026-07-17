@@ -83,7 +83,9 @@ impl WebDomainEventSink {
         categorization_rules_service: Arc<
             wealthfolio_spending::categorization_rules::CategorizationRulesService,
         >,
-        verified_receipt_repository: Arc<wealthfolio_storage_sqlite::accounts::VerifiedReceiptRepository>,
+        aggregate_eligibility_service: Arc<
+            dyn wealthfolio_core::accounts::AggregateEligibilityServiceTrait + Send + Sync,
+        >,
     ) {
         let rx = self
             .rx
@@ -111,7 +113,7 @@ impl WebDomainEventSink {
             token_lifecycle,
             spending_settings_service,
             categorization_rules_service,
-            verified_receipt_repository,
+            aggregate_eligibility_service,
         });
 
         // Spawn the background worker

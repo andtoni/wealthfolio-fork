@@ -160,7 +160,8 @@ pub fn get_db_path(input: &str) -> String {
 mod migration_tests {
     use super::*;
     use diesel::prelude::*;
-    use diesel::sql_types::BigInt;
+    use diesel::sql_types::{BigInt, Text};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[derive(QueryableByName)]
     struct CountRow {
@@ -173,6 +174,71 @@ mod migration_tests {
             .get_result::<CountRow>(conn)
             .unwrap()
             .count
+    }
+
+    #[derive(QueryableByName)]
+    struct VersionRow {
+        #[diesel(sql_type = Text)]
+        version: String,
+    }
+
+    #[derive(QueryableByName)]
+    struct SnapshotRow {
+        #[diesel(sql_type = Text)]
+        value: String,
+    }
+
+    fn latest_version(conn: &mut SqliteConnection) -> String {
+        if count(conn, "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = '__diesel_schema_migrations'") == 0 {
+            return String::new();
+        }
+        diesel::sql_query(
+            "SELECT version FROM __diesel_schema_migrations ORDER BY version DESC LIMIT 1",
+        )
+        .get_result::<VersionRow>(conn)
+        .optional()
+        .unwrap()
+        .map(|row| row.version)
+        .unwrap_or_default()
+    }
+
+    fn migrate_until(conn: &mut SqliteConnection, target: &str) {
+        loop {
+            let version = conn.run_next_migration(MIGRATIONS).unwrap();
+            let version = version.to_string();
+            assert!(target >= version.as_str(), "migration order changed");
+            if version == target {
+                break;
+            }
+        }
+    }
+
+    fn receipt_columns(conn: &mut SqliteConnection) -> Vec<String> {
+        diesel::sql_query(
+            "SELECT name AS value FROM pragma_table_info('disclosure_receipts') ORDER BY cid",
+        )
+        .load::<SnapshotRow>(conn)
+        .unwrap()
+        .into_iter()
+        .map(|row| row.value)
+        .collect()
+    }
+
+    fn receipt_row(conn: &mut SqliteConnection) -> String {
+        let columns = receipt_columns(conn);
+        let quoted: Vec<String> = columns
+            .iter()
+            .map(|name| format!("\"{}\"", name.replace('\"', "\"\"")))
+            .collect();
+        let sql = format!(
+            "SELECT json_group_array(json(row_json)) AS value FROM (SELECT json_array({}) AS row_json FROM disclosure_receipts ORDER BY {})",
+            quoted.join(","),
+            quoted.join(",")
+        );
+        diesel::sql_query(sql)
+            .get_result::<SnapshotRow>(conn)
+            .unwrap()
+            .value
     }
 
     #[test]
@@ -297,6 +363,53 @@ mod migration_tests {
             ),
             1
         );
+    }
+
+    #[test]
+    fn embedded_receipt_migrations_guard_and_revert_preserve_rows() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("wealthfolio-migration-{nonce}.db"));
+        let mut conn = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+        migrate_until(&mut conn, "20260717000002");
+        assert_eq!(latest_version(&mut conn), "20260717000002");
+        conn.batch_execute("PRAGMA foreign_keys = OFF; INSERT INTO disclosure_receipts (deployment_id, person_subject_id, idempotency_key, account_id, access_generation, operation, resource_id, outcome, binding_version, receipt_binding) VALUES ('d', 'p', 'k', 'a', 7, 'read', 'r', 'ok', 1, 'bound');").unwrap();
+        let row = receipt_row(&mut conn);
+        let columns = receipt_columns(&mut conn);
+        let guarded = conn
+            .revert_last_migration(MIGRATIONS)
+            .unwrap_err()
+            .to_string();
+        assert!(guarded.contains("constraint failed"), "{guarded}");
+        assert_eq!(latest_version(&mut conn), "20260717000002");
+        assert_eq!(receipt_columns(&mut conn), columns);
+        assert_eq!(receipt_row(&mut conn), row);
+        conn.batch_execute(
+            "UPDATE disclosure_receipts SET binding_version = 0, receipt_binding = NULL;",
+        )
+        .unwrap();
+        conn.revert_last_migration(MIGRATIONS).unwrap();
+        assert_eq!(latest_version(&mut conn), "20260717000001");
+        conn.batch_execute("UPDATE disclosure_receipts SET lifecycle_successor_id = 'successor';")
+            .unwrap();
+        let identity_columns = receipt_columns(&mut conn);
+        let identity_row = receipt_row(&mut conn);
+        let guarded = conn
+            .revert_last_migration(MIGRATIONS)
+            .unwrap_err()
+            .to_string();
+        assert!(guarded.contains("constraint failed"), "{guarded}");
+        assert_eq!(latest_version(&mut conn), "20260717000001");
+        assert_eq!(receipt_columns(&mut conn), identity_columns);
+        assert_eq!(receipt_row(&mut conn), identity_row);
+        conn.batch_execute("UPDATE disclosure_receipts SET lifecycle_successor_id = NULL;")
+            .unwrap();
+        conn.revert_last_migration(MIGRATIONS).unwrap();
+        assert_eq!(latest_version(&mut conn), "20260715000001");
+        drop(conn);
+        let _ = fs::remove_file(path);
     }
 }
 

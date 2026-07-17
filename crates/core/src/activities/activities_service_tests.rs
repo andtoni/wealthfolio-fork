@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use crate::accounts::{Account, AccountServiceTrait, AccountUpdate, NewAccount};
+    use crate::accounts::{
+        Account, AccountServiceTrait, AccountUpdate, AggregateEligibilityServiceTrait, NewAccount,
+    };
     use crate::activities::activities_model::*;
     use crate::activities::{
         ActivityRepositoryTrait, ActivityService, ActivityServiceTrait, ImportRun,
@@ -1813,6 +1815,27 @@ mod tests {
 
     #[derive(Clone)]
     struct MockSnapshotService;
+
+    struct MockAggregateEligibilityService;
+
+    #[async_trait]
+    impl AggregateEligibilityServiceTrait for MockAggregateEligibilityService {
+        async fn eligible_account_ids(
+            &self,
+            requested_account_ids: &[String],
+            _as_of: NaiveDate,
+        ) -> Result<HashSet<String>> {
+            Ok(requested_account_ids.iter().cloned().collect())
+        }
+
+        async fn eligible_entity_ids_for_rows(
+            &self,
+            _entity_type: &str,
+            rows: &[(String, NaiveDate)],
+        ) -> Result<HashSet<String>> {
+            Ok(rows.iter().map(|(id, _)| id.clone()).collect())
+        }
+    }
 
     #[async_trait]
     impl SnapshotServiceTrait for MockSnapshotService {
@@ -7626,6 +7649,7 @@ mod tests {
                 Arc::new(MockSnapshotService),
                 quote_service.clone(),
                 fx_service,
+                Arc::new(MockAggregateEligibilityService),
             )
             .with_activity_repository(activity_repository, timezone),
         );
@@ -7641,6 +7665,7 @@ mod tests {
                 Some(start_date),
                 Some(end_date),
             )
+            .await
             .expect("scoped valuation should aggregate imported flows");
 
         assert_eq!(scoped_valuations.len(), 3);
@@ -7649,7 +7674,11 @@ mod tests {
         assert_eq!(scoped_valuations[2].external_inflow_base, Decimal::ZERO);
         assert_eq!(scoped_valuations[2].external_outflow_base, Decimal::ZERO);
 
-        let performance_service = PerformanceService::new(valuation_service, quote_service);
+        let performance_service = PerformanceService::new(
+            valuation_service,
+            quote_service,
+            Arc::new(MockAggregateEligibilityService),
+        );
         let account_tracking_modes = HashMap::new();
         let performance = performance_service
             .calculate_performance_history_for_accounts(
@@ -7748,6 +7777,7 @@ mod tests {
                 Arc::new(MockSnapshotService),
                 quote_service.clone(),
                 fx_service.clone(),
+                Arc::new(MockAggregateEligibilityService),
             )
             .with_activity_repository(activity_repository.clone(), timezone),
         );
@@ -7763,13 +7793,18 @@ mod tests {
                 Some(start_date),
                 Some(end_date),
             )
+            .await
             .expect("scoped valuation should remove internal transfer flows");
 
         assert_eq!(scoped_valuations[1].external_inflow_base, Decimal::ZERO);
         assert_eq!(scoped_valuations[1].external_outflow_base, Decimal::ZERO);
 
-        let performance_service = PerformanceService::new(valuation_service, quote_service)
-            .with_activity_repository(activity_repository, fx_service);
+        let performance_service = PerformanceService::new(
+            valuation_service,
+            quote_service,
+            Arc::new(MockAggregateEligibilityService),
+        )
+        .with_activity_repository(activity_repository, fx_service);
         let performance = performance_service
             .calculate_performance_history_for_accounts(
                 "scope:transfer",

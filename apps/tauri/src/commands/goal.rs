@@ -39,9 +39,11 @@ pub async fn create_goal(
 ) -> Result<Goal, String> {
     debug!("Creating new goal...");
     goal.currency = Some(state.get_base_currency());
+    let timezone = state.get_timezone();
+    let as_of = user_today(parse_user_timezone_or_default(&timezone));
     state
         .goal_service()
-        .create_goal(goal)
+        .create_goal(goal, as_of)
         .await
         .map_err(|e| e.to_string())
 }
@@ -274,14 +276,14 @@ async fn build_valuation_map(
     let asset_service = state.asset_service();
     let quote_service = state.quote_service();
     let fx_service = state.fx_service();
-    let verified_receipt_repository = state.verified_receipt_repository();
+    let aggregate_eligibility_service = state.aggregate_eligibility_service();
     let service = CurrentAccountValuationService::new(
         account_service.as_ref(),
         snapshot_repository.as_ref(),
         asset_service.as_ref(),
         quote_service.as_ref(),
         fx_service.as_ref(),
-        verified_receipt_repository.as_ref(),
+        aggregate_eligibility_service.as_ref(),
     );
     let response = service
         .get_current_valuation_for_scope(

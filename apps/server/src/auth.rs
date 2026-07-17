@@ -404,7 +404,9 @@ pub async fn auth_me(
     };
     let token = extract_token(&request)?;
     let claims = auth.validate_token(&token)?;
-    Ok(Json(serde_json::json!({"authenticated": true, "subject": claims.sub})))
+    Ok(Json(
+        serde_json::json!({"authenticated": true, "subject": claims.sub}),
+    ))
 }
 
 pub async fn auth_status(
@@ -451,6 +453,9 @@ pub async fn require_jwt(
     Ok(response)
 }
 
+// Used by the exported household-route test seam; the production binary currently
+// mounts equivalent authentication middleware through its assembled router.
+#[allow(dead_code)]
 async fn require_authenticated_subject(
     State(auth): State<Arc<AuthManager>>,
     mut request: Request<Body>,
@@ -465,6 +470,7 @@ async fn require_authenticated_subject(
 
 /// Explicit seam for household-enabled routes. No household routes are mounted
 /// by default; a caller must opt in by wrapping its router here.
+#[allow(dead_code)]
 pub fn authenticated_router(router: Router, auth: Arc<AuthManager>) -> Router {
     router.layer(axum::middleware::from_fn_with_state(
         auth,

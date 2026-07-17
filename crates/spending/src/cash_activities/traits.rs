@@ -1,5 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use chrono::NaiveDate;
 
 use super::model::{CashActivity, CashActivitySearchRequest, CashActivitySearchResponse};
 use super::service::CashActivityService;
@@ -11,6 +12,11 @@ use super::service::CashActivityService;
 pub trait CashActivityServiceTrait: Send + Sync {
     async fn search(&self, req: CashActivitySearchRequest) -> Result<CashActivitySearchResponse>;
     async fn get_by_activity_ids(&self, activity_ids: &[String]) -> Result<Vec<CashActivity>>;
+    async fn get_by_activity_ids_for_aggregate(
+        &self,
+        activity_ids: &[String],
+        as_of: NaiveDate,
+    ) -> Result<Vec<CashActivity>>;
 }
 
 #[async_trait]
@@ -21,5 +27,13 @@ impl CashActivityServiceTrait for CashActivityService {
 
     async fn get_by_activity_ids(&self, activity_ids: &[String]) -> Result<Vec<CashActivity>> {
         CashActivityService::get_by_activity_ids(self, activity_ids).await
+    }
+
+    async fn get_by_activity_ids_for_aggregate(
+        &self,
+        activity_ids: &[String],
+        as_of: NaiveDate,
+    ) -> Result<Vec<CashActivity>> {
+        CashActivityService::get_by_activity_ids_for_aggregate(self, activity_ids, as_of).await
     }
 }

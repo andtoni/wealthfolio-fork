@@ -1,3 +1,4 @@
+use crate::accounts::{AggregateEligibilityServiceTrait, ENTITY_POSITION};
 use crate::activities::{
     Activity, ActivityRepositoryTrait, ACTIVITY_TYPE_BUY, ACTIVITY_TYPE_DIVIDEND,
     ACTIVITY_TYPE_INTEREST, ACTIVITY_TYPE_SELL,
@@ -61,6 +62,7 @@ pub struct HoldingsService {
     snapshot_service: Arc<dyn SnapshotServiceTrait>,
     valuation_service: Arc<dyn HoldingsValuationServiceTrait>,
     classification_service: Arc<AssetClassificationService>,
+    aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
     timezone: Arc<RwLock<String>>,
     lot_repository: Option<Arc<dyn LotRepositoryTrait>>,
     activity_repository: Option<Arc<dyn ActivityRepositoryTrait>>,
@@ -169,12 +171,14 @@ impl HoldingsService {
         snapshot_service: Arc<dyn SnapshotServiceTrait>,
         valuation_service: Arc<dyn HoldingsValuationServiceTrait>,
         classification_service: Arc<AssetClassificationService>,
+        aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
     ) -> Self {
         Self::new_with_timezone(
             asset_service,
             snapshot_service,
             valuation_service,
             classification_service,
+            aggregate_eligibility_service,
             Arc::new(RwLock::new(String::new())),
         )
     }
@@ -184,6 +188,7 @@ impl HoldingsService {
         snapshot_service: Arc<dyn SnapshotServiceTrait>,
         valuation_service: Arc<dyn HoldingsValuationServiceTrait>,
         classification_service: Arc<AssetClassificationService>,
+        aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
         timezone: Arc<RwLock<String>>,
     ) -> Self {
         Self {
@@ -191,6 +196,7 @@ impl HoldingsService {
             snapshot_service,
             valuation_service,
             classification_service,
+            aggregate_eligibility_service,
             timezone,
             lot_repository: None,
             activity_repository: None,
@@ -228,6 +234,29 @@ impl HoldingsService {
     fn today_in_user_timezone(&self) -> chrono::NaiveDate {
         let tz = parse_user_timezone_or_default(&self.timezone.read().unwrap());
         user_today(tz)
+    }
+
+    async fn filter_aggregate_eligible_snapshot_positions(
+        &self,
+        snapshot: &mut snapshot::AccountStateSnapshot,
+    ) -> Result<()> {
+        if snapshot.positions.is_empty() {
+            return Ok(());
+        }
+
+        let rows: Vec<(String, NaiveDate)> = snapshot
+            .positions
+            .values()
+            .map(|position| (position.id.clone(), position.inception_date.date_naive()))
+            .collect();
+        let eligible_ids = self
+            .aggregate_eligibility_service
+            .eligible_entity_ids_for_rows(ENTITY_POSITION, &rows)
+            .await?;
+        snapshot
+            .positions
+            .retain(|_, position| eligible_ids.contains(&position.id));
+        Ok(())
     }
 
     async fn build_live_holdings_from_snapshot(
@@ -1161,7 +1190,7 @@ impl HoldingsServiceTrait for HoldingsService {
             account_id, base_currency
         );
 
-        let latest_snapshot = match self
+        let mut latest_snapshot = match self
             .snapshot_service
             .get_latest_holdings_snapshot(account_id)
         {
@@ -1181,6 +1210,8 @@ impl HoldingsServiceTrait for HoldingsService {
                 return Err(core_error);
             }
         };
+        self.filter_aggregate_eligible_snapshot_positions(&mut latest_snapshot)
+            .await?;
 
         let mut holdings = self
             .build_live_holdings_from_snapshot(
@@ -1371,7 +1402,7 @@ impl HoldingsServiceTrait for HoldingsService {
             asset_id, account_id, base_currency
         );
 
-        let latest_snapshot = match self
+        let mut latest_snapshot = match self
             .snapshot_service
             .get_latest_holdings_snapshot(account_id)
         {
@@ -1391,6 +1422,8 @@ impl HoldingsServiceTrait for HoldingsService {
                 return Err(e);
             }
         };
+        self.filter_aggregate_eligible_snapshot_positions(&mut latest_snapshot)
+            .await?;
 
         let Some(position) = latest_snapshot.positions.get(asset_id).cloned() else {
             debug!(
@@ -1485,6 +1518,9 @@ impl HoldingsServiceTrait for HoldingsService {
         snapshot: &snapshot::AccountStateSnapshot,
         base_currency: &str,
     ) -> Result<Vec<Holding>> {
+        let mut snapshot = snapshot.clone();
+        self.filter_aggregate_eligible_snapshot_positions(&mut snapshot)
+            .await?;
         let mut holdings: Vec<Holding> = Vec::new();
 
         // Get all asset IDs from positions
@@ -1642,6 +1678,9 @@ impl HoldingsServiceTrait for HoldingsService {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::type_complexity)]
+
+    use crate::accounts::{ProvenanceRole, ENTITY_POSITION};
     use crate::activities::ActivityStatus;
     use crate::assets::{
         AssetMetadata, AssetResolutionInput, AssetResolutionOutput, AssetSpec, EnsureAssetsResult,
@@ -1663,7 +1702,7 @@ mod tests {
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
     use serde_json::json;
-    use std::collections::{HashMap, VecDeque};
+    use std::collections::{HashMap, HashSet, VecDeque};
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
@@ -1876,6 +1915,148 @@ mod tests {
                 }
             }
             Ok(())
+        }
+    }
+
+    struct TestPositionPolicyRule {
+        role: TestPositionRole,
+        coverage_start: NaiveDate,
+        manual_current_approved: bool,
+    }
+
+    #[derive(Clone, Copy)]
+    enum TestPositionRole {
+        Current,
+        Historical,
+        ContextualReference,
+        OpeningBaseline,
+        Unknown,
+    }
+
+    struct MockAggregateEligibilityService {
+        rules: Mutex<HashMap<String, TestPositionPolicyRule>>,
+        calls: Mutex<Vec<(String, Vec<(String, NaiveDate)>)>>,
+        error: Mutex<bool>,
+        default_allow: bool,
+    }
+
+    impl MockAggregateEligibilityService {
+        fn allow_all() -> Self {
+            Self {
+                rules: Mutex::new(HashMap::new()),
+                calls: Mutex::new(Vec::new()),
+                error: Mutex::new(false),
+                default_allow: true,
+            }
+        }
+
+        fn new(rules: Vec<(&str, TestPositionRole, &str, bool)>) -> Self {
+            Self {
+                rules: Mutex::new(
+                    rules
+                        .into_iter()
+                        .map(|(id, role, coverage_start, manual_current_approved)| {
+                            (
+                                id.to_string(),
+                                TestPositionPolicyRule {
+                                    role,
+                                    coverage_start: date(coverage_start),
+                                    manual_current_approved,
+                                },
+                            )
+                        })
+                        .collect(),
+                ),
+                calls: Mutex::new(Vec::new()),
+                error: Mutex::new(false),
+                default_allow: false,
+            }
+        }
+
+        fn set_error(&self, error: bool) {
+            *self.error.lock().unwrap() = error;
+        }
+
+        fn calls(&self) -> Vec<(String, Vec<(String, NaiveDate)>)> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    impl TestPositionRole {
+        fn eligible_for_aggregate(
+            self,
+            row_date: NaiveDate,
+            coverage_start: NaiveDate,
+            manual_current_approved: bool,
+        ) -> bool {
+            match self {
+                Self::Current => ProvenanceRole::ManualCurrent.eligible_for_aggregate(
+                    &row_date.to_string(),
+                    Some(&coverage_start.to_string()),
+                    manual_current_approved,
+                ),
+                Self::Historical => ProvenanceRole::HistoricalContext.eligible_for_aggregate(
+                    &row_date.to_string(),
+                    Some(&coverage_start.to_string()),
+                    manual_current_approved,
+                ),
+                Self::ContextualReference => ProvenanceRole::ContextualReference
+                    .eligible_for_aggregate(
+                        &row_date.to_string(),
+                        Some(&coverage_start.to_string()),
+                        manual_current_approved,
+                    ),
+                Self::OpeningBaseline => ProvenanceRole::OpeningBaseline.eligible_for_aggregate(
+                    &row_date.to_string(),
+                    Some(&coverage_start.to_string()),
+                    manual_current_approved,
+                ),
+                Self::Unknown => false,
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl AggregateEligibilityServiceTrait for MockAggregateEligibilityService {
+        async fn eligible_account_ids(
+            &self,
+            _requested_account_ids: &[String],
+            _as_of: NaiveDate,
+        ) -> Result<HashSet<String>> {
+            Ok(HashSet::new())
+        }
+
+        async fn eligible_entity_ids_for_rows(
+            &self,
+            entity_type: &str,
+            rows: &[(String, NaiveDate)],
+        ) -> Result<HashSet<String>> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((entity_type.to_string(), rows.to_vec()));
+            if *self.error.lock().unwrap() {
+                return Err(CoreError::Unexpected(
+                    "injected holdings eligibility error".to_string(),
+                ));
+            }
+            if self.default_allow {
+                return Ok(rows.iter().map(|(id, _)| id.clone()).collect());
+            }
+            let rules = self.rules.lock().unwrap();
+            Ok(rows
+                .iter()
+                .filter(|(id, row_date)| {
+                    rules.get(id).is_some_and(|rule| {
+                        rule.role.eligible_for_aggregate(
+                            *row_date,
+                            rule.coverage_start,
+                            rule.manual_current_approved,
+                        )
+                    })
+                })
+                .map(|(id, _)| id.clone())
+                .collect())
         }
     }
 
@@ -2627,6 +2808,12 @@ mod tests {
         }
     }
 
+    fn test_position_on(account_id: &str, asset_id: &str, inception_date: &str) -> Position {
+        let mut position = test_position(account_id, asset_id);
+        position.inception_date = date(inception_date).and_hms_opt(0, 0, 0).unwrap().and_utc();
+        position
+    }
+
     fn test_lot_record(
         account_id: &str,
         asset_id: &str,
@@ -2742,6 +2929,20 @@ mod tests {
         assets: Vec<Asset>,
         values: HashMap<String, Decimal>,
     ) -> HoldingsService {
+        test_service_with_eligibility(
+            snapshot,
+            assets,
+            values,
+            Arc::new(MockAggregateEligibilityService::allow_all()),
+        )
+    }
+
+    fn test_service_with_eligibility(
+        snapshot: AccountStateSnapshot,
+        assets: Vec<Asset>,
+        values: HashMap<String, Decimal>,
+        eligibility: Arc<MockAggregateEligibilityService>,
+    ) -> HoldingsService {
         HoldingsService::new(
             Arc::new(MockAssetService::new(assets)),
             Arc::new(MockSnapshotService { snapshot }),
@@ -2749,7 +2950,260 @@ mod tests {
             Arc::new(AssetClassificationService::new(Arc::new(
                 EmptyTaxonomyService,
             ))),
+            eligibility,
         )
+    }
+
+    fn date(value: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(value, "%Y-%m-%d").unwrap()
+    }
+
+    #[tokio::test]
+    async fn holdings_current_position_rows_pass_when_eligible() {
+        let account_id = "acc-1";
+        let asset_id = "AAPL";
+        let position = test_position_on(account_id, asset_id, "2026-07-15");
+        let position_id = position.id.clone();
+        let snapshot = AccountStateSnapshot {
+            account_id: account_id.to_string(),
+            currency: "USD".to_string(),
+            positions: HashMap::from([(asset_id.to_string(), position)]),
+            ..Default::default()
+        };
+        let eligibility = Arc::new(MockAggregateEligibilityService::new(vec![(
+            position_id.as_str(),
+            TestPositionRole::Current,
+            "2026-07-15",
+            true,
+        )]));
+        let service = test_service_with_eligibility(
+            snapshot,
+            vec![test_asset(asset_id, "AAPL", InstrumentType::Equity)],
+            HashMap::from([(asset_id.to_string(), dec!(125))]),
+            eligibility.clone(),
+        );
+
+        let holdings = service.get_holdings(account_id, "USD").await.unwrap();
+
+        assert_eq!(holdings.len(), 1);
+        assert_eq!(holdings[0].instrument.as_ref().unwrap().id, asset_id);
+        let calls = eligibility.calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, ENTITY_POSITION);
+        assert_eq!(calls[0].1, vec![(position_id, date("2026-07-15"))]);
+    }
+
+    #[tokio::test]
+    async fn holdings_missing_historical_contextual_and_unknown_positions_fail_closed() {
+        let account_id = "acc-1";
+        let live = test_position_on(account_id, "AAPL", "2026-07-15");
+        let historical = test_position_on(account_id, "MSFT", "2026-07-15");
+        let contextual = test_position_on(account_id, "GOOG", "2026-07-15");
+        let unknown = test_position_on(account_id, "TSLA", "2026-07-15");
+        let snapshot = AccountStateSnapshot {
+            account_id: account_id.to_string(),
+            currency: "USD".to_string(),
+            positions: HashMap::from([
+                ("AAPL".to_string(), live.clone()),
+                ("MSFT".to_string(), historical.clone()),
+                ("GOOG".to_string(), contextual.clone()),
+                ("TSLA".to_string(), unknown.clone()),
+            ]),
+            ..Default::default()
+        };
+        let eligibility = Arc::new(MockAggregateEligibilityService::new(vec![
+            (
+                live.id.as_str(),
+                TestPositionRole::Current,
+                "2026-07-15",
+                true,
+            ),
+            (
+                historical.id.as_str(),
+                TestPositionRole::Historical,
+                "2026-07-15",
+                true,
+            ),
+            (
+                contextual.id.as_str(),
+                TestPositionRole::ContextualReference,
+                "2026-07-15",
+                true,
+            ),
+            (
+                unknown.id.as_str(),
+                TestPositionRole::Unknown,
+                "2026-07-15",
+                true,
+            ),
+        ]));
+        let service = test_service_with_eligibility(
+            snapshot,
+            vec![
+                test_asset("AAPL", "AAPL", InstrumentType::Equity),
+                test_asset("MSFT", "MSFT", InstrumentType::Equity),
+                test_asset("GOOG", "GOOG", InstrumentType::Equity),
+                test_asset("TSLA", "TSLA", InstrumentType::Equity),
+            ],
+            HashMap::from([
+                ("AAPL".to_string(), dec!(100)),
+                ("MSFT".to_string(), dec!(200)),
+                ("GOOG".to_string(), dec!(300)),
+                ("TSLA".to_string(), dec!(400)),
+            ]),
+            eligibility,
+        );
+
+        let holdings = service.get_holdings(account_id, "USD").await.unwrap();
+
+        assert_eq!(holdings.len(), 1);
+        assert_eq!(holdings[0].instrument.as_ref().unwrap().id, "AAPL");
+        assert_eq!(holdings[0].market_value.base, dec!(100));
+    }
+
+    #[tokio::test]
+    async fn holdings_opening_baseline_boundary_starts_at_coverage_start() {
+        let account_id = "acc-1";
+        let before = test_position_on(account_id, "BEFORE", "2026-01-09");
+        let start = test_position_on(account_id, "START", "2026-01-10");
+        let after = test_position_on(account_id, "AFTER", "2026-01-11");
+        let snapshot = AccountStateSnapshot {
+            account_id: account_id.to_string(),
+            currency: "USD".to_string(),
+            positions: HashMap::from([
+                ("BEFORE".to_string(), before.clone()),
+                ("START".to_string(), start.clone()),
+                ("AFTER".to_string(), after.clone()),
+            ]),
+            ..Default::default()
+        };
+        let eligibility = Arc::new(MockAggregateEligibilityService::new(vec![
+            (
+                before.id.as_str(),
+                TestPositionRole::OpeningBaseline,
+                "2026-01-10",
+                true,
+            ),
+            (
+                start.id.as_str(),
+                TestPositionRole::OpeningBaseline,
+                "2026-01-10",
+                true,
+            ),
+            (
+                after.id.as_str(),
+                TestPositionRole::OpeningBaseline,
+                "2026-01-10",
+                true,
+            ),
+        ]));
+        let service = test_service_with_eligibility(
+            snapshot,
+            vec![
+                test_asset("BEFORE", "BEFORE", InstrumentType::Equity),
+                test_asset("START", "START", InstrumentType::Equity),
+                test_asset("AFTER", "AFTER", InstrumentType::Equity),
+            ],
+            HashMap::from([
+                ("BEFORE".to_string(), dec!(90)),
+                ("START".to_string(), dec!(100)),
+                ("AFTER".to_string(), dec!(110)),
+            ]),
+            eligibility,
+        );
+
+        let holdings = service.get_holdings(account_id, "USD").await.unwrap();
+        let mut asset_ids: Vec<_> = holdings
+            .iter()
+            .map(|holding| holding.instrument.as_ref().unwrap().id.as_str())
+            .collect();
+        asset_ids.sort();
+
+        assert_eq!(asset_ids, vec!["AFTER", "START"]);
+    }
+
+    #[tokio::test]
+    async fn holdings_mixed_role_rows_are_isolated_before_merge() {
+        let account_id = "acc-1";
+        let asset_id = "AAPL";
+        let mut current = test_position_on(account_id, asset_id, "2026-07-15");
+        current.id = "current-position".to_string();
+        current.quantity = dec!(1);
+        let mut historical = test_position_on(account_id, "AAPL_SHADOW", "2026-07-15");
+        historical.id = "historical-position".to_string();
+        historical.asset_id = asset_id.to_string();
+        historical.quantity = dec!(100);
+        let snapshot = AccountStateSnapshot {
+            account_id: account_id.to_string(),
+            currency: "USD".to_string(),
+            positions: HashMap::from([
+                ("current".to_string(), current.clone()),
+                ("historical".to_string(), historical.clone()),
+            ]),
+            ..Default::default()
+        };
+        let eligibility = Arc::new(MockAggregateEligibilityService::new(vec![
+            (
+                current.id.as_str(),
+                TestPositionRole::Current,
+                "2026-07-15",
+                true,
+            ),
+            (
+                historical.id.as_str(),
+                TestPositionRole::Historical,
+                "2026-07-15",
+                true,
+            ),
+        ]));
+        let service = test_service_with_eligibility(
+            snapshot,
+            vec![test_asset(asset_id, "AAPL", InstrumentType::Equity)],
+            HashMap::from([(asset_id.to_string(), dec!(100))]),
+            eligibility,
+        );
+
+        let holdings = service.get_holdings(account_id, "USD").await.unwrap();
+
+        assert_eq!(holdings.len(), 1);
+        assert_eq!(holdings[0].quantity, dec!(1));
+    }
+
+    #[tokio::test]
+    async fn holdings_eligibility_service_error_propagates() {
+        let account_id = "acc-1";
+        let asset_id = "AAPL";
+        let position = test_position_on(account_id, asset_id, "2026-07-15");
+        let position_id = position.id.clone();
+        let snapshot = AccountStateSnapshot {
+            account_id: account_id.to_string(),
+            currency: "USD".to_string(),
+            positions: HashMap::from([(asset_id.to_string(), position)]),
+            ..Default::default()
+        };
+        let eligibility = Arc::new(MockAggregateEligibilityService::new(vec![(
+            position_id.as_str(),
+            TestPositionRole::Current,
+            "2026-07-15",
+            true,
+        )]));
+        eligibility.set_error(true);
+        let service = test_service_with_eligibility(
+            snapshot,
+            vec![test_asset(asset_id, "AAPL", InstrumentType::Equity)],
+            HashMap::from([(asset_id.to_string(), dec!(100))]),
+            eligibility,
+        );
+
+        let err = service
+            .get_holdings(account_id, "USD")
+            .await
+            .expect_err("eligibility errors must propagate");
+
+        assert_eq!(
+            err.to_string(),
+            "Unexpected error: injected holdings eligibility error"
+        );
     }
 
     #[tokio::test]

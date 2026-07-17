@@ -15,6 +15,9 @@ pub const ACTIVITY_TYPE_DIVIDEND: &str = "DIVIDEND";
 /// Interest earned on cash or fixed-income positions. Increases cash.
 pub const ACTIVITY_TYPE_INTEREST: &str = "INTEREST";
 
+/// Other income that is neither dividend nor interest. Increases cash.
+pub const ACTIVITY_TYPE_OTHER_INCOME: &str = "OTHER_INCOME";
+
 /// Incoming funds from outside Wealthfolio. Increases cash.
 pub const ACTIVITY_TYPE_DEPOSIT: &str = "DEPOSIT";
 
@@ -58,7 +61,11 @@ pub const TRADING_ACTIVITY_TYPES: [&str; 3] =
     [ACTIVITY_TYPE_BUY, ACTIVITY_TYPE_SELL, ACTIVITY_TYPE_SPLIT];
 
 /// Income activity types
-pub const INCOME_ACTIVITY_TYPES: [&str; 2] = [ACTIVITY_TYPE_DIVIDEND, ACTIVITY_TYPE_INTEREST];
+pub const INCOME_ACTIVITY_TYPES: [&str; 3] = [
+    ACTIVITY_TYPE_DIVIDEND,
+    ACTIVITY_TYPE_INTEREST,
+    ACTIVITY_TYPE_OTHER_INCOME,
+];
 
 /// Activity types where `unit_price` represents the asset's per-unit market
 /// price and can be used as a fallback quote. Income activities (DIVIDEND,
