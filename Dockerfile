@@ -1,5 +1,6 @@
 # Global build args
 ARG RUST_IMAGE=rust:1.91-alpine@sha256:45c1c35cd364b8055e9e86f8ecd3e8c874b2dcb658d8a4f94b5d111aa0d651a2
+ARG SOURCE_REVISION=unknown
 
 # Stage 1: build frontend
 # Use --platform=$BUILDPLATFORM to run on the native runner (fast)
@@ -72,6 +73,9 @@ RUN xx-cargo build --release --manifest-path apps/server/Cargo.toml && \
 
 # Final stage
 FROM alpine:3.21@sha256:f27cad9117495d32d067133afff942cb2dc745dfe9163e949f6bfe8a6a245339
+ARG SOURCE_REVISION
+LABEL org.opencontainers.image.revision="${SOURCE_REVISION}" \
+      org.opencontainers.image.source="https://git.example.com/andtoni/wealthfolio"
 WORKDIR /app
 # Copy from backend (which is now build platform, but binary is target platform)
 COPY --from=backend /wealthfolio-server /usr/local/bin/wealthfolio-server
