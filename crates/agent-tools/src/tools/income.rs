@@ -95,6 +95,7 @@ impl AgentTool for GetIncome {
         let summaries = env
             .income_service()
             .get_income_summary(None)
+            .await
             .map_err(|e| AgentToolError::ExecutionFailed(e.to_string()))?;
 
         // Determine which period to return

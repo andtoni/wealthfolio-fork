@@ -63,8 +63,8 @@ pub struct QueueWorkerDeps {
     /// Categorization rules service — auto-runs rules against newly-changed activities.
     pub categorization_rules_service:
         Arc<wealthfolio_spending::categorization_rules::CategorizationRulesService>,
-    /// Verified receipt repository for eligibility checks.
-    pub verified_receipt_repository: Arc<wealthfolio_storage_sqlite::accounts::VerifiedReceiptRepository>,
+    pub aggregate_eligibility_service:
+        Arc<dyn wealthfolio_core::accounts::AggregateEligibilityServiceTrait + Send + Sync>,
 }
 
 /// Runs the event queue worker.
@@ -553,7 +553,7 @@ async fn refresh_all_goal_summaries(deps: Arc<QueueWorkerDeps>) {
         deps.asset_service.as_ref(),
         deps.quote_service.as_ref(),
         deps.fx_service.as_ref(),
-        deps.verified_receipt_repository.as_ref(),
+        deps.aggregate_eligibility_service.as_ref(),
     );
     let response = match service
         .get_current_valuation_for_scope(

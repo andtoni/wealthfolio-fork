@@ -507,7 +507,8 @@ pub async fn get_net_worth_history(
 
     let history = state
         .net_worth_service()
-        .get_net_worth_history(start, end).await
+        .get_net_worth_history(start, end)
+        .await
         .map_err(|e| format!("Failed to get net worth history: {}", e))?;
 
     let response: Vec<NetWorthHistoryPoint> = history

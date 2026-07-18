@@ -1,4 +1,4 @@
-use crate::accounts::{account_types, Account, TrackingMode};
+use crate::accounts::{account_types, Account, AggregateEligibilityServiceTrait, TrackingMode};
 use crate::activities::{Activity, ActivityRepositoryTrait, ActivityType, TransferPairResolution};
 use crate::constants::DECIMAL_PRECISION;
 use crate::errors::{self, Result, ValidationError};
@@ -95,7 +95,7 @@ pub trait PerformanceServiceTrait: Send + Sync {
     /// Calculates lightweight account performance metrics (cumulative returns and portfolio weights) for multiple accounts.
     /// This method efficiently fetches the latest and previous day's valuations in bulk to minimize database queries.
     /// Can be used for a single account by passing a slice with one ID.
-    fn calculate_accounts_simple_performance(
+    async fn calculate_accounts_simple_performance(
         &self,
         account_ids: &[String],
     ) -> Result<Vec<SimplePerformanceMetrics>>;
@@ -290,6 +290,7 @@ where
 pub struct PerformanceService {
     valuation_service: Arc<dyn ValuationServiceTrait + Send + Sync>,
     quote_service: Arc<dyn QuoteServiceTrait + Send + Sync>,
+    aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
     timezone: Arc<RwLock<String>>,
     lot_repository: Option<Arc<dyn LotRepositoryTrait>>,
     activity_repository: Option<Arc<dyn ActivityRepositoryTrait>>,
@@ -464,10 +465,12 @@ impl PerformanceService {
     pub fn new(
         valuation_service: Arc<dyn ValuationServiceTrait + Send + Sync>,
         quote_service: Arc<dyn QuoteServiceTrait + Send + Sync>,
+        aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
     ) -> Self {
         Self::new_with_timezone(
             valuation_service,
             quote_service,
+            aggregate_eligibility_service,
             Arc::new(RwLock::new(String::new())),
         )
     }
@@ -475,11 +478,13 @@ impl PerformanceService {
     pub fn new_with_timezone(
         valuation_service: Arc<dyn ValuationServiceTrait + Send + Sync>,
         quote_service: Arc<dyn QuoteServiceTrait + Send + Sync>,
+        aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
         timezone: Arc<RwLock<String>>,
     ) -> Self {
         Self {
             valuation_service,
             quote_service,
+            aggregate_eligibility_service,
             timezone,
             lot_repository: None,
             activity_repository: None,
@@ -1762,6 +1767,7 @@ impl PerformanceService {
         let histories_by_account = match self
             .valuation_service
             .get_historical_valuations_by_account(account_ids, Some(start_date), Some(end_date))
+            .await
         {
             Ok(histories) => histories,
             Err(e) => {
@@ -2819,6 +2825,21 @@ impl PerformanceService {
         tracking_mode: Option<TrackingMode>,
         account_type: Option<&str>,
     ) -> Result<PerformanceResult> {
+        let as_of = end_date_opt.unwrap_or_else(|| Utc::now().date_naive());
+        if self
+            .aggregate_eligibility_service
+            .eligible_account_ids(&[account_id.to_string()], as_of)
+            .await?
+            .is_empty()
+        {
+            return Ok(Self::empty_response_with_context(
+                account_id,
+                "",
+                start_date_opt,
+                end_date_opt,
+                "Performance unavailable: account is not eligible for financial aggregates.",
+            ));
+        }
         if let (Some(start), Some(end)) = (start_date_opt, end_date_opt) {
             if start > end {
                 return Err(errors::Error::Validation(ValidationError::InvalidInput(
@@ -2827,11 +2848,10 @@ impl PerformanceService {
             }
         }
 
-        let full_history = self.valuation_service.get_historical_valuations(
-            account_id,
-            start_date_opt,
-            end_date_opt,
-        )?;
+        let full_history = self
+            .valuation_service
+            .get_historical_valuations(account_id, start_date_opt, end_date_opt)
+            .await?;
 
         if full_history.len() < 2 {
             warn!(
@@ -2896,6 +2916,21 @@ impl PerformanceService {
         account_type: Option<&str>,
         profile: PerformanceSummaryProfile,
     ) -> Result<PerformanceResult> {
+        let as_of = end_date_opt.unwrap_or_else(|| Utc::now().date_naive());
+        if self
+            .aggregate_eligibility_service
+            .eligible_account_ids(&[account_id.to_string()], as_of)
+            .await?
+            .is_empty()
+        {
+            return Ok(Self::empty_response_with_context(
+                account_id,
+                "",
+                start_date_opt,
+                end_date_opt,
+                "Performance unavailable: account is not eligible for financial aggregates.",
+            ));
+        }
         if let (Some(start), Some(end)) = (start_date_opt, end_date_opt) {
             if start > end {
                 return Err(errors::Error::Validation(ValidationError::InvalidInput(
@@ -2904,11 +2939,10 @@ impl PerformanceService {
             }
         }
 
-        let full_history = self.valuation_service.get_historical_valuations(
-            account_id,
-            start_date_opt,
-            end_date_opt,
-        )?;
+        let full_history = self
+            .valuation_service
+            .get_historical_valuations(account_id, start_date_opt, end_date_opt)
+            .await?;
 
         if full_history.len() < 2 {
             warn!(
@@ -2999,13 +3033,37 @@ impl PerformanceService {
                 "Performance unavailable: no accounts selected.",
             ));
         }
+        let as_of = end_date_opt.unwrap_or_else(|| Utc::now().date_naive());
+        let eligible_account_ids = self
+            .aggregate_eligibility_service
+            .eligible_account_ids(account_ids, as_of)
+            .await?;
+        let eligible_account_ids: Vec<String> = account_ids
+            .iter()
+            .filter(|account_id| eligible_account_ids.contains(*account_id))
+            .cloned()
+            .collect();
+        if eligible_account_ids.is_empty() {
+            return Ok(PerformanceService::empty_response_with_context(
+                scope_id,
+                base_currency,
+                start_date_opt,
+                end_date_opt,
+                "Performance unavailable: no accounts are eligible for financial aggregates.",
+            ));
+        }
         let scoped_tracking_composition =
-            Self::scoped_tracking_composition(account_ids, account_tracking_modes);
+            Self::scoped_tracking_composition(&eligible_account_ids, account_tracking_modes);
 
         if scoped_tracking_composition == ScopedTrackingComposition::Mixed {
             let histories_by_account = match self
                 .valuation_service
-                .get_historical_valuations_by_account(account_ids, start_date_opt, end_date_opt)
+                .get_historical_valuations_by_account(
+                    &eligible_account_ids,
+                    start_date_opt,
+                    end_date_opt,
+                )
+                .await
             {
                 Ok(histories) => histories,
                 Err(errors::Error::Calculation(error)) => {
@@ -3025,7 +3083,7 @@ impl PerformanceService {
                 Err(error) => return Err(error),
             };
             let empty_history: &[DailyAccountValuation] = &[];
-            let account_histories: Vec<MixedScopeAccountHistory<'_>> = account_ids
+            let account_histories: Vec<MixedScopeAccountHistory<'_>> = eligible_account_ids
                 .iter()
                 .map(|account_id| MixedScopeAccountHistory {
                     account_id,
@@ -3057,11 +3115,13 @@ impl PerformanceService {
             .valuation_service
             .get_historical_valuations_for_accounts(
                 scope_id,
-                account_ids,
+                &eligible_account_ids,
                 base_currency,
                 start_date_opt,
                 end_date_opt,
-            ) {
+            )
+            .await
+        {
             Ok(history) => history,
             Err(errors::Error::Calculation(error)) => {
                 let warning = format!(
@@ -3101,7 +3161,7 @@ impl PerformanceService {
         let mut metrics = match scoped_tracking_composition {
             ScopedTrackingComposition::TransactionsOnly => {
                 let cash_fx_attribution_enabled =
-                    Self::all_accounts_are_cash(account_ids, account_types);
+                    Self::all_accounts_are_cash(&eligible_account_ids, account_types);
                 Self::compute_scoped_account_performance(
                     &full_history,
                     Some(TrackingMode::Transactions),
@@ -3113,7 +3173,7 @@ impl PerformanceService {
             }
             ScopedTrackingComposition::HoldingsOnly => {
                 let cash_fx_attribution_enabled =
-                    Self::all_accounts_are_cash(account_ids, account_types);
+                    Self::all_accounts_are_cash(&eligible_account_ids, account_types);
                 Self::compute_scoped_account_performance(
                     &full_history,
                     Some(TrackingMode::Holdings),
@@ -3146,12 +3206,12 @@ impl PerformanceService {
         let scoped_unrealized_effects = self
             .collect_scoped_unrealized_attribution_event_effects(
                 &metrics,
-                account_ids,
+                &eligible_account_ids,
                 attribution_baseline,
             )
             .await;
         let scoped_transfer_effects = self
-            .collect_scoped_transfer_pair_attribution_event_effects(&metrics, account_ids)
+            .collect_scoped_transfer_pair_attribution_event_effects(&metrics, &eligible_account_ids)
             .await;
         let mut effect_seed = AttributionEffectSeed::default();
         if scoped_unrealized_effects.complete {
@@ -3169,7 +3229,7 @@ impl PerformanceService {
             .extend(scoped_transfer_effects.warnings);
         self.finalize_attribution_from_event_effects(
             &mut metrics,
-            account_ids,
+            &eligible_account_ids,
             &full_history,
             attribution_baseline,
             effect_seed,
@@ -4943,7 +5003,7 @@ impl PerformanceServiceTrait for PerformanceService {
         .await
     }
 
-    fn calculate_accounts_simple_performance(
+    async fn calculate_accounts_simple_performance(
         &self,
         account_ids: &[String],
     ) -> Result<Vec<SimplePerformanceMetrics>> {
@@ -4951,8 +5011,24 @@ impl PerformanceServiceTrait for PerformanceService {
             return Ok(Vec::new());
         }
 
+        let eligible_ids = self
+            .aggregate_eligibility_service
+            .eligible_account_ids(account_ids, Utc::now().date_naive())
+            .await?;
+        let account_ids: Vec<String> = account_ids
+            .iter()
+            .filter(|account_id| eligible_ids.contains(*account_id))
+            .cloned()
+            .collect();
+        if account_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
         // 1. Fetch the *absolute* latest record for each account
-        let latest_daily_valuations = self.valuation_service.get_latest_valuations(account_ids)?;
+        let latest_daily_valuations = self
+            .valuation_service
+            .get_latest_valuations(&account_ids)
+            .await?;
 
         let latest_daily_map: HashMap<String, DailyAccountValuation> = latest_daily_valuations
             .into_iter()
@@ -4962,7 +5038,7 @@ impl PerformanceServiceTrait for PerformanceService {
         // 2. Determine the previous date for each account based on its absolute latest found date
         //    and group accounts by the previous date needed.
         let mut prev_dates_needed: HashMap<NaiveDate, Vec<String>> = HashMap::new();
-        for account_id in account_ids {
+        for account_id in &account_ids {
             // Iterate over original requested IDs
             if let Some(latest_record) = latest_daily_map.get(account_id) {
                 let prev_date = latest_record.valuation_date - Duration::days(1);
@@ -4979,6 +5055,7 @@ impl PerformanceServiceTrait for PerformanceService {
             match self
                 .valuation_service
                 .get_valuations_on_date(&ids, prev_date)
+                .await
             {
                 Ok(records) => {
                     for record in records {
@@ -5004,7 +5081,7 @@ impl PerformanceServiceTrait for PerformanceService {
 
         // 5. Construct results using the absolute latest and previous-to-latest records
         let mut results = Vec::with_capacity(account_ids.len());
-        for account_id in account_ids {
+        for account_id in &account_ids {
             if let Some(current) = latest_daily_map.get(account_id) {
                 let previous = previous_daily_map.get(account_id);
                 let performance_metrics = Self::calculate_simple_performance(
@@ -5049,7 +5126,796 @@ mod tests {
     };
     use chrono::{DateTime, Utc};
     use serde_json::json;
+    use std::collections::HashSet;
     use std::collections::VecDeque;
+
+    struct TestAggregateEligibilityService;
+
+    #[async_trait]
+    impl AggregateEligibilityServiceTrait for TestAggregateEligibilityService {
+        async fn eligible_account_ids(
+            &self,
+            requested_account_ids: &[String],
+            _as_of: NaiveDate,
+        ) -> Result<HashSet<String>> {
+            Ok(requested_account_ids.iter().cloned().collect())
+        }
+
+        async fn eligible_entity_ids_for_rows(
+            &self,
+            _entity_type: &str,
+            rows: &[(String, NaiveDate)],
+        ) -> Result<HashSet<String>> {
+            Ok(rows.iter().map(|(id, _)| id.clone()).collect())
+        }
+    }
+
+    fn test_eligibility_service() -> Arc<dyn AggregateEligibilityServiceTrait> {
+        Arc::new(TestAggregateEligibilityService)
+    }
+
+    type ReadRecorder = Arc<std::sync::Mutex<Vec<ReadEvent>>>;
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    enum ReadEvent {
+        Eligibility {
+            account_ids: Vec<String>,
+            as_of: NaiveDate,
+        },
+        ValuationHistory {
+            account_ids: Vec<String>,
+            start_date: Option<NaiveDate>,
+            end_date: Option<NaiveDate>,
+        },
+        ValuationHistoryForAccounts {
+            account_ids: Vec<String>,
+            start_date: Option<NaiveDate>,
+            end_date: Option<NaiveDate>,
+        },
+        ValuationHistoryByAccount {
+            account_ids: Vec<String>,
+            start_date: Option<NaiveDate>,
+            end_date: Option<NaiveDate>,
+        },
+        LatestValuations {
+            account_ids: Vec<String>,
+        },
+        ValuationsOnDate {
+            account_ids: Vec<String>,
+            date: NaiveDate,
+        },
+        LotAllForAccount {
+            account_ids: Vec<String>,
+        },
+        LotDisposalsForAccount {
+            account_ids: Vec<String>,
+        },
+        LotDisposalsForAccountsInDateRange {
+            account_ids: Vec<String>,
+            start_date_exclusive: NaiveDate,
+            end_date_inclusive: NaiveDate,
+        },
+        ActivityByAccountIdsInDateRange {
+            account_ids: Vec<String>,
+            start_utc: DateTime<Utc>,
+            end_utc: DateTime<Utc>,
+        },
+        TransferActivitiesTouchingAccountsInDateRange {
+            account_ids: Vec<String>,
+            start_utc: Option<DateTime<Utc>>,
+            end_utc: Option<DateTime<Utc>>,
+        },
+        ActivityByAccountId {
+            account_ids: Vec<String>,
+        },
+        ActivityByAccountIds {
+            account_ids: Vec<String>,
+        },
+        FirstActivityDate {
+            account_ids: Vec<String>,
+        },
+    }
+
+    #[derive(Default)]
+    struct RecordingEligibilityService {
+        calls: std::sync::Mutex<Vec<(Vec<String>, NaiveDate)>>,
+        eligible: std::sync::Mutex<HashSet<String>>,
+        error: bool,
+        recorder: Option<ReadRecorder>,
+    }
+
+    #[async_trait]
+    impl AggregateEligibilityServiceTrait for RecordingEligibilityService {
+        async fn eligible_account_ids(
+            &self,
+            requested_account_ids: &[String],
+            as_of: NaiveDate,
+        ) -> Result<HashSet<String>> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((requested_account_ids.to_vec(), as_of));
+            if let Some(recorder) = &self.recorder {
+                recorder.lock().unwrap().push(ReadEvent::Eligibility {
+                    account_ids: requested_account_ids.to_vec(),
+                    as_of,
+                });
+            }
+            if self.error {
+                return Err(errors::Error::Unexpected(
+                    "eligibility policy failure".to_string(),
+                ));
+            }
+            Ok(self.eligible.lock().unwrap().clone())
+        }
+
+        async fn eligible_entity_ids_for_rows(
+            &self,
+            _entity_type: &str,
+            _rows: &[(String, NaiveDate)],
+        ) -> Result<HashSet<String>> {
+            Ok(HashSet::new())
+        }
+    }
+
+    fn recording_eligibility(eligible: &[&str]) -> Arc<RecordingEligibilityService> {
+        Arc::new(RecordingEligibilityService {
+            eligible: std::sync::Mutex::new(eligible.iter().map(|id| (*id).to_string()).collect()),
+            ..Default::default()
+        })
+    }
+
+    fn recording_eligibility_with_recorder(
+        eligible: &[&str],
+        recorder: ReadRecorder,
+    ) -> Arc<RecordingEligibilityService> {
+        Arc::new(RecordingEligibilityService {
+            eligible: std::sync::Mutex::new(eligible.iter().map(|id| (*id).to_string()).collect()),
+            recorder: Some(recorder),
+            ..Default::default()
+        })
+    }
+
+    fn event_account_ids(event: &ReadEvent) -> Option<&[String]> {
+        match event {
+            ReadEvent::Eligibility { account_ids, .. }
+            | ReadEvent::ValuationHistory { account_ids, .. }
+            | ReadEvent::ValuationHistoryForAccounts { account_ids, .. }
+            | ReadEvent::ValuationHistoryByAccount { account_ids, .. }
+            | ReadEvent::LatestValuations { account_ids }
+            | ReadEvent::ValuationsOnDate { account_ids, .. }
+            | ReadEvent::LotAllForAccount { account_ids }
+            | ReadEvent::LotDisposalsForAccount { account_ids }
+            | ReadEvent::LotDisposalsForAccountsInDateRange { account_ids, .. }
+            | ReadEvent::ActivityByAccountIdsInDateRange { account_ids, .. }
+            | ReadEvent::TransferActivitiesTouchingAccountsInDateRange { account_ids, .. }
+            | ReadEvent::ActivityByAccountId { account_ids }
+            | ReadEvent::ActivityByAccountIds { account_ids }
+            | ReadEvent::FirstActivityDate { account_ids } => Some(account_ids),
+        }
+    }
+
+    fn is_downstream_read(event: &ReadEvent) -> bool {
+        !matches!(event, ReadEvent::Eligibility { .. })
+    }
+
+    fn assert_no_downstream_reads(events: &[ReadEvent]) {
+        assert!(
+            events.iter().all(|event| !is_downstream_read(event)),
+            "unexpected downstream read events: {events:?}"
+        );
+    }
+
+    fn assert_downstream_reads_use_only(events: &[ReadEvent], allowed: &[&str], denied: &[&str]) {
+        let allowed: Vec<String> = allowed.iter().map(|id| (*id).to_string()).collect();
+        for event in events.iter().filter(|event| is_downstream_read(event)) {
+            let Some(account_ids) = event_account_ids(event) else {
+                continue;
+            };
+            assert!(
+                !account_ids.is_empty(),
+                "read event had no account IDs: {event:?}"
+            );
+            for denied_id in denied {
+                assert!(
+                    !account_ids.iter().any(|account_id| account_id == denied_id),
+                    "denied account {denied_id} appeared in {event:?}"
+                );
+            }
+            assert!(
+                account_ids
+                    .iter()
+                    .all(|account_id| allowed.contains(account_id)),
+                "read event contains account outside allowed set: {event:?}"
+            );
+        }
+    }
+
+    fn account_fixture(id: &str, tracking_mode: TrackingMode) -> Account {
+        let now = date("2026-01-01").and_hms_opt(0, 0, 0).unwrap();
+        Account {
+            id: id.to_string(),
+            name: id.to_string(),
+            account_type: account_types::SECURITIES.to_string(),
+            group: None,
+            currency: "CAD".to_string(),
+            is_default: false,
+            is_active: true,
+            created_at: now,
+            updated_at: now,
+            platform_id: None,
+            account_number: None,
+            meta: None,
+            provider: None,
+            provider_account_id: None,
+            is_archived: false,
+            tracking_mode,
+            include_in_net_worth: true,
+            name_source: "user".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn mixed_eligible_scoped_history_reads_only_eligible_accounts_after_eligibility() {
+        let recorder = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let requested = vec![
+            "acct-eligible-b".to_string(),
+            "acct-denied".to_string(),
+            "acct-eligible-a".to_string(),
+        ];
+        let eligibility = recording_eligibility_with_recorder(
+            &["acct-eligible-a", "acct-eligible-b"],
+            recorder.clone(),
+        );
+        let valuation_service = Arc::new(
+            TestValuationService::new(vec![
+                account_valuation(
+                    "acct-eligible-a",
+                    "2026-01-01",
+                    dec!(100),
+                    dec!(100),
+                    dec!(100),
+                    dec!(100),
+                ),
+                account_valuation(
+                    "acct-eligible-a",
+                    "2026-01-02",
+                    dec!(110),
+                    dec!(100),
+                    dec!(110),
+                    dec!(100),
+                ),
+                account_valuation(
+                    "acct-eligible-b",
+                    "2026-01-01",
+                    dec!(200),
+                    dec!(200),
+                    dec!(200),
+                    dec!(200),
+                ),
+                account_valuation(
+                    "acct-eligible-b",
+                    "2026-01-02",
+                    dec!(220),
+                    dec!(200),
+                    dec!(220),
+                    dec!(200),
+                ),
+                account_valuation(
+                    "acct-denied",
+                    "2026-01-01",
+                    dec!(900),
+                    dec!(900),
+                    dec!(900),
+                    dec!(900),
+                ),
+                account_valuation(
+                    "acct-denied",
+                    "2026-01-02",
+                    dec!(990),
+                    dec!(900),
+                    dec!(990),
+                    dec!(900),
+                ),
+            ])
+            .with_recorder(recorder.clone()),
+        );
+        let service =
+            PerformanceService::new(valuation_service, Arc::new(TestQuoteService), eligibility)
+                .with_lot_repository(Arc::new(
+                    TestLotRepository::default().with_recorder(recorder.clone()),
+                ))
+                .with_activity_repository(
+                    Arc::new(
+                        TestActivityRepository::new(Vec::new()).with_recorder(recorder.clone()),
+                    ),
+                    Arc::new(TestFxService),
+                );
+
+        let result = service
+            .calculate_performance_history_for_accounts(
+                "scope",
+                &requested,
+                "CAD",
+                &HashMap::new(),
+                &HashMap::new(),
+                Some(date("2026-01-01")),
+                Some(date("2026-01-02")),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.scope.id, "scope");
+        let events = recorder.lock().unwrap().clone();
+        assert_eq!(
+            events.first(),
+            Some(&ReadEvent::Eligibility {
+                account_ids: requested,
+                as_of: date("2026-01-02"),
+            })
+        );
+        assert!(events.iter().skip(1).all(is_downstream_read));
+        assert!(events.contains(&ReadEvent::ValuationHistoryForAccounts {
+            account_ids: vec!["acct-eligible-b".to_string(), "acct-eligible-a".to_string()],
+            start_date: Some(date("2026-01-01")),
+            end_date: Some(date("2026-01-02")),
+        }));
+        assert!(events.contains(&ReadEvent::ValuationHistoryByAccount {
+            account_ids: vec!["acct-eligible-b".to_string(), "acct-eligible-a".to_string()],
+            start_date: Some(date("2026-01-01")),
+            end_date: Some(date("2026-01-02")),
+        }));
+        assert!(
+            events.contains(&ReadEvent::LotDisposalsForAccountsInDateRange {
+                account_ids: vec!["acct-eligible-b".to_string(), "acct-eligible-a".to_string()],
+                start_date_exclusive: date("2026-01-01"),
+                end_date_inclusive: date("2026-01-02"),
+            })
+        );
+        assert!(events
+            .iter()
+            .any(|event| matches!(event, ReadEvent::ActivityByAccountIdsInDateRange { .. })));
+        assert_downstream_reads_use_only(
+            &events,
+            &["acct-eligible-a", "acct-eligible-b"],
+            &["acct-denied"],
+        );
+    }
+
+    #[tokio::test]
+    async fn all_ineligible_paths_return_empty_and_do_not_read_downstream_data() {
+        let recorder = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let eligibility = recording_eligibility_with_recorder(&[], recorder.clone());
+        let service = PerformanceService::new(
+            Arc::new(
+                TestValuationService::new(vec![
+                    account_valuation(
+                        "acct-denied",
+                        "2026-01-01",
+                        dec!(100),
+                        dec!(100),
+                        dec!(100),
+                        dec!(100),
+                    ),
+                    account_valuation(
+                        "acct-denied",
+                        "2026-01-02",
+                        dec!(110),
+                        dec!(100),
+                        dec!(110),
+                        dec!(100),
+                    ),
+                ])
+                .with_recorder(recorder.clone()),
+            ),
+            Arc::new(TestQuoteService),
+            eligibility,
+        )
+        .with_lot_repository(Arc::new(
+            TestLotRepository::default().with_recorder(recorder.clone()),
+        ))
+        .with_activity_repository(
+            Arc::new(TestActivityRepository::new(Vec::new()).with_recorder(recorder.clone())),
+            Arc::new(TestFxService),
+        );
+        let requested = vec!["acct-denied".to_string()];
+
+        let detail = service
+            .calculate_performance_history(
+                "account",
+                "acct-denied",
+                Some(date("2026-01-01")),
+                Some(date("2026-01-02")),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let scoped = service
+            .calculate_performance_history_for_accounts(
+                "scope",
+                &requested,
+                "CAD",
+                &HashMap::new(),
+                &HashMap::new(),
+                Some(date("2026-01-01")),
+                Some(date("2026-01-02")),
+            )
+            .await
+            .unwrap();
+        let simple = service
+            .calculate_accounts_simple_performance(&requested)
+            .await
+            .unwrap();
+
+        assert_eq!(detail.summary.method, ReturnMethod::NotApplicable);
+        assert_eq!(scoped.summary.method, ReturnMethod::NotApplicable);
+        assert!(simple.is_empty());
+        let events = recorder.lock().unwrap().clone();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, ReadEvent::Eligibility { .. }))
+                .count(),
+            3
+        );
+        assert_no_downstream_reads(&events);
+    }
+
+    #[tokio::test]
+    async fn eligibility_error_propagates_before_any_downstream_read() {
+        let recorder = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let eligibility = Arc::new(RecordingEligibilityService {
+            error: true,
+            recorder: Some(recorder.clone()),
+            ..Default::default()
+        });
+        let service = PerformanceService::new(
+            Arc::new(TestValuationService::new(Vec::new()).with_recorder(recorder.clone())),
+            Arc::new(TestQuoteService),
+            eligibility,
+        )
+        .with_lot_repository(Arc::new(
+            TestLotRepository::default().with_recorder(recorder.clone()),
+        ))
+        .with_activity_repository(
+            Arc::new(TestActivityRepository::new(Vec::new()).with_recorder(recorder.clone())),
+            Arc::new(TestFxService),
+        );
+
+        let error = service
+            .calculate_performance_summary_for_accounts(
+                "scope",
+                &["acct".to_string()],
+                "CAD",
+                &HashMap::new(),
+                &HashMap::new(),
+                Some(date("2026-01-01")),
+                Some(date("2026-01-02")),
+                PerformanceSummaryProfile::Summary,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("eligibility policy failure"));
+        let events = recorder.lock().unwrap().clone();
+        assert_eq!(
+            events,
+            vec![ReadEvent::Eligibility {
+                account_ids: vec!["acct".to_string()],
+                as_of: date("2026-01-02"),
+            }]
+        );
+        assert_no_downstream_reads(&events);
+    }
+
+    #[tokio::test]
+    async fn before_equal_after_as_of_dates_are_recorded_before_reads() {
+        let recorder = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let eligibility = recording_eligibility_with_recorder(&["acct"], recorder.clone());
+        let valuation_service = Arc::new(
+            TestValuationService::new(vec![
+                account_valuation("acct", "2025-12-31", dec!(90), dec!(90), dec!(90), dec!(90)),
+                account_valuation(
+                    "acct",
+                    "2026-01-01",
+                    dec!(100),
+                    dec!(90),
+                    dec!(100),
+                    dec!(90),
+                ),
+                account_valuation(
+                    "acct",
+                    "2026-01-02",
+                    dec!(110),
+                    dec!(90),
+                    dec!(110),
+                    dec!(90),
+                ),
+                account_valuation(
+                    "acct",
+                    "2026-01-03",
+                    dec!(120),
+                    dec!(90),
+                    dec!(120),
+                    dec!(90),
+                ),
+            ])
+            .with_recorder(recorder.clone()),
+        );
+        let service =
+            PerformanceService::new(valuation_service, Arc::new(TestQuoteService), eligibility);
+
+        service
+            .calculate_performance_history(
+                "account",
+                "acct",
+                Some(date("2025-12-31")),
+                Some(date("2026-01-01")),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        service
+            .calculate_performance_summary(
+                "account",
+                "acct",
+                Some(date("2025-12-31")),
+                Some(date("2026-01-02")),
+                None,
+                None,
+                PerformanceSummaryProfile::Summary,
+            )
+            .await
+            .unwrap();
+        service
+            .calculate_performance_history_for_accounts(
+                "scope",
+                &["acct".to_string()],
+                "CAD",
+                &HashMap::new(),
+                &HashMap::new(),
+                Some(date("2025-12-31")),
+                Some(date("2026-01-03")),
+            )
+            .await
+            .unwrap();
+
+        let events = recorder.lock().unwrap().clone();
+        let eligibility_indices: Vec<(usize, NaiveDate)> = events
+            .iter()
+            .enumerate()
+            .filter_map(|(index, event)| match event {
+                ReadEvent::Eligibility { as_of, .. } => Some((index, *as_of)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            eligibility_indices,
+            vec![
+                (0, date("2026-01-01")),
+                (2, date("2026-01-02")),
+                (4, date("2026-01-03")),
+            ]
+        );
+        for (index, _) in eligibility_indices {
+            assert!(events
+                .iter()
+                .skip(index + 1)
+                .take_while(|event| !matches!(event, ReadEvent::Eligibility { .. }))
+                .all(is_downstream_read));
+        }
+    }
+
+    #[tokio::test]
+    async fn summary_batch_and_simple_multi_account_paths_filter_before_reads() {
+        let recorder = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let eligibility =
+            recording_eligibility_with_recorder(&["acct-a", "acct-c"], recorder.clone());
+        let valuation_service = Arc::new(
+            TestValuationService::new(vec![
+                account_valuation(
+                    "acct-a",
+                    "2026-01-01",
+                    dec!(100),
+                    dec!(100),
+                    dec!(100),
+                    dec!(100),
+                ),
+                account_valuation(
+                    "acct-a",
+                    "2026-01-02",
+                    dec!(110),
+                    dec!(100),
+                    dec!(110),
+                    dec!(100),
+                ),
+                account_valuation(
+                    "acct-c",
+                    "2026-01-01",
+                    dec!(300),
+                    dec!(300),
+                    dec!(300),
+                    dec!(300),
+                ),
+                account_valuation(
+                    "acct-c",
+                    "2026-01-02",
+                    dec!(330),
+                    dec!(300),
+                    dec!(330),
+                    dec!(300),
+                ),
+                account_valuation(
+                    "acct-denied",
+                    "2026-01-01",
+                    dec!(900),
+                    dec!(900),
+                    dec!(900),
+                    dec!(900),
+                ),
+                account_valuation(
+                    "acct-denied",
+                    "2026-01-02",
+                    dec!(990),
+                    dec!(900),
+                    dec!(990),
+                    dec!(900),
+                ),
+            ])
+            .with_recorder(recorder.clone()),
+        );
+        let service = Arc::new(PerformanceService::new(
+            valuation_service,
+            Arc::new(TestQuoteService),
+            eligibility,
+        ));
+        let accounts_by_id = HashMap::from([
+            (
+                "acct-a".to_string(),
+                account_fixture("acct-a", TrackingMode::Transactions),
+            ),
+            (
+                "acct-denied".to_string(),
+                account_fixture("acct-denied", TrackingMode::Transactions),
+            ),
+            (
+                "acct-c".to_string(),
+                account_fixture("acct-c", TrackingMode::Transactions),
+            ),
+        ]);
+
+        let batch = calculate_performance_summary_batch_for_accounts(
+            service.clone(),
+            vec![PerformanceSummaryBatchScope {
+                account_ids: vec![
+                    "acct-a".to_string(),
+                    "acct-denied".to_string(),
+                    "acct-c".to_string(),
+                ],
+            }],
+            accounts_by_id,
+            "CAD".to_string(),
+            Some(date("2026-01-01")),
+            Some(date("2026-01-02")),
+            PerformanceSummaryProfile::Dashboard,
+        )
+        .await;
+        let simple = service
+            .calculate_accounts_simple_performance(&[
+                "acct-a".to_string(),
+                "acct-denied".to_string(),
+                "acct-c".to_string(),
+            ])
+            .await
+            .unwrap();
+
+        assert_eq!(batch.results.len(), 1);
+        assert_eq!(simple.len(), 2);
+        let events = recorder.lock().unwrap().clone();
+        assert!(events.contains(&ReadEvent::ValuationHistoryForAccounts {
+            account_ids: vec!["acct-a".to_string(), "acct-c".to_string()],
+            start_date: Some(date("2026-01-01")),
+            end_date: Some(date("2026-01-02")),
+        }));
+        assert!(events.contains(&ReadEvent::LatestValuations {
+            account_ids: vec!["acct-a".to_string(), "acct-c".to_string()],
+        }));
+        assert_downstream_reads_use_only(&events, &["acct-a", "acct-c"], &["acct-denied"]);
+    }
+
+    #[tokio::test]
+    async fn performance_entrypoints_pass_end_date_to_fail_closed_eligibility_before_reads() {
+        let eligibility = recording_eligibility(&[]);
+        let service = PerformanceService::new(
+            Arc::new(TestValuationService::new(Vec::new())),
+            Arc::new(TestQuoteService),
+            eligibility.clone(),
+        );
+        let account_ids = vec!["acct-a".to_string(), "acct-b".to_string()];
+        let result = service
+            .calculate_performance_history_for_accounts(
+                "scope",
+                &account_ids,
+                "USD",
+                &HashMap::new(),
+                &HashMap::new(),
+                Some(date("2026-01-01")),
+                Some(date("2026-02-03")),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.returns.twr, None);
+        assert_eq!(
+            eligibility.calls.lock().unwrap().as_slice(),
+            &[(account_ids, date("2026-02-03"))]
+        );
+    }
+
+    #[tokio::test]
+    async fn ineligible_detail_and_summary_return_empty_without_valuation_reads() {
+        let eligibility = recording_eligibility(&[]);
+        let service = PerformanceService::new(
+            Arc::new(TestValuationService::new(Vec::new())),
+            Arc::new(TestQuoteService),
+            eligibility.clone(),
+        );
+        let detail = service
+            .calculate_performance_history(
+                "account",
+                "acct",
+                None,
+                Some(date("2026-02-03")),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let summary = service
+            .calculate_performance_summary(
+                "account",
+                "acct",
+                None,
+                Some(date("2026-02-03")),
+                None,
+                None,
+                PerformanceSummaryProfile::Summary,
+            )
+            .await
+            .unwrap();
+        assert_eq!(detail.returns.twr, None);
+        assert_eq!(summary.returns.twr, None);
+        assert_eq!(eligibility.calls.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn eligibility_policy_errors_propagate_before_any_performance_read() {
+        let eligibility = Arc::new(RecordingEligibilityService {
+            error: true,
+            ..Default::default()
+        });
+        let service = PerformanceService::new(
+            Arc::new(TestValuationService::new(Vec::new())),
+            Arc::new(TestQuoteService),
+            eligibility.clone(),
+        );
+        let error = service
+            .calculate_performance_summary_for_accounts(
+                "scope",
+                &["acct".to_string()],
+                "USD",
+                &HashMap::new(),
+                &HashMap::new(),
+                Some(date("2026-01-01")),
+                Some(date("2026-02-03")),
+                PerformanceSummaryProfile::Summary,
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("eligibility policy failure"));
+        assert_eq!(eligibility.calls.lock().unwrap().len(), 1);
+    }
     use wealthfolio_market_data::DividendEvent;
 
     fn attribution_pnl(result: &PerformanceResult) -> Decimal {
@@ -5171,6 +6037,7 @@ mod tests {
     struct TestValuationService {
         history: Vec<DailyAccountValuation>,
         fail_aggregate_scope_history: bool,
+        recorder: Option<ReadRecorder>,
     }
 
     impl TestValuationService {
@@ -5178,6 +6045,7 @@ mod tests {
             Self {
                 history,
                 fail_aggregate_scope_history: false,
+                recorder: None,
             }
         }
 
@@ -5185,6 +6053,18 @@ mod tests {
             Self {
                 history,
                 fail_aggregate_scope_history: true,
+                recorder: None,
+            }
+        }
+
+        fn with_recorder(mut self, recorder: ReadRecorder) -> Self {
+            self.recorder = Some(recorder);
+            self
+        }
+
+        fn record(&self, event: ReadEvent) {
+            if let Some(recorder) = &self.recorder {
+                recorder.lock().unwrap().push(event);
             }
         }
 
@@ -5214,12 +6094,17 @@ mod tests {
             Ok(())
         }
 
-        fn get_historical_valuations(
+        async fn get_historical_valuations(
             &self,
             account_id: &str,
             start_date_opt: Option<NaiveDate>,
             end_date_opt: Option<NaiveDate>,
         ) -> Result<Vec<DailyAccountValuation>> {
+            self.record(ReadEvent::ValuationHistory {
+                account_ids: vec![account_id.to_string()],
+                start_date: start_date_opt,
+                end_date: end_date_opt,
+            });
             Ok(self
                 .filtered_history(start_date_opt, end_date_opt)
                 .into_iter()
@@ -5227,7 +6112,7 @@ mod tests {
                 .collect())
         }
 
-        fn get_historical_valuations_for_accounts(
+        async fn get_historical_valuations_for_accounts(
             &self,
             _scope_id: &str,
             account_ids: &[String],
@@ -5235,6 +6120,11 @@ mod tests {
             start_date_opt: Option<NaiveDate>,
             end_date_opt: Option<NaiveDate>,
         ) -> Result<Vec<DailyAccountValuation>> {
+            self.record(ReadEvent::ValuationHistoryForAccounts {
+                account_ids: account_ids.to_vec(),
+                start_date: start_date_opt,
+                end_date: end_date_opt,
+            });
             if self.fail_aggregate_scope_history {
                 return Err(errors::Error::Unexpected(
                     "aggregate scoped history should not be loaded".to_string(),
@@ -5248,10 +6138,13 @@ mod tests {
                 .collect())
         }
 
-        fn get_latest_valuations(
+        async fn get_latest_valuations(
             &self,
             account_ids: &[String],
         ) -> Result<Vec<DailyAccountValuation>> {
+            self.record(ReadEvent::LatestValuations {
+                account_ids: account_ids.to_vec(),
+            });
             Ok(account_ids
                 .iter()
                 .filter_map(|account_id| {
@@ -5264,11 +6157,15 @@ mod tests {
                 .collect())
         }
 
-        fn get_valuations_on_date(
+        async fn get_valuations_on_date(
             &self,
             account_ids: &[String],
             date: NaiveDate,
         ) -> Result<Vec<DailyAccountValuation>> {
+            self.record(ReadEvent::ValuationsOnDate {
+                account_ids: account_ids.to_vec(),
+                date,
+            });
             Ok(self
                 .history
                 .iter()
@@ -5284,6 +6181,29 @@ mod tests {
             _account_ids: &[String],
         ) -> Result<Vec<NegativeBalanceInfo>> {
             Ok(Vec::new())
+        }
+
+        async fn get_historical_valuations_by_account(
+            &self,
+            account_ids: &[String],
+            start_date_opt: Option<NaiveDate>,
+            end_date_opt: Option<NaiveDate>,
+        ) -> Result<HashMap<String, Vec<DailyAccountValuation>>> {
+            self.record(ReadEvent::ValuationHistoryByAccount {
+                account_ids: account_ids.to_vec(),
+                start_date: start_date_opt,
+                end_date: end_date_opt,
+            });
+            let mut histories = HashMap::new();
+            for valuation in self.filtered_history(start_date_opt, end_date_opt) {
+                if account_ids.contains(&valuation.account_id) {
+                    histories
+                        .entry(valuation.account_id.clone())
+                        .or_insert_with(Vec::new)
+                        .push(valuation);
+                }
+            }
+            Ok(histories)
         }
     }
 
@@ -5777,6 +6697,20 @@ mod tests {
     struct TestLotRepository {
         disposals: Vec<LotDisposal>,
         lots: Vec<LotRecord>,
+        recorder: Option<ReadRecorder>,
+    }
+
+    impl TestLotRepository {
+        fn with_recorder(mut self, recorder: ReadRecorder) -> Self {
+            self.recorder = Some(recorder);
+            self
+        }
+
+        fn record(&self, event: ReadEvent) {
+            if let Some(recorder) = &self.recorder {
+                recorder.lock().unwrap().push(event);
+            }
+        }
     }
 
     #[async_trait]
@@ -5789,7 +6723,10 @@ mod tests {
             Ok(())
         }
 
-        async fn get_open_lots_for_account(&self, _account_id: &str) -> Result<Vec<LotRecord>> {
+        async fn get_open_lots_for_account(&self, account_id: &str) -> Result<Vec<LotRecord>> {
+            self.record(ReadEvent::LotAllForAccount {
+                account_ids: vec![account_id.to_string()],
+            });
             Ok(Vec::new())
         }
 
@@ -5799,13 +6736,20 @@ mod tests {
 
         async fn get_lots_as_of_date(
             &self,
-            _account_ids: &[String],
-            _date: NaiveDate,
+            account_ids: &[String],
+            date: NaiveDate,
         ) -> Result<Vec<LotRecord>> {
+            self.record(ReadEvent::ValuationsOnDate {
+                account_ids: account_ids.to_vec(),
+                date,
+            });
             Ok(Vec::new())
         }
 
         async fn get_all_lots_for_account(&self, account_id: &str) -> Result<Vec<LotRecord>> {
+            self.record(ReadEvent::LotAllForAccount {
+                account_ids: vec![account_id.to_string()],
+            });
             Ok(self
                 .lots
                 .iter()
@@ -5843,10 +6787,36 @@ mod tests {
             &self,
             account_id: &str,
         ) -> Result<Vec<LotDisposal>> {
+            self.record(ReadEvent::LotDisposalsForAccount {
+                account_ids: vec![account_id.to_string()],
+            });
             Ok(self
                 .disposals
                 .iter()
                 .filter(|disposal| disposal.account_id == account_id)
+                .cloned()
+                .collect())
+        }
+
+        async fn get_lot_disposals_for_accounts_in_date_range(
+            &self,
+            account_ids: &[String],
+            start_date_exclusive: NaiveDate,
+            end_date_inclusive: NaiveDate,
+        ) -> Result<Vec<LotDisposal>> {
+            self.record(ReadEvent::LotDisposalsForAccountsInDateRange {
+                account_ids: account_ids.to_vec(),
+                start_date_exclusive,
+                end_date_inclusive,
+            });
+            Ok(self
+                .disposals
+                .iter()
+                .filter(|disposal| account_ids.contains(&disposal.account_id))
+                .filter(|disposal| {
+                    NaiveDate::parse_from_str(&disposal.disposal_date, "%Y-%m-%d")
+                        .is_ok_and(|date| date > start_date_exclusive && date <= end_date_inclusive)
+                })
                 .cloned()
                 .collect())
         }
@@ -5857,6 +6827,11 @@ mod tests {
             start_date_exclusive: NaiveDate,
             end_date_inclusive: NaiveDate,
         ) -> Result<Vec<LotDisposal>> {
+            self.record(ReadEvent::LotDisposalsForAccountsInDateRange {
+                account_ids: account_ids.to_vec(),
+                start_date_exclusive,
+                end_date_inclusive,
+            });
             Ok(self
                 .disposals
                 .iter()
@@ -5881,11 +6856,28 @@ mod tests {
     #[derive(Clone)]
     struct TestActivityRepository {
         activities: Vec<Activity>,
+        read_error: Option<String>,
+        recorder: Option<ReadRecorder>,
     }
 
     impl TestActivityRepository {
         fn new(activities: Vec<Activity>) -> Self {
-            Self { activities }
+            Self {
+                activities,
+                read_error: None,
+                recorder: None,
+            }
+        }
+
+        fn with_recorder(mut self, recorder: ReadRecorder) -> Self {
+            self.recorder = Some(recorder);
+            self
+        }
+
+        fn record(&self, event: ReadEvent) {
+            if let Some(recorder) = &self.recorder {
+                recorder.lock().unwrap().push(event);
+            }
         }
     }
 
@@ -5917,10 +6909,16 @@ mod tests {
         }
 
         fn get_activities(&self) -> Result<Vec<Activity>> {
+            if let Some(message) = &self.read_error {
+                return Err(errors::Error::ConstraintViolation(message.clone()));
+            }
             Ok(self.activities.clone())
         }
 
         fn get_activities_by_account_id(&self, account_id: &str) -> Result<Vec<Activity>> {
+            self.record(ReadEvent::ActivityByAccountId {
+                account_ids: vec![account_id.to_string()],
+            });
             Ok(self
                 .activities
                 .iter()
@@ -5930,6 +6928,9 @@ mod tests {
         }
 
         fn get_activities_by_account_ids(&self, account_ids: &[String]) -> Result<Vec<Activity>> {
+            self.record(ReadEvent::ActivityByAccountIds {
+                account_ids: account_ids.to_vec(),
+            });
             Ok(self
                 .activities
                 .iter()
@@ -5971,11 +6972,67 @@ mod tests {
 
         fn get_contribution_activities(
             &self,
-            _account_ids: &[String],
+            account_ids: &[String],
             _start_utc: DateTime<Utc>,
             _end_exclusive_utc: DateTime<Utc>,
         ) -> Result<Vec<crate::limits::ContributionActivity>> {
+            self.record(ReadEvent::ActivityByAccountIds {
+                account_ids: account_ids.to_vec(),
+            });
             Ok(Vec::new())
+        }
+
+        fn get_activities_by_account_ids_in_date_range(
+            &self,
+            account_ids: &[String],
+            start_utc: DateTime<Utc>,
+            end_utc: DateTime<Utc>,
+        ) -> Result<Vec<Activity>> {
+            self.record(ReadEvent::ActivityByAccountIdsInDateRange {
+                account_ids: account_ids.to_vec(),
+                start_utc,
+                end_utc,
+            });
+            Ok(self
+                .activities
+                .iter()
+                .filter(|activity| {
+                    account_ids.contains(&activity.account_id)
+                        && activity.activity_date >= start_utc
+                        && activity.activity_date <= end_utc
+                })
+                .cloned()
+                .collect())
+        }
+
+        fn get_transfer_activities_touching_account_ids_in_date_range(
+            &self,
+            account_ids: &[String],
+            start_utc: Option<DateTime<Utc>>,
+            end_utc: Option<DateTime<Utc>>,
+        ) -> Result<Vec<Activity>> {
+            self.record(ReadEvent::TransferActivitiesTouchingAccountsInDateRange {
+                account_ids: account_ids.to_vec(),
+                start_utc,
+                end_utc,
+            });
+            let requested_accounts: HashSet<&str> =
+                account_ids.iter().map(String::as_str).collect();
+            Ok(self
+                .activities
+                .iter()
+                .filter(|activity| {
+                    requested_accounts.contains(activity.account_id.as_str())
+                        && start_utc.is_none_or(|start| activity.activity_date >= start)
+                        && end_utc.is_none_or(|end| activity.activity_date < end)
+                        && matches!(
+                            activity.effective_type(),
+                            crate::activities::ACTIVITY_TYPE_TRANSFER_IN
+                                | crate::activities::ACTIVITY_TYPE_TRANSFER_OUT
+                        )
+                })
+                .cloned()
+                .collect())
         }
 
         fn search_activities(
@@ -6066,6 +7123,9 @@ mod tests {
             &self,
             account_ids: Option<&[String]>,
         ) -> Result<Option<DateTime<Utc>>> {
+            self.record(ReadEvent::FirstActivityDate {
+                account_ids: account_ids.map_or_else(Vec::new, <[String]>::to_vec),
+            });
             let first = self
                 .activities
                 .iter()
@@ -6649,12 +7709,15 @@ mod tests {
             after_sell,
             after_withdrawal,
         ]));
-        let performance_service =
-            PerformanceService::new(valuation_service, Arc::new(TestQuoteService))
-                .with_lot_repository(Arc::new(TestLotRepository {
-                    disposals: vec![disposal],
-                    ..Default::default()
-                }));
+        let performance_service = PerformanceService::new(
+            valuation_service,
+            Arc::new(TestQuoteService),
+            test_eligibility_service(),
+        )
+        .with_lot_repository(Arc::new(TestLotRepository {
+            disposals: vec![disposal],
+            ..Default::default()
+        }));
         let account_ids = vec!["acct".to_string()];
 
         let performance = performance_service
@@ -6708,22 +7771,25 @@ mod tests {
         cover_disposal.quantity = "-4".to_string();
 
         let valuation_service = Arc::new(TestValuationService::new(vec![start, after_cover]));
-        let performance_service =
-            PerformanceService::new(valuation_service, Arc::new(TestQuoteService))
-                .with_lot_repository(Arc::new(TestLotRepository {
-                    disposals: vec![cover_disposal],
-                    ..Default::default()
-                }))
-                .with_activity_repository(
-                    Arc::new(TestActivityRepository::new(vec![buy_activity_on(
-                        "cover-1",
-                        "acct",
-                        "2026-05-02",
-                        dec!(4),
-                        dec!(80),
-                    )])),
-                    Arc::new(TestFxService),
-                );
+        let performance_service = PerformanceService::new(
+            valuation_service,
+            Arc::new(TestQuoteService),
+            test_eligibility_service(),
+        )
+        .with_lot_repository(Arc::new(TestLotRepository {
+            disposals: vec![cover_disposal],
+            ..Default::default()
+        }))
+        .with_activity_repository(
+            Arc::new(TestActivityRepository::new(vec![buy_activity_on(
+                "cover-1",
+                "acct",
+                "2026-05-02",
+                dec!(4),
+                dec!(80),
+            )])),
+            Arc::new(TestFxService),
+        );
 
         let performance = performance_service
             .calculate_performance_history_for_accounts(
@@ -6819,13 +7885,16 @@ mod tests {
                 dec!(20),
             ),
         ]));
-        let performance_service =
-            PerformanceService::new(valuation_service, Arc::new(TestQuoteService))
-                .with_lot_repository(Arc::new(TestLotRepository {
-                    disposals: vec![disposal],
-                    ..Default::default()
-                }))
-                .with_activity_repository(activity_repo, Arc::new(TestFxService));
+        let performance_service = PerformanceService::new(
+            valuation_service,
+            Arc::new(TestQuoteService),
+            test_eligibility_service(),
+        )
+        .with_lot_repository(Arc::new(TestLotRepository {
+            disposals: vec![disposal],
+            ..Default::default()
+        }))
+        .with_activity_repository(activity_repo, Arc::new(TestFxService));
         let account_ids = vec!["acct".to_string()];
 
         let performance = performance_service
@@ -6883,16 +7952,19 @@ mod tests {
         let transfer_out =
             transfer_out_activity_on("transfer-out-1", "acct", "2026-05-02", dec!(1));
         let valuation_service = Arc::new(TestValuationService::new(vec![start, after_transfer]));
-        let performance_service =
-            PerformanceService::new(valuation_service, Arc::new(TestQuoteService))
-                .with_lot_repository(Arc::new(TestLotRepository {
-                    disposals: vec![transfer_disposal],
-                    ..Default::default()
-                }))
-                .with_activity_repository(
-                    Arc::new(TestActivityRepository::new(vec![transfer_out])),
-                    Arc::new(TestFxService),
-                );
+        let performance_service = PerformanceService::new(
+            valuation_service,
+            Arc::new(TestQuoteService),
+            test_eligibility_service(),
+        )
+        .with_lot_repository(Arc::new(TestLotRepository {
+            disposals: vec![transfer_disposal],
+            ..Default::default()
+        }))
+        .with_activity_repository(
+            Arc::new(TestActivityRepository::new(vec![transfer_out])),
+            Arc::new(TestFxService),
+        );
 
         let performance = performance_service
             .calculate_performance_history_for_accounts(
@@ -6939,16 +8011,20 @@ mod tests {
             transfer_out_activity_on("transfer-out-1", "acct", "2026-05-03", dec!(1));
 
         let valuation_service = Arc::new(TestValuationService::new(vec![start, after_transfer]));
-        let performance_service =
-            PerformanceService::new(valuation_service, Arc::new(TestQuoteService))
-                .with_lot_repository(Arc::new(TestLotRepository {
-                    disposals: vec![transfer_disposal],
-                    lots: vec![lot_record_for_fee_gross_up("lot-fee", "acct", "buy-1")],
-                }))
-                .with_activity_repository(
-                    Arc::new(TestActivityRepository::new(vec![buy, transfer_out])),
-                    Arc::new(TestFxService),
-                );
+        let performance_service = PerformanceService::new(
+            valuation_service,
+            Arc::new(TestQuoteService),
+            test_eligibility_service(),
+        )
+        .with_lot_repository(Arc::new(TestLotRepository {
+            disposals: vec![transfer_disposal],
+            lots: vec![lot_record_for_fee_gross_up("lot-fee", "acct", "buy-1")],
+            ..Default::default()
+        }))
+        .with_activity_repository(
+            Arc::new(TestActivityRepository::new(vec![buy, transfer_out])),
+            Arc::new(TestFxService),
+        );
 
         let performance = performance_service
             .calculate_performance_history_for_accounts(
@@ -6979,6 +8055,7 @@ mod tests {
         let performance_service = PerformanceService::new(
             Arc::new(TestValuationService::new(Vec::new())),
             Arc::new(TestQuoteService),
+            test_eligibility_service(),
         )
         .with_activity_repository(
             Arc::new(TestActivityRepository::new(vec![buy.clone()])),
@@ -7044,6 +8121,7 @@ mod tests {
         let performance_service_with_lot = PerformanceService::new(
             Arc::new(TestValuationService::new(Vec::new())),
             Arc::new(TestQuoteService),
+            test_eligibility_service(),
         )
         .with_lot_repository(Arc::new(TestLotRepository {
             lots: vec![open_lot],
@@ -7099,6 +8177,7 @@ mod tests {
         let performance_service = PerformanceService::new(
             Arc::new(TestValuationService::new(Vec::new())),
             Arc::new(TestQuoteService),
+            test_eligibility_service(),
         )
         .with_lot_repository(Arc::new(TestLotRepository {
             lots: vec![open_lot],
@@ -7196,10 +8275,12 @@ mod tests {
         let performance_service = PerformanceService::new(
             Arc::new(TestValuationService::new(Vec::new())),
             Arc::new(TestQuoteService),
+            test_eligibility_service(),
         )
         .with_lot_repository(Arc::new(TestLotRepository {
             disposals: vec![disposal],
             lots: vec![open_lot],
+            ..Default::default()
         }))
         .with_activity_repository(
             Arc::new(TestActivityRepository::new(vec![buy, sell])),
@@ -7314,10 +8395,12 @@ mod tests {
         let performance_service = PerformanceService::new(
             Arc::new(TestValuationService::new(Vec::new())),
             Arc::new(TestQuoteService),
+            test_eligibility_service(),
         )
         .with_lot_repository(Arc::new(TestLotRepository {
             disposals: vec![disposal],
             lots: vec![closed_long_lot, open_short_lot],
+            ..Default::default()
         }))
         .with_activity_repository(
             Arc::new(TestActivityRepository::new(vec![sell])),
@@ -7431,10 +8514,12 @@ mod tests {
         let performance_service = PerformanceService::new(
             Arc::new(TestValuationService::new(Vec::new())),
             Arc::new(TestQuoteService),
+            test_eligibility_service(),
         )
         .with_lot_repository(Arc::new(TestLotRepository {
             disposals: vec![disposal],
             lots: vec![closed_short_lot, open_long_lot],
+            ..Default::default()
         }))
         .with_activity_repository(
             Arc::new(TestActivityRepository::new(vec![buy])),
@@ -7531,9 +8616,12 @@ mod tests {
         let history = vec![start, after_transfer];
         let valuation_service = Arc::new(TestValuationService::new(history.clone()));
         let activity_repo = Arc::new(TestActivityRepository::new(vec![transfer_out, transfer_in]));
-        let performance_service =
-            PerformanceService::new(valuation_service, Arc::new(TestQuoteService))
-                .with_activity_repository(activity_repo, Arc::new(TestFxService));
+        let performance_service = PerformanceService::new(
+            valuation_service,
+            Arc::new(TestQuoteService),
+            test_eligibility_service(),
+        )
+        .with_activity_repository(activity_repo, Arc::new(TestFxService));
         let account_ids = vec!["from-acct".to_string(), "to-acct".to_string()];
         let mut result = PerformanceService::build_result(
             "scope:acct".to_string(),
@@ -7620,9 +8708,12 @@ mod tests {
         let history = vec![start, after_transfer];
         let valuation_service = Arc::new(TestValuationService::new(history.clone()));
         let activity_repo = Arc::new(TestActivityRepository::new(vec![transfer_out, transfer_in]));
-        let performance_service =
-            PerformanceService::new(valuation_service, Arc::new(TestQuoteService))
-                .with_activity_repository(activity_repo, Arc::new(TestFxService));
+        let performance_service = PerformanceService::new(
+            valuation_service,
+            Arc::new(TestQuoteService),
+            test_eligibility_service(),
+        )
+        .with_activity_repository(activity_repo, Arc::new(TestFxService));
         let account_ids = vec!["from-acct".to_string(), "to-acct".to_string()];
         let mut result = PerformanceService::build_result(
             "scope:acct".to_string(),
@@ -7706,6 +8797,7 @@ mod tests {
         let performance_service = PerformanceService::new_with_timezone(
             valuation_service,
             Arc::new(TestQuoteService),
+            test_eligibility_service(),
             timezone,
         )
         .with_activity_repository(activity_repo, Arc::new(TestFxService));
@@ -7749,9 +8841,12 @@ mod tests {
         dividend.tax = Some(dec!(5));
         let activity_repo = Arc::new(TestActivityRepository::new(vec![dividend]));
         let valuation_service = Arc::new(TestValuationService::new(vec![start, end]));
-        let performance_service =
-            PerformanceService::new(valuation_service, Arc::new(TestQuoteService))
-                .with_activity_repository(activity_repo, Arc::new(TestFxService));
+        let performance_service = PerformanceService::new(
+            valuation_service,
+            Arc::new(TestQuoteService),
+            test_eligibility_service(),
+        )
+        .with_activity_repository(activity_repo, Arc::new(TestFxService));
 
         let performance = performance_service
             .calculate_account_performance(
@@ -10291,6 +11386,7 @@ mod tests {
         let service = PerformanceService::new(
             Arc::new(TestValuationService::new_with_aggregate_failure(history)),
             Arc::new(TestQuoteService),
+            test_eligibility_service(),
         );
         let account_ids = vec!["holdings".to_string(), "transaction".to_string()];
         let mut modes = HashMap::new();
@@ -10372,8 +11468,12 @@ mod tests {
         );
         dividend.currency = "CAD".to_string();
         let activity_repo = Arc::new(TestActivityRepository::new(vec![dividend]));
-        let service = PerformanceService::new(valuation_service, Arc::new(TestQuoteService))
-            .with_activity_repository(activity_repo, Arc::new(TestFxService));
+        let service = PerformanceService::new(
+            valuation_service,
+            Arc::new(TestQuoteService),
+            test_eligibility_service(),
+        )
+        .with_activity_repository(activity_repo, Arc::new(TestFxService));
         let account_ids = vec!["transaction".to_string(), "holdings".to_string()];
         let mut modes = HashMap::new();
         modes.insert("transaction".to_string(), TrackingMode::Transactions);
@@ -10458,8 +11558,12 @@ mod tests {
         );
         dividend.currency = "CAD".to_string();
         let activity_repo = Arc::new(TestActivityRepository::new(vec![dividend]));
-        let service = PerformanceService::new(valuation_service, Arc::new(TestQuoteService))
-            .with_activity_repository(activity_repo, Arc::new(TestFxService));
+        let service = PerformanceService::new(
+            valuation_service,
+            Arc::new(TestQuoteService),
+            test_eligibility_service(),
+        )
+        .with_activity_repository(activity_repo, Arc::new(TestFxService));
         let account_ids = vec!["transaction".to_string(), "holdings".to_string()];
         let mut modes = HashMap::new();
         modes.insert("transaction".to_string(), TrackingMode::Transactions);
@@ -10512,7 +11616,11 @@ mod tests {
         history[1].external_inflow_base = dec!(100);
         history[1].external_flow_source = ValuationExternalFlowSource::StoredGross;
         let valuation_service = Arc::new(TestValuationService::new(history));
-        let service = PerformanceService::new(valuation_service, Arc::new(TestQuoteService));
+        let service = PerformanceService::new(
+            valuation_service,
+            Arc::new(TestQuoteService),
+            test_eligibility_service(),
+        );
         let account_ids = vec!["transaction".to_string()];
         let mut modes = HashMap::new();
         modes.insert("transaction".to_string(), TrackingMode::Transactions);

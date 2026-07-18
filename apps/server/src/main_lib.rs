@@ -16,7 +16,10 @@ use wealthfolio_connect::{
 };
 use wealthfolio_core::addons::{AddonService, AddonServiceTrait};
 use wealthfolio_core::{
-    accounts::{AccountService, AccountServiceTrait},
+    accounts::{
+        AccountService, AccountServiceTrait, AggregateEligibilityService,
+        AggregateEligibilityServiceTrait,
+    },
     activities::{ActivityService as CoreActivityService, ActivityServiceTrait},
     assets::{
         AlternativeAssetRepositoryTrait, AlternativeAssetService, AlternativeAssetServiceTrait,
@@ -46,7 +49,7 @@ use wealthfolio_core::{
 };
 use wealthfolio_device_sync::{engine::DeviceSyncRuntimeState, DeviceEnrollService};
 use wealthfolio_storage_sqlite::{
-    accounts::{AccountRepository, VerifiedReceiptRepository},
+    accounts::{AccountRepository, ProvenanceRepository, VerifiedReceiptRepository},
     activities::ActivityRepository,
     agent::{McpAuditRepository, PatRepository},
     ai_chat::AiChatRepository,
@@ -142,8 +145,7 @@ pub struct AppState {
     pub mcp_audit_enabled: bool,
     /// Bridge policy store for household commit/grant/revoke (None when household disabled).
     pub bridge_store: Option<wealthfolio_storage_sqlite::bridge_policy::BridgePolicyStore>,
-    /// Verified receipt repository for eligibility checks.
-    pub verified_receipt_repository: Arc<VerifiedReceiptRepository>,
+    pub aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
     /// Onboarding service for household credential-bound account onboarding (None when household disabled).
     pub onboarding_state: Option<crate::onboarding::OnboardingState>,
 }
@@ -164,7 +166,7 @@ pub fn init_tracing() {
     }
 }
 
-fn portfolio_history_backfill_needed(state: &AppState) -> bool {
+async fn portfolio_history_backfill_needed(state: &AppState) -> bool {
     let accounts = match state.account_service.get_non_archived_accounts() {
         Ok(accounts) => accounts,
         Err(err) => {
@@ -177,7 +179,11 @@ fn portfolio_history_backfill_needed(state: &AppState) -> bool {
         return false;
     }
 
-    let latest = match state.valuation_service.get_latest_valuations(&account_ids) {
+    let latest = match state
+        .valuation_service
+        .get_latest_valuations(&account_ids)
+        .await
+    {
         Ok(latest) => latest,
         Err(err) => {
             warn!("Failed to inspect valuation history for backfill: {}", err);
@@ -344,6 +350,12 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
 
     let account_repo = Arc::new(AccountRepository::new(pool.clone(), writer.clone()));
     let verified_receipt_repository = Arc::new(VerifiedReceiptRepository::new(pool.clone()));
+    let provenance_repository = Arc::new(ProvenanceRepository::new(pool.clone()));
+    let aggregate_eligibility_service = Arc::new(AggregateEligibilityService::new(
+        account_repo.clone(),
+        verified_receipt_repository.clone(),
+        provenance_repository.clone(),
+    ));
 
     // Additional repositories/services for web API
     let asset_repository = Arc::new(AssetRepository::new(pool.clone(), writer.clone()));
@@ -392,9 +404,12 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
     );
 
     let portfolio_repository = Arc::new(PortfolioRepository::new(pool.clone(), writer.clone()));
-    let portfolio_service: Arc<dyn PortfolioServiceTrait + Send + Sync> = Arc::new(
-        PortfolioService::new(portfolio_repository, account_repo.clone()),
-    );
+    let portfolio_service: Arc<dyn PortfolioServiceTrait + Send + Sync> =
+        Arc::new(PortfolioService::new(
+            portfolio_repository,
+            account_repo.clone(),
+            aggregate_eligibility_service.clone(),
+        ));
 
     // Create taxonomy service for auto-classification
     let taxonomy_repository = Arc::new(TaxonomyRepository::new(pool.clone(), writer.clone()));
@@ -432,6 +447,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
             snapshot_service.clone(),
             quote_service.clone(),
             fx_service.clone(),
+            aggregate_eligibility_service.clone(),
         )
         .with_activity_repository(activity_repository.clone(), timezone.clone())
         .with_lot_repository(lots_repository.clone()),
@@ -446,7 +462,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
             quote_service.clone(),
             valuation_repository.clone(),
             fx_service.clone(),
-            verified_receipt_repository.clone(),
+            aggregate_eligibility_service.clone(),
         ));
 
     let holdings_valuation_service = Arc::new(HoldingsValuationService::new_with_timezone(
@@ -462,6 +478,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
             snapshot_service.clone(),
             holdings_valuation_service.clone(),
             classification_service.clone(),
+            aggregate_eligibility_service.clone(),
             timezone.clone(),
         )
         .with_income_dependencies(activity_repository.clone(), fx_service.clone())
@@ -514,6 +531,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         wealthfolio_core::portfolio::performance::PerformanceService::new_with_timezone(
             valuation_service.clone(),
             quote_service.clone(),
+            aggregate_eligibility_service.clone(),
             timezone.clone(),
         )
         .with_activity_repository(activity_repository.clone(), fx_service.clone())
@@ -525,10 +543,15 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         activity_repository.clone(),
         base_currency.clone(),
         timezone.clone(),
+        aggregate_eligibility_service.clone(),
     ));
 
     let goal_repository = Arc::new(GoalRepository::new(pool.clone(), writer.clone()));
-    let goal_service = Arc::new(GoalService::new(goal_repository, account_service.clone()));
+    let goal_service = Arc::new(GoalService::new(
+        goal_repository,
+        account_service.clone(),
+        aggregate_eligibility_service.clone(),
+    ));
 
     let limits_repository = Arc::new(ContributionLimitRepository::new(
         pool.clone(),
@@ -596,6 +619,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
             activity_splits_repo.clone(),
             activity_events_repo.clone(),
             events_service.clone(),
+            aggregate_eligibility_service.clone(),
         ),
     );
 
@@ -632,6 +656,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         spending_settings_service.clone(),
         taxonomy_service.clone(),
         fx_service.clone(),
+        aggregate_eligibility_service.clone(),
     ));
 
     // Spending: analytics
@@ -654,6 +679,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
             events_service.clone(),
             fx_service.clone(),
             activity_events_repo.clone(),
+            aggregate_eligibility_service.clone(),
         ));
 
     // Spending: reconciled period insight (powers the Spending Insight dashboard).
@@ -673,6 +699,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         spending_settings_service.clone(),
         taxonomy_service.clone(),
         fx_service.clone(),
+        aggregate_eligibility_service.clone(),
     ));
 
     // Alternative asset repository for alternative assets operations
@@ -810,7 +837,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         token_lifecycle.clone(),
         spending_settings_service.clone(),
         categorization_rules_service.clone(),
-        verified_receipt_repository.clone(),
+        aggregate_eligibility_service.clone(),
     );
 
     let addon_service: Arc<dyn AddonServiceTrait + Send + Sync> = Arc::new(AddonService::new(
@@ -938,13 +965,13 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         mcp_audit_enabled: config.mcp_audit_enabled,
         bridge_store,
         onboarding_state,
-        verified_receipt_repository,
+        aggregate_eligibility_service,
     });
 
     #[cfg(feature = "device-sync")]
     start_sync_outbox_wake_worker(sync_outbox_wake_receiver, Arc::clone(&state));
 
-    if portfolio_history_backfill_needed(&state) {
+    if portfolio_history_backfill_needed(&state).await {
         tracing::info!(
             "Valuation rows are missing after startup; enqueueing full portfolio rebuild."
         );

@@ -1,4 +1,7 @@
-use crate::accounts::{account_supports_purpose, Account, AccountPurpose, AccountServiceTrait};
+use crate::accounts::{
+    account_supports_purpose, filter_eligible_accounts, Account, AccountPurpose,
+    AccountServiceTrait, AggregateEligibilityServiceTrait,
+};
 use crate::errors::Result;
 use crate::goals::goals_model::{
     AccountValuationMap, Goal, GoalFundingRule, GoalFundingRuleInput, GoalPlan, GoalSummaryUpdate,
@@ -12,7 +15,7 @@ use crate::planning::retirement::{
 use crate::planning::{validate_save_up_input, SaveUpInput, SaveUpOverview};
 use crate::portfolio::fire::{compute_retirement_overview_with_mode, RetirementOverview};
 use async_trait::async_trait;
-use chrono::{Local, Months};
+use chrono::{Local, Months, NaiveDate};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -376,13 +379,19 @@ pub fn validate_retirement_plan(plan: &RetirementPlan) -> Result<()> {
 pub struct GoalService<T: GoalRepositoryTrait> {
     goal_repo: Arc<T>,
     account_service: Arc<dyn AccountServiceTrait>,
+    aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
 }
 
 impl<T: GoalRepositoryTrait> GoalService<T> {
-    pub fn new(goal_repo: Arc<T>, account_service: Arc<dyn AccountServiceTrait>) -> Self {
+    pub fn new(
+        goal_repo: Arc<T>,
+        account_service: Arc<dyn AccountServiceTrait>,
+        aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
+    ) -> Self {
         GoalService {
             goal_repo,
             account_service,
+            aggregate_eligibility_service,
         }
     }
 
@@ -477,7 +486,7 @@ impl<T: GoalRepositoryTrait + Send + Sync> GoalServiceTrait for GoalService<T> {
         self.goal_repo.load_goal(goal_id)
     }
 
-    async fn create_goal(&self, new_goal: NewGoal) -> Result<Goal> {
+    async fn create_goal(&self, new_goal: NewGoal, as_of: NaiveDate) -> Result<Goal> {
         let is_retirement = new_goal.goal_type == "retirement";
         if let Some(status_lifecycle) = new_goal.status_lifecycle.as_deref() {
             validate_goal_lifecycle(status_lifecycle)?;
@@ -497,7 +506,17 @@ impl<T: GoalRepositoryTrait + Send + Sync> GoalServiceTrait for GoalService<T> {
         }
 
         if is_retirement {
-            let eligible = self.account_service.get_active_non_archived_accounts()?;
+            let eligible_accounts = self.account_service.get_active_non_archived_accounts()?;
+            let requested_ids: Vec<String> = eligible_accounts
+                .iter()
+                .map(|account| account.id.clone())
+                .collect();
+            let eligible_ids = self
+                .aggregate_eligibility_service
+                .eligible_account_ids(&requested_ids, as_of)
+                .await?;
+            let eligible_id_list: Vec<String> = eligible_ids.into_iter().collect();
+            let eligible = filter_eligible_accounts(eligible_accounts, &eligible_id_list);
             let participating_rules = self.goal_repo.load_participating_funding_rules()?;
             let seed_rules = build_retirement_seed_rules(&eligible, &participating_rules);
             self.goal_repo
@@ -904,7 +923,8 @@ mod tests {
     use crate::goals::{GoalRepositoryTrait, GoalServiceTrait};
     use crate::planning::retirement::*;
     use async_trait::async_trait;
-    use chrono::NaiveDateTime;
+    use chrono::{NaiveDate, NaiveDateTime};
+    use std::collections::HashSet;
     use std::sync::Mutex;
 
     fn test_account(id: &str, account_type: &str) -> Account {
@@ -1028,6 +1048,25 @@ mod tests {
         }
     }
 
+    fn new_retirement_goal(id: &str) -> NewGoal {
+        NewGoal {
+            id: Some(id.to_string()),
+            goal_type: "retirement".to_string(),
+            title: "Retirement".to_string(),
+            description: None,
+            target_amount: None,
+            status_lifecycle: Some(GOAL_LIFECYCLE_ACTIVE.to_string()),
+            status_health: None,
+            priority: None,
+            cover_image_key: None,
+            currency: Some("USD".to_string()),
+            start_date: None,
+            target_date: None,
+            created_at: None,
+            updated_at: None,
+        }
+    }
+
     fn not_found(id: &str) -> crate::errors::Error {
         crate::errors::DatabaseError::NotFound(id.to_string()).into()
     }
@@ -1053,6 +1092,89 @@ mod tests {
                 .lock()
                 .unwrap()
                 .insert(goal_id.to_string(), rules);
+        }
+    }
+
+    struct MockAggregateEligibilityService {
+        eligible_account_ids: Mutex<Option<HashSet<String>>>,
+        expected_as_of: Option<NaiveDate>,
+        requested_account_ids: Mutex<Vec<Vec<String>>>,
+        fail_account_policy: bool,
+    }
+
+    impl Default for MockAggregateEligibilityService {
+        fn default() -> Self {
+            Self {
+                eligible_account_ids: Mutex::new(None),
+                expected_as_of: None,
+                requested_account_ids: Mutex::new(Vec::new()),
+                fail_account_policy: false,
+            }
+        }
+    }
+
+    impl MockAggregateEligibilityService {
+        fn allow_all() -> Arc<Self> {
+            Arc::new(Self::default())
+        }
+
+        fn with_allowed_ids(ids: &[&str], expected_as_of: NaiveDate) -> Arc<Self> {
+            Arc::new(Self {
+                eligible_account_ids: Mutex::new(Some(
+                    ids.iter().map(|id| (*id).to_string()).collect(),
+                )),
+                expected_as_of: Some(expected_as_of),
+                requested_account_ids: Mutex::new(Vec::new()),
+                fail_account_policy: false,
+            })
+        }
+
+        fn failing() -> Arc<Self> {
+            Arc::new(Self {
+                fail_account_policy: true,
+                ..Self::default()
+            })
+        }
+
+        fn requested_account_ids(&self) -> Vec<Vec<String>> {
+            self.requested_account_ids.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl AggregateEligibilityServiceTrait for MockAggregateEligibilityService {
+        async fn eligible_account_ids(
+            &self,
+            requested_account_ids: &[String],
+            as_of: NaiveDate,
+        ) -> Result<HashSet<String>> {
+            if let Some(expected_as_of) = self.expected_as_of {
+                assert_eq!(as_of, expected_as_of);
+            }
+            self.requested_account_ids
+                .lock()
+                .unwrap()
+                .push(requested_account_ids.to_vec());
+            if self.fail_account_policy {
+                return Err(crate::errors::ValidationError::InvalidInput(
+                    "policy failure".to_string(),
+                )
+                .into());
+            }
+            Ok(self
+                .eligible_account_ids
+                .lock()
+                .unwrap()
+                .clone()
+                .unwrap_or_else(|| requested_account_ids.iter().cloned().collect()))
+        }
+
+        async fn eligible_entity_ids_for_rows(
+            &self,
+            _entity_type: &str,
+            rows: &[(String, NaiveDate)],
+        ) -> Result<HashSet<String>> {
+            Ok(rows.iter().map(|(id, _)| id.clone()).collect())
         }
     }
 
@@ -1319,6 +1441,17 @@ mod tests {
         }
     }
 
+    fn goal_service(
+        repo: Arc<MockGoalRepository>,
+        account_service: Arc<dyn AccountServiceTrait>,
+    ) -> GoalService<MockGoalRepository> {
+        GoalService::new(
+            repo,
+            account_service,
+            MockAggregateEligibilityService::allow_all(),
+        )
+    }
+
     #[test]
     fn share_value_basic() {
         let rules = vec![share_rule("g1", "acct-1", 70.0)];
@@ -1541,7 +1674,7 @@ mod tests {
     async fn save_goal_plan_preserves_unknown_frontend_fields() {
         let goal = retirement_goal("goal-1", GOAL_LIFECYCLE_ACTIVE);
         let repo = Arc::new(MockGoalRepository::new(vec![goal]));
-        let service = GoalService::new(repo.clone(), Arc::new(MockAccountService::default()));
+        let service = goal_service(repo.clone(), Arc::new(MockAccountService::default()));
         let mut plan = valid_retirement_plan();
         plan.personal.birth_year_month = None;
         let mut settings = serde_json::to_value(&plan).unwrap();
@@ -1624,6 +1757,74 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn create_retirement_goal_filters_seed_accounts_with_policy_date() {
+        let mut existing_goal = test_goal(GOAL_LIFECYCLE_ACTIVE, None);
+        existing_goal.id = "existing-goal".to_string();
+        let repo = Arc::new(MockGoalRepository::new(vec![existing_goal]));
+        repo.set_funding_rules(
+            "existing-goal",
+            vec![share_rule("existing-goal", "acct-3", 80.0)],
+        );
+        let account_service = Arc::new(MockAccountService {
+            accounts: Mutex::new(vec![
+                test_account("acct-1", "SECURITIES"),
+                test_account("acct-2", "CASH"),
+                test_account("acct-3", "CRYPTOCURRENCY"),
+                test_account("acct-card", "CREDIT_CARD"),
+            ]),
+        });
+        let as_of = NaiveDate::from_ymd_opt(2026, 7, 15).unwrap();
+        let policy =
+            MockAggregateEligibilityService::with_allowed_ids(&["acct-1", "acct-3"], as_of);
+        let service = GoalService::new(repo.clone(), account_service, policy.clone());
+
+        service
+            .create_goal(new_retirement_goal("goal-1"), as_of)
+            .await
+            .expect("eligible retirement goal should be created");
+
+        let requested = policy.requested_account_ids();
+        assert_eq!(
+            requested,
+            vec![vec![
+                "acct-1".to_string(),
+                "acct-2".to_string(),
+                "acct-3".to_string(),
+                "acct-card".to_string()
+            ]]
+        );
+        let saved_rules = repo.load_funding_rules("goal-1").unwrap();
+        let shares_by_account: HashMap<String, f64> = saved_rules
+            .into_iter()
+            .map(|rule| (rule.account_id, rule.share_percent))
+            .collect();
+        assert_eq!(shares_by_account.get("acct-1"), Some(&100.0));
+        assert_eq!(shares_by_account.get("acct-3"), Some(&20.0));
+        assert!(!shares_by_account.contains_key("acct-2"));
+        assert!(!shares_by_account.contains_key("acct-card"));
+    }
+
+    #[tokio::test]
+    async fn create_retirement_goal_policy_error_fails_without_insert() {
+        let repo = Arc::new(MockGoalRepository::default());
+        let account_service = Arc::new(MockAccountService {
+            accounts: Mutex::new(vec![test_account("acct-1", "SECURITIES")]),
+        });
+        let policy = MockAggregateEligibilityService::failing();
+        let service = GoalService::new(repo.clone(), account_service, policy);
+        let as_of = NaiveDate::from_ymd_opt(2026, 7, 15).unwrap();
+
+        let err = service
+            .create_goal(new_retirement_goal("goal-1"), as_of)
+            .await
+            .expect_err("policy errors must abort creation");
+
+        assert!(err.to_string().contains("policy failure"));
+        assert!(repo.load_goals().unwrap().is_empty());
+        assert!(repo.load_funding_rules("goal-1").unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn update_goal_rejects_unarchiving_retirement_when_another_exists() {
         let archived_goal = retirement_goal("old-retirement", GOAL_LIFECYCLE_ARCHIVED);
         let active_goal = retirement_goal("new-retirement", GOAL_LIFECYCLE_ACTIVE);
@@ -1631,7 +1832,7 @@ mod tests {
             archived_goal.clone(),
             active_goal,
         ]));
-        let service = GoalService::new(repo, Arc::new(MockAccountService::default()));
+        let service = goal_service(repo, Arc::new(MockAccountService::default()));
 
         let mut updated = archived_goal;
         updated.status_lifecycle = GOAL_LIFECYCLE_ACTIVE.to_string();
@@ -1664,7 +1865,7 @@ mod tests {
             "active-goal",
             vec![share_rule("active-goal", "acct-1", 60.0)],
         );
-        let service = GoalService::new(repo, Arc::new(MockAccountService::default()));
+        let service = goal_service(repo, Arc::new(MockAccountService::default()));
 
         let mut updated = inactive_goal;
         updated.status_lifecycle = GOAL_LIFECYCLE_ACTIVE.to_string();
@@ -1681,7 +1882,7 @@ mod tests {
     async fn save_goal_funding_rejects_unknown_tax_bucket() {
         let goal = retirement_goal("goal-1", GOAL_LIFECYCLE_ACTIVE);
         let repo = Arc::new(MockGoalRepository::new(vec![goal]));
-        let service = GoalService::new(repo, Arc::new(MockAccountService::default()));
+        let service = goal_service(repo, Arc::new(MockAccountService::default()));
 
         let err = service
             .save_goal_funding(
@@ -1705,7 +1906,7 @@ mod tests {
         let account_service = MockAccountService {
             accounts: Mutex::new(vec![test_account("acct-card", "CREDIT_CARD")]),
         };
-        let service = GoalService::new(repo, Arc::new(account_service));
+        let service = goal_service(repo, Arc::new(account_service));
 
         let err = service
             .save_goal_funding(
@@ -1733,7 +1934,7 @@ mod tests {
 
         let repo = Arc::new(MockGoalRepository::new(vec![goal]));
         repo.set_funding_rules("goal-1", vec![share_rule("goal-1", "acct-1", 50.0)]);
-        let service = GoalService::new(repo, Arc::new(MockAccountService::default()));
+        let service = goal_service(repo, Arc::new(MockAccountService::default()));
         let valuations = HashMap::from([("acct-1".to_string(), 80_000.0)]);
 
         let refreshed = service

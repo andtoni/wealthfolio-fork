@@ -127,17 +127,49 @@ const MSG_AUTH_REQUIRED: &str =
     "Provider linking requires authentication to be configured. Set WF_AUTH_PASSWORD_HASH and restart.";
 
 const PROVIDER_STATUSES_NOT_CONFIGURED: &[ProviderConnectionStatus] = &[
-    ProviderConnectionStatus { provider: ProviderKind::Investec, status: "not_configured", message: MSG_NOT_CONFIGURED },
-    ProviderConnectionStatus { provider: ProviderKind::Mercury, status: "not_configured", message: MSG_NOT_CONFIGURED },
-    ProviderConnectionStatus { provider: ProviderKind::Plaid, status: "not_configured", message: MSG_NOT_CONFIGURED },
-    ProviderConnectionStatus { provider: ProviderKind::SnapTrade, status: "not_configured", message: MSG_NOT_CONFIGURED },
+    ProviderConnectionStatus {
+        provider: ProviderKind::Investec,
+        status: "not_configured",
+        message: MSG_NOT_CONFIGURED,
+    },
+    ProviderConnectionStatus {
+        provider: ProviderKind::Mercury,
+        status: "not_configured",
+        message: MSG_NOT_CONFIGURED,
+    },
+    ProviderConnectionStatus {
+        provider: ProviderKind::Plaid,
+        status: "not_configured",
+        message: MSG_NOT_CONFIGURED,
+    },
+    ProviderConnectionStatus {
+        provider: ProviderKind::SnapTrade,
+        status: "not_configured",
+        message: MSG_NOT_CONFIGURED,
+    },
 ];
 
 const PROVIDER_STATUSES_AUTH_REQUIRED: &[ProviderConnectionStatus] = &[
-    ProviderConnectionStatus { provider: ProviderKind::Investec, status: "auth_required", message: MSG_AUTH_REQUIRED },
-    ProviderConnectionStatus { provider: ProviderKind::Mercury, status: "auth_required", message: MSG_AUTH_REQUIRED },
-    ProviderConnectionStatus { provider: ProviderKind::Plaid, status: "auth_required", message: MSG_AUTH_REQUIRED },
-    ProviderConnectionStatus { provider: ProviderKind::SnapTrade, status: "auth_required", message: MSG_AUTH_REQUIRED },
+    ProviderConnectionStatus {
+        provider: ProviderKind::Investec,
+        status: "auth_required",
+        message: MSG_AUTH_REQUIRED,
+    },
+    ProviderConnectionStatus {
+        provider: ProviderKind::Mercury,
+        status: "auth_required",
+        message: MSG_AUTH_REQUIRED,
+    },
+    ProviderConnectionStatus {
+        provider: ProviderKind::Plaid,
+        status: "auth_required",
+        message: MSG_AUTH_REQUIRED,
+    },
+    ProviderConnectionStatus {
+        provider: ProviderKind::SnapTrade,
+        status: "auth_required",
+        message: MSG_AUTH_REQUIRED,
+    },
 ];
 
 // Handlers
@@ -206,8 +238,14 @@ async fn start_provider_connection(
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/provider-connections", get(list_provider_connections))
-        .route("/provider-connections/{provider}", get(review_provider_connection))
-        .route("/provider-connections/{provider}/start", post(start_provider_connection))
+        .route(
+            "/provider-connections/{provider}",
+            get(review_provider_connection),
+        )
+        .route(
+            "/provider-connections/{provider}/start",
+            post(start_provider_connection),
+        )
 }
 
 // Tests
@@ -226,7 +264,12 @@ mod tests {
 
     #[test]
     fn provider_kind_from_str_roundtrips() {
-        for kind in &[ProviderKind::Investec, ProviderKind::Mercury, ProviderKind::Plaid, ProviderKind::SnapTrade] {
+        for kind in &[
+            ProviderKind::Investec,
+            ProviderKind::Mercury,
+            ProviderKind::Plaid,
+            ProviderKind::SnapTrade,
+        ] {
             let s = kind.to_string();
             let parsed: ProviderKind = s.parse().unwrap();
             assert_eq!(parsed, *kind);
@@ -245,7 +288,10 @@ mod tests {
     #[test]
     fn provider_statuses_not_configured_has_all_four() {
         assert_eq!(PROVIDER_STATUSES_NOT_CONFIGURED.len(), 4);
-        let names: Vec<ProviderKind> = PROVIDER_STATUSES_NOT_CONFIGURED.iter().map(|s| s.provider).collect();
+        let names: Vec<ProviderKind> = PROVIDER_STATUSES_NOT_CONFIGURED
+            .iter()
+            .map(|s| s.provider)
+            .collect();
         assert!(names.contains(&ProviderKind::Investec));
         assert!(names.contains(&ProviderKind::Mercury));
         assert!(names.contains(&ProviderKind::Plaid));
@@ -270,8 +316,18 @@ mod tests {
         };
         let json = serde_json::to_value(&response).unwrap();
         let obj = json.as_object().unwrap();
-        for forbidden in &["secret", "apiKey", "token", "accessToken", "url", "redirectUrl"] {
-            assert!(!obj.contains_key(*forbidden), "response must not contain field: {forbidden}");
+        for forbidden in &[
+            "secret",
+            "apiKey",
+            "token",
+            "accessToken",
+            "url",
+            "redirectUrl",
+        ] {
+            assert!(
+                !obj.contains_key(*forbidden),
+                "response must not contain field: {forbidden}"
+            );
         }
     }
 
@@ -285,8 +341,18 @@ mod tests {
         };
         let json = serde_json::to_value(&response).unwrap();
         let obj = json.as_object().unwrap();
-        for forbidden in &["secret", "apiKey", "token", "accessToken", "url", "redirectUrl"] {
-            assert!(!obj.contains_key(*forbidden), "response must not contain field: {forbidden}");
+        for forbidden in &[
+            "secret",
+            "apiKey",
+            "token",
+            "accessToken",
+            "url",
+            "redirectUrl",
+        ] {
+            assert!(
+                !obj.contains_key(*forbidden),
+                "response must not contain field: {forbidden}"
+            );
         }
     }
 
@@ -299,7 +365,10 @@ mod tests {
             authenticated_subject: "urn:wealthfolio:password#test-user".to_string(),
         };
         let json = serde_json::to_value(&response).unwrap();
-        assert_eq!(json["authenticatedSubject"], "urn:wealthfolio:password#test-user");
+        assert_eq!(
+            json["authenticatedSubject"],
+            "urn:wealthfolio:password#test-user"
+        );
         assert_eq!(json["provider"], "snaptrade");
         assert_eq!(json["status"], "not_implemented");
     }

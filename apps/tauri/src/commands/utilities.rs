@@ -294,6 +294,7 @@ async fn build_data_export_content(
             let resolved = state
                 .portfolio_service()
                 .resolve_account_scope(&AccountScope::All, &base_currency)
+                .await
                 .map_err(|e| format!("Failed to resolve portfolio scope: {}", e))?;
             let account_ids = holdings_account_ids(state, &resolved.account_ids)?;
             if account_ids.is_empty() {
@@ -328,9 +329,11 @@ async fn build_data_export_content(
         }
         ExportDataType::PortfolioHistory => {
             let base_currency = state.get_base_currency();
+            let as_of = chrono::Utc::now().date_naive();
             let resolved = state
                 .portfolio_service()
-                .resolve_account_scope(&AccountScope::All, &base_currency)
+                .resolve_account_scope_as_of(&AccountScope::All, &base_currency, as_of)
+                .await
                 .map_err(|e| format!("Failed to resolve portfolio scope: {}", e))?;
             let records = state
                 .valuation_service()
@@ -341,6 +344,7 @@ async fn build_data_export_content(
                     None,
                     None,
                 )
+                .await
                 .map_err(|e| format!("Failed to load portfolio history for export: {}", e))?;
             format_records(&records, format).map_err(|e| e.to_string())
         }

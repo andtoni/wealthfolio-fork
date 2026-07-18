@@ -205,6 +205,7 @@ pub async fn get_allocation_target_drift(
             &base_currency,
             AccountPurpose::Holdings,
         )
+        .await
         .map_err(|e| e.to_string())?;
 
     if include_holdings.unwrap_or(false) {
@@ -234,7 +235,7 @@ pub async fn get_allocation_target_drift(
 
 // ── Rebalance ─────────────────────────────────────────────────────────────────
 
-fn resolve_rebalance_input(
+async fn resolve_rebalance_input(
     state: &Arc<ServiceContext>,
     target_id: String,
     available_cash: Decimal,
@@ -250,6 +251,7 @@ fn resolve_rebalance_input(
             &base_currency,
             AccountPurpose::Holdings,
         )
+        .await
         .map_err(|e| e.to_string())?;
     Ok(CalculateRebalancePlanInput {
         target_id,
@@ -275,7 +277,8 @@ pub async fn calculate_rebalance_plan(
         available_cash,
         scenario_mode.unwrap_or_default(),
         filter,
-    )?;
+    )
+    .await?;
     state
         .rebalance_service()
         .calculate_plan(input)

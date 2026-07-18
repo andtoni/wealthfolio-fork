@@ -2,10 +2,11 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use anyhow::Result;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use wealthfolio_core::accounts::{
     account_supports_purpose, account_types, AccountPurpose, AccountRepositoryTrait,
+    AggregateEligibilityServiceTrait,
 };
 use wealthfolio_core::activities::{
     Activity, ActivityRepositoryTrait, TransferPairResolution, ACTIVITY_TYPE_TRANSFER_IN,
@@ -31,6 +32,9 @@ use crate::activity_classification::{
     within_spending_transfer_groups, SpendingClassification,
 };
 use crate::activity_splits::{ActivitySplit, ActivitySplitRepositoryTrait, NewActivitySplit};
+use crate::aggregate_eligibility::{
+    filter_eligible_activity_rows, resolve_eligible_spending_accounts,
+};
 use crate::error::SpendingError;
 use crate::events::EventsService;
 use crate::settings::SpendingSettingsService;
@@ -46,6 +50,7 @@ const MAX_CASH_ACTIVITY_SEARCH_LIMIT: usize = 1_000;
 pub struct CashActivityService {
     activity_repo: Arc<dyn ActivityRepositoryTrait>,
     account_repo: Arc<dyn AccountRepositoryTrait>,
+    aggregate_eligibility: Arc<dyn AggregateEligibilityServiceTrait>,
     settings: Arc<SpendingSettingsService>,
     assignments: Arc<ActivityTaxonomyAssignmentService>,
     splits: Arc<dyn ActivitySplitRepositoryTrait>,
@@ -62,10 +67,12 @@ impl CashActivityService {
         splits: Arc<dyn ActivitySplitRepositoryTrait>,
         activity_events: Arc<dyn crate::activity_events::ActivityEventsRepositoryTrait>,
         events: Arc<EventsService>,
+        aggregate_eligibility: Arc<dyn AggregateEligibilityServiceTrait>,
     ) -> Self {
         Self {
             activity_repo,
             account_repo,
+            aggregate_eligibility,
             settings,
             assignments,
             splits,
@@ -490,6 +497,96 @@ impl CashActivityService {
             .collect())
     }
 
+    pub async fn get_by_activity_ids_for_aggregate(
+        &self,
+        activity_ids: &[String],
+        as_of: NaiveDate,
+    ) -> Result<Vec<CashActivity>> {
+        if activity_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let s = self.settings.get().await?;
+        if !s.enabled || s.account_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let (all_spending_accounts, _) = self.resolve_target_accounts(None, &s.account_ids)?;
+        if all_spending_accounts.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let eligible_accounts = resolve_eligible_spending_accounts(
+            self.account_repo.as_ref(),
+            self.aggregate_eligibility.as_ref(),
+            &s.account_ids,
+            as_of,
+        )
+        .await?;
+        if eligible_accounts.ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let eligible_account_ids: HashSet<&str> =
+            eligible_accounts.ids.iter().map(String::as_str).collect();
+        let context_activities = self
+            .activity_repo
+            .get_activities_by_account_ids(&all_spending_accounts)
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        let transfer_link_resolution = self.transfer_link_resolution()?;
+        let transfer_context_acts: Vec<&Activity> = context_activities.iter().collect();
+        let transfer_groups = within_spending_transfer_groups(&transfer_context_acts);
+        let requested_ids: HashSet<&str> = activity_ids.iter().map(String::as_str).collect();
+        let mut activities = context_activities
+            .iter()
+            .filter(|activity| requested_ids.contains(activity.id.as_str()))
+            .filter(|activity| eligible_account_ids.contains(activity.account_id.as_str()))
+            .cloned()
+            .collect::<Vec<_>>();
+        retain_classified_cash_activities(&mut activities, &eligible_accounts.account_types);
+
+        let transfer_policy_context = aggregate_transfer_context_rows(
+            &activities,
+            &context_activities,
+            &transfer_link_resolution,
+        );
+        activities = filter_eligible_activity_rows(
+            self.aggregate_eligibility.as_ref(),
+            activities,
+            &transfer_policy_context,
+        )
+        .await?;
+
+        let ids: Vec<String> = activities.iter().map(|a| a.id.clone()).collect();
+        let asgs = self.assignments.list_for_activities(&ids).await?;
+        let mut by_activity = group_assignments_owned(asgs);
+        let splits = self.splits.list_for_activities(&ids).await?;
+        let mut splits_by_activity = group_splits_owned(splits);
+        let mut tag_map = self.activity_events.list_for_activities(&ids).await?;
+        Ok(activities
+            .into_iter()
+            .map(|activity| {
+                let assignments = by_activity.remove(&activity.id).unwrap_or_default();
+                let splits = splits_by_activity.remove(&activity.id).unwrap_or_default();
+                let event_id = tag_map.remove(&activity.id);
+                let cash_flow_bucket = cash_flow_bucket_for(
+                    &activity,
+                    &eligible_accounts.account_types,
+                    &transfer_groups,
+                );
+                let transfer_link_status =
+                    transfer_link_status_for(&activity, &transfer_link_resolution);
+                CashActivity {
+                    activity,
+                    cash_flow_bucket,
+                    assignments,
+                    splits,
+                    event_id,
+                    transfer_link_status,
+                }
+            })
+            .collect())
+    }
+
     pub async fn list_assignments(
         &self,
         activity_id: &str,
@@ -882,6 +979,32 @@ fn transfer_link_status_for(
     Some(TransferLinkStatus::Unlinked)
 }
 
+fn aggregate_transfer_context_rows(
+    candidates: &[Activity],
+    context: &[Activity],
+    resolution: &TransferPairResolution,
+) -> Vec<Activity> {
+    let mut context_ids = HashSet::new();
+
+    for activity in candidates {
+        if let Some(pair) = resolution.pair_for_activity(&activity.id) {
+            context_ids.insert(pair.transfer_in.id.as_str());
+            context_ids.insert(pair.transfer_out.id.as_str());
+        }
+        if let Some(group) = resolution.invalid_group_for_activity(&activity.id) {
+            for activity_id in &group.activity_ids {
+                context_ids.insert(activity_id.as_str());
+            }
+        }
+    }
+
+    context
+        .iter()
+        .filter(|activity| context_ids.contains(activity.id.as_str()))
+        .cloned()
+        .collect()
+}
+
 impl CashFlowBucket {
     fn label(self) -> &'static str {
         match self {
@@ -979,13 +1102,15 @@ fn activity_date_in_range(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::sync::Mutex;
 
     use async_trait::async_trait;
-    use chrono::NaiveDateTime;
+    use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeZone};
     use rust_decimal::Decimal;
     use wealthfolio_core::accounts::{
-        Account, AccountRepositoryTrait, AccountUpdate, NewAccount, TrackingMode,
+        Account, AccountRepositoryTrait, AccountUpdate, AggregateEligibilityServiceTrait,
+        NewAccount, TrackingMode, ENTITY_ACTIVITY,
     };
     use wealthfolio_core::activities::{
         ActivityBulkMutationResult, ActivitySearchResponse, ActivityStatus, ActivityUpdate,
@@ -1038,6 +1163,21 @@ mod tests {
         }
     }
 
+    fn dated_activity(
+        id: &str,
+        activity_type: &str,
+        account_id: &str,
+        date: NaiveDate,
+    ) -> Activity {
+        let mut activity = activity(activity_type);
+        activity.id = id.to_string();
+        activity.account_id = account_id.to_string();
+        activity.activity_date = Utc
+            .with_ymd_and_hms(date.year(), date.month(), date.day(), 12, 0, 0)
+            .unwrap();
+        activity
+    }
+
     #[derive(Default)]
     struct MockSettingsRepo;
 
@@ -1061,7 +1201,7 @@ mod tests {
     }
 
     struct MockAccountRepo {
-        account: Account,
+        accounts: Vec<Account>,
     }
 
     #[async_trait]
@@ -1079,13 +1219,15 @@ mod tests {
         }
 
         fn get_by_id(&self, account_id: &str) -> wealthfolio_core::Result<Account> {
-            if self.account.id == account_id {
-                Ok(self.account.clone())
-            } else {
-                Err(wealthfolio_core::errors::Error::Validation(
-                    wealthfolio_core::errors::ValidationError::InvalidInput("not found".into()),
-                ))
-            }
+            self.accounts
+                .iter()
+                .find(|account| account.id == account_id)
+                .cloned()
+                .ok_or_else(|| {
+                    wealthfolio_core::errors::Error::Validation(
+                        wealthfolio_core::errors::ValidationError::InvalidInput("not found".into()),
+                    )
+                })
         }
 
         fn list(
@@ -1094,20 +1236,83 @@ mod tests {
             is_archived_filter: Option<bool>,
             account_ids: Option<&[String]>,
         ) -> wealthfolio_core::Result<Vec<Account>> {
-            let include = account_ids
-                .map(|ids| ids.iter().any(|id| id == &self.account.id))
-                .unwrap_or(true)
-                && is_active_filter
-                    .map(|active| active == self.account.is_active)
-                    .unwrap_or(true)
-                && is_archived_filter
-                    .map(|archived| archived == self.account.is_archived)
-                    .unwrap_or(true);
-            Ok(if include {
-                vec![self.account.clone()]
-            } else {
-                Vec::new()
-            })
+            Ok(self
+                .accounts
+                .iter()
+                .filter(|account| {
+                    account_ids
+                        .map(|ids| ids.iter().any(|id| id == &account.id))
+                        .unwrap_or(true)
+                        && is_active_filter
+                            .map(|active| active == account.is_active)
+                            .unwrap_or(true)
+                        && is_archived_filter
+                            .map(|archived| archived == account.is_archived)
+                            .unwrap_or(true)
+                })
+                .cloned()
+                .collect())
+        }
+    }
+
+    #[derive(Default)]
+    struct MockAggregateEligibilityService {
+        allowed_accounts: Mutex<HashSet<String>>,
+        allowed_activity_ids: Mutex<HashSet<String>>,
+        fail_accounts: Mutex<bool>,
+        fail_rows: Mutex<bool>,
+        account_calls: Mutex<Vec<(Vec<String>, NaiveDate)>>,
+        row_calls: Mutex<Vec<(String, Vec<(String, NaiveDate)>)>>,
+    }
+
+    #[async_trait]
+    impl AggregateEligibilityServiceTrait for MockAggregateEligibilityService {
+        async fn eligible_account_ids(
+            &self,
+            requested_account_ids: &[String],
+            as_of: NaiveDate,
+        ) -> wealthfolio_core::Result<HashSet<String>> {
+            self.account_calls
+                .lock()
+                .unwrap()
+                .push((requested_account_ids.to_vec(), as_of));
+            if *self.fail_accounts.lock().unwrap() {
+                return Err(wealthfolio_core::errors::Error::Validation(
+                    wealthfolio_core::errors::ValidationError::InvalidInput(
+                        "account policy failed".to_string(),
+                    ),
+                ));
+            }
+            let allowed_accounts = self.allowed_accounts.lock().unwrap();
+            Ok(requested_account_ids
+                .iter()
+                .filter(|id| allowed_accounts.contains(*id))
+                .cloned()
+                .collect())
+        }
+
+        async fn eligible_entity_ids_for_rows(
+            &self,
+            entity_type: &str,
+            rows: &[(String, NaiveDate)],
+        ) -> wealthfolio_core::Result<HashSet<String>> {
+            self.row_calls
+                .lock()
+                .unwrap()
+                .push((entity_type.to_string(), rows.to_vec()));
+            if *self.fail_rows.lock().unwrap() {
+                return Err(wealthfolio_core::errors::Error::Validation(
+                    wealthfolio_core::errors::ValidationError::InvalidInput(
+                        "row policy failed".to_string(),
+                    ),
+                ));
+            }
+            let allowed_activity_ids = self.allowed_activity_ids.lock().unwrap();
+            Ok(rows
+                .iter()
+                .filter(|(id, _)| allowed_activity_ids.contains(id))
+                .map(|(id, _)| id.clone())
+                .collect())
         }
     }
 
@@ -1611,6 +1816,12 @@ mod tests {
         }
     }
 
+    fn account_with_id(id: &str, account_type: &str) -> Account {
+        let mut account = account(account_type);
+        account.id = id.to_string();
+        account
+    }
+
     fn split(category_id: &str, amount: i64, taxonomy_id: &str) -> NewActivitySplit {
         NewActivitySplit {
             taxonomy_id: taxonomy_id.to_string(),
@@ -1627,12 +1838,27 @@ mod tests {
         CashActivityService,
         Arc<MockAssignmentRepo>,
         Arc<MockSplitRepo>,
+        Arc<MockAggregateEligibilityService>,
     ) {
-        let activity_repo = Arc::new(MockActivityRepo {
-            activities: vec![activity],
-        });
+        make_service_with_activities(vec![activity])
+    }
+
+    fn make_service_with_activities(
+        activities: Vec<Activity>,
+    ) -> (
+        CashActivityService,
+        Arc<MockAssignmentRepo>,
+        Arc<MockSplitRepo>,
+        Arc<MockAggregateEligibilityService>,
+    ) {
+        let activity_repo = Arc::new(MockActivityRepo { activities });
         let account_repo = Arc::new(MockAccountRepo {
-            account: account(account_types::CASH),
+            accounts: vec![account_with_id("account-1", account_types::CASH)],
+        });
+        let aggregate_eligibility = Arc::new(MockAggregateEligibilityService {
+            allowed_accounts: Mutex::new(HashSet::from(["account-1".to_string()])),
+            allowed_activity_ids: Mutex::new(HashSet::from(["activity-1".to_string()])),
+            ..Default::default()
         });
         let settings = Arc::new(SpendingSettingsService::new(Arc::new(MockSettingsRepo)));
         let assignment_repo = Arc::new(MockAssignmentRepo::default());
@@ -1657,8 +1883,9 @@ mod tests {
             split_repo.clone(),
             activity_events,
             events,
+            aggregate_eligibility.clone(),
         );
-        (service, assignment_repo, split_repo)
+        (service, assignment_repo, split_repo, aggregate_eligibility)
     }
 
     #[test]
@@ -1704,8 +1931,213 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cash_activities_aggregate_filters_account_gate_before_rows() {
+        let (service, _, _, policy) = make_service(dated_activity(
+            "activity-1",
+            "WITHDRAWAL",
+            "account-1",
+            NaiveDate::from_ymd_opt(2026, 1, 10).unwrap(),
+        ));
+        policy.allowed_accounts.lock().unwrap().clear();
+
+        let rows = service
+            .get_by_activity_ids_for_aggregate(
+                &["activity-1".to_string()],
+                NaiveDate::from_ymd_opt(2026, 7, 15).unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert!(rows.is_empty());
+        assert_eq!(
+            *policy.account_calls.lock().unwrap(),
+            vec![(
+                vec!["account-1".to_string()],
+                NaiveDate::from_ymd_opt(2026, 7, 15).unwrap()
+            )]
+        );
+        assert!(policy.row_calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn cash_activities_aggregate_batches_exact_activity_date_rows_once() {
+        let date_a = NaiveDate::from_ymd_opt(2026, 1, 10).unwrap();
+        let date_b = NaiveDate::from_ymd_opt(2026, 1, 11).unwrap();
+        let (service, _, _, policy) = make_service_with_activities(vec![
+            dated_activity("activity-1", "WITHDRAWAL", "account-1", date_a),
+            dated_activity("activity-2", "DEPOSIT", "account-1", date_b),
+        ]);
+        policy
+            .allowed_activity_ids
+            .lock()
+            .unwrap()
+            .insert("activity-2".to_string());
+
+        let rows = service
+            .get_by_activity_ids_for_aggregate(
+                &["activity-1".to_string(), "activity-2".to_string()],
+                NaiveDate::from_ymd_opt(2026, 7, 15).unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.activity.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["activity-1", "activity-2"]
+        );
+        assert_eq!(
+            *policy.row_calls.lock().unwrap(),
+            vec![(
+                ENTITY_ACTIVITY.to_string(),
+                vec![
+                    ("activity-1".to_string(), date_a),
+                    ("activity-2".to_string(), date_b)
+                ]
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn cash_activities_aggregate_is_row_selective_on_same_account() {
+        let (service, _, _, policy) = make_service_with_activities(vec![
+            dated_activity(
+                "live",
+                "WITHDRAWAL",
+                "account-1",
+                NaiveDate::from_ymd_opt(2026, 2, 1).unwrap(),
+            ),
+            dated_activity(
+                "historical",
+                "WITHDRAWAL",
+                "account-1",
+                NaiveDate::from_ymd_opt(2025, 2, 1).unwrap(),
+            ),
+        ]);
+        let mut allowed_activity_ids = policy.allowed_activity_ids.lock().unwrap();
+        allowed_activity_ids.clear();
+        allowed_activity_ids.insert("live".to_string());
+        drop(allowed_activity_ids);
+
+        let rows = service
+            .get_by_activity_ids_for_aggregate(
+                &["live".to_string(), "historical".to_string()],
+                NaiveDate::from_ymd_opt(2026, 7, 15).unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.activity.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["live"]
+        );
+    }
+
+    #[tokio::test]
+    async fn cash_activities_aggregate_transfer_pair_is_all_or_none() {
+        let mut transfer_in = dated_activity(
+            "transfer-in",
+            "TRANSFER_IN",
+            "account-1",
+            NaiveDate::from_ymd_opt(2026, 3, 1).unwrap(),
+        );
+        transfer_in.source_group_id = Some("transfer-group".to_string());
+        let mut transfer_out = dated_activity(
+            "transfer-out",
+            "TRANSFER_OUT",
+            "account-1",
+            NaiveDate::from_ymd_opt(2026, 3, 1).unwrap(),
+        );
+        transfer_out.source_group_id = Some("transfer-group".to_string());
+        let (service, _, _, policy) = make_service_with_activities(vec![transfer_in, transfer_out]);
+        policy.allowed_activity_ids.lock().unwrap().clear();
+        policy
+            .allowed_activity_ids
+            .lock()
+            .unwrap()
+            .insert("transfer-in".to_string());
+
+        let rows = service
+            .get_by_activity_ids_for_aggregate(
+                &["transfer-in".to_string(), "transfer-out".to_string()],
+                NaiveDate::from_ymd_opt(2026, 7, 15).unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert!(rows.is_empty());
+    }
+
+    #[tokio::test]
+    async fn cash_activities_aggregate_propagates_policy_errors() {
+        let (service, _, _, policy) = make_service(dated_activity(
+            "activity-1",
+            "WITHDRAWAL",
+            "account-1",
+            NaiveDate::from_ymd_opt(2026, 1, 10).unwrap(),
+        ));
+        *policy.fail_rows.lock().unwrap() = true;
+
+        let err = service
+            .get_by_activity_ids_for_aggregate(
+                &["activity-1".to_string()],
+                NaiveDate::from_ymd_opt(2026, 7, 15).unwrap(),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("row policy failed"));
+    }
+
+    #[tokio::test]
+    async fn cash_activities_aggregate_propagates_account_policy_errors() {
+        let (service, _, _, policy) = make_service(dated_activity(
+            "activity-1",
+            "WITHDRAWAL",
+            "account-1",
+            NaiveDate::from_ymd_opt(2026, 1, 10).unwrap(),
+        ));
+        *policy.fail_accounts.lock().unwrap() = true;
+
+        let err = service
+            .get_by_activity_ids_for_aggregate(
+                &["activity-1".to_string()],
+                NaiveDate::from_ymd_opt(2026, 7, 15).unwrap(),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("account policy failed"));
+        assert!(policy.row_calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn cash_activities_explicit_id_history_path_does_not_apply_aggregate_policy() {
+        let (service, _, _, policy) = make_service(dated_activity(
+            "activity-1",
+            "WITHDRAWAL",
+            "account-1",
+            NaiveDate::from_ymd_opt(2026, 1, 10).unwrap(),
+        ));
+        policy.allowed_accounts.lock().unwrap().clear();
+        policy.allowed_activity_ids.lock().unwrap().clear();
+
+        let rows = service
+            .get_by_activity_ids(&["activity-1".to_string()])
+            .await
+            .unwrap();
+
+        assert_eq!(rows.len(), 1);
+        assert!(policy.account_calls.lock().unwrap().is_empty());
+        assert!(policy.row_calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn replace_splits_accepts_exact_total_and_clears_single_assignment() {
-        let (service, assignment_repo, split_repo) = make_service(activity("WITHDRAWAL"));
+        let (service, assignment_repo, split_repo, _) = make_service(activity("WITHDRAWAL"));
 
         let splits = service
             .replace_splits(
@@ -1729,7 +2161,7 @@ mod tests {
 
     #[tokio::test]
     async fn replace_splits_rejects_over_total_without_writing() {
-        let (service, assignment_repo, split_repo) = make_service(activity("WITHDRAWAL"));
+        let (service, assignment_repo, split_repo, _) = make_service(activity("WITHDRAWAL"));
 
         let err = service
             .replace_splits(
@@ -1749,7 +2181,7 @@ mod tests {
 
     #[tokio::test]
     async fn replace_splits_rejects_wrong_taxonomy_without_writing() {
-        let (service, assignment_repo, split_repo) = make_service(activity("WITHDRAWAL"));
+        let (service, assignment_repo, split_repo, _) = make_service(activity("WITHDRAWAL"));
 
         let err = service
             .replace_splits("activity-1", vec![split("salary", 100, INCOME_TAXONOMY)])
@@ -1763,7 +2195,7 @@ mod tests {
 
     #[tokio::test]
     async fn replace_splits_rejects_wrong_category_taxonomy_without_writing() {
-        let (service, assignment_repo, split_repo) = make_service(activity("WITHDRAWAL"));
+        let (service, assignment_repo, split_repo, _) = make_service(activity("WITHDRAWAL"));
         *split_repo.categories_valid.lock().unwrap() = false;
 
         let err = service
@@ -1780,7 +2212,7 @@ mod tests {
     async fn replace_splits_rejects_neutral_transfer_without_writing() {
         let mut transfer = activity("TRANSFER_IN");
         transfer.source_group_id = Some("group-1".to_string());
-        let (service, assignment_repo, split_repo) = make_service(transfer);
+        let (service, assignment_repo, split_repo, _) = make_service(transfer);
 
         let err = service
             .replace_splits(

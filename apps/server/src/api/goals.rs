@@ -47,7 +47,9 @@ async fn create_goal(
     Json(mut goal): Json<NewGoal>,
 ) -> ApiResult<Json<Goal>> {
     goal.currency = Some(state.base_currency.read().unwrap().clone());
-    let g = state.goal_service.create_goal(goal).await?;
+    let timezone = state.timezone.read().unwrap().clone();
+    let as_of = user_today(parse_user_timezone_or_default(&timezone));
+    let g = state.goal_service.create_goal(goal, as_of).await?;
     Ok(Json(g))
 }
 
@@ -194,7 +196,7 @@ async fn build_valuation_map(state: &AppState) -> ApiResult<HashMap<String, f64>
         state.asset_service.as_ref(),
         state.quote_service.as_ref(),
         state.fx_service.as_ref(),
-        state.verified_receipt_repository.as_ref(),
+        state.aggregate_eligibility_service.as_ref(),
     );
     let response = service
         .get_current_valuation_for_scope(

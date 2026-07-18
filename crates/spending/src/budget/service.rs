@@ -6,9 +6,7 @@ use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
 use rust_decimal::Decimal;
 use std::str::FromStr;
 use uuid::Uuid;
-use wealthfolio_core::accounts::{
-    account_supports_purpose, AccountPurpose, AccountRepositoryTrait,
-};
+use wealthfolio_core::accounts::{AccountRepositoryTrait, AggregateEligibilityServiceTrait};
 use wealthfolio_core::activities::ActivityRepositoryTrait;
 use wealthfolio_core::taxonomies::{Category, TaxonomyServiceTrait};
 
@@ -25,6 +23,9 @@ use crate::activity_allocations::{
 use crate::activity_assignments::ActivityTaxonomyAssignmentRepositoryTrait;
 use crate::activity_classification::{activity_abs_amount, classify_activity, decimal_to_f64};
 use crate::activity_splits::ActivitySplitRepositoryTrait;
+use crate::aggregate_eligibility::{
+    filter_eligible_activity_rows, resolve_eligible_spending_accounts,
+};
 use crate::error::SpendingError;
 use crate::settings::SpendingSettingsService;
 
@@ -197,6 +198,7 @@ pub struct BudgetService {
     spending_settings: Arc<SpendingSettingsService>,
     taxonomy_service: Arc<dyn TaxonomyServiceTrait>,
     fx_service: Arc<dyn wealthfolio_core::fx::FxServiceTrait>,
+    aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
 }
 
 impl BudgetService {
@@ -210,6 +212,7 @@ impl BudgetService {
         spending_settings: Arc<SpendingSettingsService>,
         taxonomy_service: Arc<dyn TaxonomyServiceTrait>,
         fx_service: Arc<dyn wealthfolio_core::fx::FxServiceTrait>,
+        aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
     ) -> Self {
         Self {
             repo,
@@ -220,6 +223,7 @@ impl BudgetService {
             spending_settings,
             taxonomy_service,
             fx_service,
+            aggregate_eligibility_service,
         }
     }
 
@@ -886,27 +890,31 @@ impl BudgetService {
         if !settings.enabled || settings.account_ids.is_empty() {
             return Ok(HashMap::new());
         }
-        let accounts = self
-            .account_repo
-            .list(None, Some(false), Some(&settings.account_ids))
-            .map_err(|e| anyhow!(e.to_string()))?;
-        let account_types: HashMap<String, String> = accounts
-            .into_iter()
-            .filter(|a| account_supports_purpose(&a.account_type, AccountPurpose::Spending))
-            .map(|a| (a.id, a.account_type))
-            .collect();
-        if account_types.is_empty() {
+        let (_, end) = local_month_bounds_utc(end_period, timezone)?;
+        let eligible_accounts = resolve_eligible_spending_accounts(
+            self.account_repo.as_ref(),
+            self.aggregate_eligibility_service.as_ref(),
+            &settings.account_ids,
+            end.date_naive(),
+        )
+        .await?;
+        if eligible_accounts.ids.is_empty() {
             return Ok(HashMap::new());
         }
-        let account_ids = account_types.keys().cloned().collect::<Vec<_>>();
         let (start, _) = local_month_bounds_utc(start_period, timezone)?;
-        let (_, end) = local_month_bounds_utc(end_period, timezone)?;
         let activities = self
             .activity_repo
-            .get_activities_by_account_ids_in_date_range(&account_ids, start, end)
+            .get_activities_by_account_ids_in_date_range(&eligible_accounts.ids, start, end)
             .map_err(|e| anyhow!(e.to_string()))?
             .into_iter()
             .collect::<Vec<_>>();
+        let activities = filter_eligible_activity_rows(
+            self.aggregate_eligibility_service.as_ref(),
+            activities.clone(),
+            &activities,
+        )
+        .await?;
+        let account_types = eligible_accounts.account_types;
         let activity_ids = activities.iter().map(|a| a.id.clone()).collect::<Vec<_>>();
         let assignments = self
             .assignment_repo
@@ -1473,15 +1481,1521 @@ fn parse_month(period_key: &str) -> Result<(i32, u32)> {
 
 #[cfg(test)]
 mod tests {
+    use async_trait::async_trait;
     use chrono::{NaiveDate, NaiveDateTime};
+    use serde_json::Value;
+    use std::sync::Mutex;
+    use wealthfolio_core::accounts::{
+        account_types, Account, AccountAccountingSettings, AccountRepositoryTrait, AccountUpdate,
+        AggregateEligibilityServiceTrait, NewAccount, ProvenanceRole, TrackingMode,
+    };
+    use wealthfolio_core::activities::{
+        Activity, ActivityBulkMutationResult, ActivitySearchResponse, ActivityStatus,
+        ActivityUpdate, ActivityUpsert, BulkUpsertResult, ImportMapping, ImportTemplate,
+        IncomeData, NewActivity, Sort, ACTIVITY_TYPE_TRANSFER_IN, ACTIVITY_TYPE_TRANSFER_OUT,
+    };
+    use wealthfolio_core::fx::{ExchangeRate, NewExchangeRate};
+    use wealthfolio_core::limits::ContributionActivity;
+    use wealthfolio_core::taxonomies::{
+        AssetTaxonomyAssignment, Category, NewAssetTaxonomyAssignment, NewCategory, NewTaxonomy,
+        Taxonomy, TaxonomyWithCategories,
+    };
+    use wealthfolio_core::{
+        errors::{Error, ValidationError},
+        Result as CoreResult,
+    };
 
+    use super::super::model::BudgetGroupAssignment;
     use super::*;
+    use crate::activity_assignments::{ActivityTaxonomyAssignment, NewActivityTaxonomyAssignment};
+    use crate::activity_splits::{ActivitySplit, NewActivitySplit};
+    use crate::settings::{
+        SpendingSettingsRepositoryTrait, SETTING_KEY_ACCOUNT_IDS, SETTING_KEY_ENABLED,
+    };
 
     fn ts() -> NaiveDateTime {
         NaiveDate::from_ymd_opt(2026, 1, 1)
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap()
+    }
+
+    fn account(id: &str, account_type: &str) -> Account {
+        Account {
+            id: id.to_string(),
+            name: id.to_string(),
+            account_type: account_type.to_string(),
+            group: None,
+            currency: "USD".to_string(),
+            is_default: false,
+            is_active: true,
+            created_at: ts(),
+            updated_at: ts(),
+            platform_id: None,
+            account_number: None,
+            meta: None,
+            provider: None,
+            provider_account_id: None,
+            is_archived: false,
+            tracking_mode: TrackingMode::Transactions,
+            include_in_net_worth: true,
+            name_source: "manual".to_string(),
+        }
+    }
+
+    fn activity(id: &str, account_id: &str, activity_type: &str, amount: i64) -> Activity {
+        Activity {
+            id: id.to_string(),
+            account_id: account_id.to_string(),
+            asset_id: None,
+            activity_type: activity_type.to_string(),
+            activity_type_override: None,
+            source_type: None,
+            subtype: None,
+            status: ActivityStatus::Posted,
+            activity_date: Utc.with_ymd_and_hms(2026, 5, 10, 12, 0, 0).unwrap(),
+            settlement_date: None,
+            quantity: None,
+            unit_price: None,
+            amount: Some(Decimal::new(amount, 0)),
+            fee: None,
+            tax: None,
+            currency: "USD".to_string(),
+            fx_rate: None,
+            notes: None,
+            metadata: None::<Value>,
+            source_system: None,
+            source_record_id: None,
+            source_group_id: None,
+            idempotency_key: None,
+            import_run_id: None,
+            is_user_modified: false,
+            needs_review: false,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn assignment(activity_id: &str, category_id: &str) -> ActivityTaxonomyAssignment {
+        ActivityTaxonomyAssignment {
+            id: format!("{activity_id}-{category_id}"),
+            activity_id: activity_id.to_string(),
+            taxonomy_id: SPENDING_TAXONOMY.to_string(),
+            category_id: category_id.to_string(),
+            weight: 10_000,
+            source: "manual".to_string(),
+            created_at: ts(),
+            updated_at: ts(),
+        }
+    }
+
+    fn category(taxonomy_id: &str, category_id: &str, parent_id: Option<&str>) -> Category {
+        Category {
+            id: category_id.to_string(),
+            taxonomy_id: taxonomy_id.to_string(),
+            parent_id: parent_id.map(str::to_string),
+            name: category_id.to_string(),
+            key: category_id.to_string(),
+            color: "#000000".to_string(),
+            description: None,
+            sort_order: 0,
+            created_at: ts(),
+            updated_at: ts(),
+            icon: None,
+        }
+    }
+
+    fn taxonomy_with_categories(id: &str, categories: Vec<Category>) -> TaxonomyWithCategories {
+        TaxonomyWithCategories {
+            taxonomy: Taxonomy {
+                id: id.to_string(),
+                name: id.to_string(),
+                color: "#000000".to_string(),
+                description: None,
+                is_system: true,
+                is_single_select: true,
+                sort_order: 0,
+                created_at: ts(),
+                updated_at: ts(),
+                scope: "activity".to_string(),
+            },
+            categories,
+        }
+    }
+
+    fn budget_group(id: &str, key: &str) -> BudgetGroup {
+        BudgetGroup {
+            id: id.to_string(),
+            name: key.to_string(),
+            key: key.to_string(),
+            color: None,
+            icon: None,
+            sort_order: 0,
+            is_system: true,
+            created_at: ts(),
+            updated_at: ts(),
+        }
+    }
+
+    fn budget_group_assignment(group_id: &str, category_id: &str) -> BudgetGroupAssignment {
+        BudgetGroupAssignment {
+            id: format!("{group_id}-{category_id}"),
+            group_id: group_id.to_string(),
+            taxonomy_id: SPENDING_TAXONOMY.to_string(),
+            category_id: category_id.to_string(),
+            created_at: ts(),
+            updated_at: ts(),
+        }
+    }
+
+    #[derive(Default)]
+    struct MockEligibility {
+        account_provenance: HashMap<String, ProvenanceInput>,
+        row_provenance: Mutex<HashMap<String, ProvenanceInput>>,
+        account_error: Mutex<bool>,
+        row_error: Mutex<bool>,
+        account_calls: Mutex<Vec<(Vec<String>, NaiveDate)>>,
+        row_calls: Mutex<Vec<(String, Vec<(String, NaiveDate)>)>>,
+    }
+
+    #[derive(Clone)]
+    struct ProvenanceInput {
+        role: ProvenanceRole,
+        coverage_start: Option<NaiveDate>,
+        manual_current_approved: bool,
+    }
+
+    impl ProvenanceInput {
+        fn eligible(&self, row_date: NaiveDate) -> bool {
+            let coverage_start = self.coverage_start.map(|date| date.to_string());
+            self.role.eligible_for_aggregate(
+                &row_date.to_string(),
+                coverage_start.as_deref(),
+                self.manual_current_approved,
+            )
+        }
+    }
+
+    #[async_trait]
+    impl AggregateEligibilityServiceTrait for MockEligibility {
+        async fn eligible_account_ids(
+            &self,
+            requested_account_ids: &[String],
+            as_of: NaiveDate,
+        ) -> CoreResult<HashSet<String>> {
+            self.account_calls
+                .lock()
+                .unwrap()
+                .push((requested_account_ids.to_vec(), as_of));
+            if *self.account_error.lock().unwrap() {
+                return Err(Error::Validation(ValidationError::InvalidInput(
+                    "account policy failed".to_string(),
+                )));
+            }
+            Ok(requested_account_ids
+                .iter()
+                .filter(|id| {
+                    self.account_provenance
+                        .get(*id)
+                        .is_some_and(|record| record.eligible(as_of))
+                })
+                .cloned()
+                .collect())
+        }
+
+        async fn eligible_entity_ids_for_rows(
+            &self,
+            entity_type: &str,
+            rows: &[(String, NaiveDate)],
+        ) -> CoreResult<HashSet<String>> {
+            self.row_calls
+                .lock()
+                .unwrap()
+                .push((entity_type.to_string(), rows.to_vec()));
+            if *self.row_error.lock().unwrap() {
+                return Err(Error::Validation(ValidationError::InvalidInput(
+                    "row policy failed".to_string(),
+                )));
+            }
+            Ok(rows
+                .iter()
+                .filter(|(id, row_date)| {
+                    self.row_provenance
+                        .lock()
+                        .unwrap()
+                        .get(id)
+                        .is_some_and(|record| record.eligible(*row_date))
+                })
+                .map(|(id, _)| id.clone())
+                .collect())
+        }
+    }
+
+    struct MockSettingsRepo {
+        enabled: bool,
+        account_ids: Vec<String>,
+    }
+
+    #[async_trait]
+    impl SpendingSettingsRepositoryTrait for MockSettingsRepo {
+        async fn get_setting(&self, key: &str) -> Result<Option<String>> {
+            Ok(match key {
+                SETTING_KEY_ENABLED => Some(self.enabled.to_string()),
+                SETTING_KEY_ACCOUNT_IDS => Some(serde_json::to_string(&self.account_ids)?),
+                _ => None,
+            })
+        }
+
+        async fn set_setting(&self, _: &str, _: &str) -> Result<()> {
+            unimplemented!()
+        }
+
+        async fn set_settings(&self, _: Vec<(String, String)>) -> Result<()> {
+            unimplemented!()
+        }
+    }
+
+    struct MockAccountRepo {
+        accounts: Vec<Account>,
+    }
+
+    #[async_trait]
+    impl AccountRepositoryTrait for MockAccountRepo {
+        async fn create(&self, _: NewAccount) -> CoreResult<Account> {
+            unimplemented!()
+        }
+
+        async fn update(&self, _: AccountUpdate) -> CoreResult<Account> {
+            unimplemented!()
+        }
+
+        async fn delete(&self, _: &str) -> CoreResult<usize> {
+            unimplemented!()
+        }
+
+        fn get_by_id(&self, _: &str) -> CoreResult<Account> {
+            unimplemented!()
+        }
+
+        fn list(
+            &self,
+            is_active_filter: Option<bool>,
+            is_archived_filter: Option<bool>,
+            account_ids: Option<&[String]>,
+        ) -> CoreResult<Vec<Account>> {
+            Ok(self
+                .accounts
+                .iter()
+                .filter(|account| {
+                    is_active_filter
+                        .map(|is_active| account.is_active == is_active)
+                        .unwrap_or(true)
+                        && is_archived_filter
+                            .map(|is_archived| account.is_archived == is_archived)
+                            .unwrap_or(true)
+                        && account_ids
+                            .map(|ids| ids.iter().any(|id| id == &account.id))
+                            .unwrap_or(true)
+                })
+                .cloned()
+                .collect())
+        }
+
+        fn get_accounting_settings_by_account_ids(
+            &self,
+            account_ids: &[String],
+        ) -> CoreResult<HashMap<String, AccountAccountingSettings>> {
+            Ok(account_ids
+                .iter()
+                .map(|id| {
+                    (
+                        id.clone(),
+                        AccountAccountingSettings::default_for_account(id.clone()),
+                    )
+                })
+                .collect())
+        }
+    }
+
+    struct MockActivityRepo {
+        activities: Vec<Activity>,
+        date_range_calls: Mutex<Vec<Vec<String>>>,
+    }
+
+    impl MockActivityRepo {
+        fn new(activities: Vec<Activity>) -> Self {
+            Self {
+                activities,
+                date_range_calls: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl ActivityRepositoryTrait for MockActivityRepo {
+        fn get_activity(&self, _: &str) -> CoreResult<Activity> {
+            unimplemented!()
+        }
+
+        fn find_transfer_counterpart(&self, _: &str, _: &str) -> CoreResult<Option<Activity>> {
+            unimplemented!()
+        }
+
+        fn get_activities(&self) -> CoreResult<Vec<Activity>> {
+            Ok(self.activities.clone())
+        }
+
+        fn get_activities_by_account_id(&self, account_id: &str) -> CoreResult<Vec<Activity>> {
+            Ok(self
+                .activities
+                .iter()
+                .filter(|activity| activity.account_id == account_id)
+                .cloned()
+                .collect())
+        }
+
+        fn get_activities_by_account_ids(
+            &self,
+            account_ids: &[String],
+        ) -> CoreResult<Vec<Activity>> {
+            Ok(self
+                .activities
+                .iter()
+                .filter(|activity| account_ids.iter().any(|id| id == &activity.account_id))
+                .cloned()
+                .collect())
+        }
+
+        fn get_activities_by_account_ids_in_date_range(
+            &self,
+            account_ids: &[String],
+            start_utc: DateTime<Utc>,
+            end_utc: DateTime<Utc>,
+        ) -> CoreResult<Vec<Activity>> {
+            self.date_range_calls
+                .lock()
+                .unwrap()
+                .push(account_ids.to_vec());
+            Ok(self
+                .activities
+                .iter()
+                .filter(|activity| {
+                    account_ids.iter().any(|id| id == &activity.account_id)
+                        && activity.activity_date >= start_utc
+                        && activity.activity_date <= end_utc
+                })
+                .cloned()
+                .collect())
+        }
+
+        fn get_trading_activities(&self) -> CoreResult<Vec<Activity>> {
+            unimplemented!()
+        }
+
+        fn get_income_activities(&self) -> CoreResult<Vec<Activity>> {
+            unimplemented!()
+        }
+
+        fn get_contribution_activities(
+            &self,
+            _: &[String],
+            _: DateTime<Utc>,
+            _: DateTime<Utc>,
+        ) -> CoreResult<Vec<ContributionActivity>> {
+            unimplemented!()
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn search_activities(
+            &self,
+            _: i64,
+            _: i64,
+            _: Option<Vec<String>>,
+            _: Option<Vec<String>>,
+            _: Option<String>,
+            _: Option<Sort>,
+            _: Option<bool>,
+            _: Option<NaiveDate>,
+            _: Option<NaiveDate>,
+            _: Option<Vec<String>>,
+            _: Option<Vec<String>>,
+        ) -> CoreResult<ActivitySearchResponse> {
+            unimplemented!()
+        }
+
+        async fn create_activity(&self, _: NewActivity) -> CoreResult<Activity> {
+            unimplemented!()
+        }
+
+        async fn update_activity(&self, _: ActivityUpdate) -> CoreResult<Activity> {
+            unimplemented!()
+        }
+
+        async fn delete_activity(&self, _: String) -> CoreResult<Activity> {
+            unimplemented!()
+        }
+
+        async fn link_transfer_activities(
+            &self,
+            _: String,
+            _: String,
+        ) -> CoreResult<(Activity, Activity)> {
+            unimplemented!()
+        }
+
+        async fn unlink_transfer_activities(
+            &self,
+            _: String,
+            _: String,
+        ) -> CoreResult<(Activity, Activity)> {
+            unimplemented!()
+        }
+
+        async fn bulk_mutate_activities(
+            &self,
+            _: Vec<NewActivity>,
+            _: Vec<ActivityUpdate>,
+            _: Vec<String>,
+        ) -> CoreResult<ActivityBulkMutationResult> {
+            unimplemented!()
+        }
+
+        async fn create_activities(&self, _: Vec<NewActivity>) -> CoreResult<usize> {
+            unimplemented!()
+        }
+
+        fn get_first_activity_date(
+            &self,
+            _: Option<&[String]>,
+        ) -> CoreResult<Option<DateTime<Utc>>> {
+            unimplemented!()
+        }
+
+        fn get_import_mapping(&self, _: &str, _: &str) -> CoreResult<Option<ImportMapping>> {
+            unimplemented!()
+        }
+
+        async fn save_import_mapping(&self, _: &ImportMapping) -> CoreResult<()> {
+            unimplemented!()
+        }
+
+        async fn link_account_template(&self, _: &str, _: &str, _: &str) -> CoreResult<()> {
+            unimplemented!()
+        }
+
+        fn list_import_templates(&self) -> CoreResult<Vec<ImportTemplate>> {
+            unimplemented!()
+        }
+
+        fn get_import_template(&self, _: &str) -> CoreResult<Option<ImportTemplate>> {
+            unimplemented!()
+        }
+
+        async fn save_import_template(&self, _: &ImportTemplate) -> CoreResult<()> {
+            unimplemented!()
+        }
+
+        async fn delete_import_template(&self, _: &str) -> CoreResult<()> {
+            unimplemented!()
+        }
+
+        fn get_broker_sync_profile(&self, _: &str, _: &str) -> CoreResult<Option<ImportTemplate>> {
+            unimplemented!()
+        }
+
+        async fn save_broker_sync_profile(&self, _: &ImportTemplate) -> CoreResult<()> {
+            unimplemented!()
+        }
+
+        async fn link_broker_sync_profile(&self, _: &str, _: &str, _: &str) -> CoreResult<()> {
+            unimplemented!()
+        }
+
+        fn calculate_average_cost(&self, _: &str, _: &str) -> CoreResult<Decimal> {
+            unimplemented!()
+        }
+
+        fn get_income_activities_data(&self, _: Option<&[String]>) -> CoreResult<Vec<IncomeData>> {
+            unimplemented!()
+        }
+
+        fn get_first_activity_date_overall(&self) -> CoreResult<DateTime<Utc>> {
+            unimplemented!()
+        }
+
+        fn get_activity_bounds_for_assets(
+            &self,
+            _: &[String],
+        ) -> CoreResult<HashMap<String, (Option<NaiveDate>, Option<NaiveDate>)>> {
+            unimplemented!()
+        }
+
+        fn get_holdings_snapshot_bounds_for_assets(
+            &self,
+            _: &[String],
+        ) -> CoreResult<HashMap<String, (Option<NaiveDate>, Option<NaiveDate>)>> {
+            unimplemented!()
+        }
+
+        fn check_existing_duplicates(&self, _: &[String]) -> CoreResult<HashMap<String, String>> {
+            unimplemented!()
+        }
+
+        async fn bulk_upsert(&self, _: Vec<ActivityUpsert>) -> CoreResult<BulkUpsertResult> {
+            unimplemented!()
+        }
+
+        async fn reassign_asset(&self, _: &str, _: &str) -> CoreResult<u32> {
+            unimplemented!()
+        }
+
+        async fn get_activity_accounts_and_currencies_by_asset_id(
+            &self,
+            _: &str,
+        ) -> CoreResult<(Vec<String>, Vec<String>)> {
+            unimplemented!()
+        }
+    }
+
+    #[derive(Default)]
+    struct MockAssignmentRepo {
+        assignments: Vec<ActivityTaxonomyAssignment>,
+        calls: Mutex<Vec<Vec<String>>>,
+    }
+
+    #[async_trait]
+    impl ActivityTaxonomyAssignmentRepositoryTrait for MockAssignmentRepo {
+        async fn list_for_activity(
+            &self,
+            activity_id: &str,
+        ) -> Result<Vec<ActivityTaxonomyAssignment>> {
+            Ok(self
+                .assignments
+                .iter()
+                .filter(|assignment| assignment.activity_id == activity_id)
+                .cloned()
+                .collect())
+        }
+
+        async fn list_for_activities(
+            &self,
+            activity_ids: &[String],
+        ) -> Result<Vec<ActivityTaxonomyAssignment>> {
+            self.calls.lock().unwrap().push(activity_ids.to_vec());
+            Ok(self
+                .assignments
+                .iter()
+                .filter(|assignment| activity_ids.iter().any(|id| id == &assignment.activity_id))
+                .cloned()
+                .collect())
+        }
+
+        async fn upsert(
+            &self,
+            _: NewActivityTaxonomyAssignment,
+        ) -> Result<ActivityTaxonomyAssignment> {
+            unimplemented!()
+        }
+
+        async fn assign_many_single_select(
+            &self,
+            _: Vec<NewActivityTaxonomyAssignment>,
+        ) -> Result<Vec<ActivityTaxonomyAssignment>> {
+            unimplemented!()
+        }
+
+        async fn assign_many_single_select_clearing_splits(
+            &self,
+            _: Vec<NewActivityTaxonomyAssignment>,
+        ) -> Result<Vec<ActivityTaxonomyAssignment>> {
+            unimplemented!()
+        }
+
+        async fn assign_rule_many_single_select(
+            &self,
+            _: Vec<NewActivityTaxonomyAssignment>,
+            _: bool,
+        ) -> Result<Vec<ActivityTaxonomyAssignment>> {
+            unimplemented!()
+        }
+
+        async fn delete(&self, _: &str) -> Result<()> {
+            unimplemented!()
+        }
+
+        async fn clear_for_taxonomy(&self, _: &str, _: &str) -> Result<()> {
+            unimplemented!()
+        }
+    }
+
+    #[derive(Default)]
+    struct MockSplitRepo {
+        splits: Vec<ActivitySplit>,
+        calls: Mutex<Vec<Vec<String>>>,
+    }
+
+    #[async_trait]
+    impl ActivitySplitRepositoryTrait for MockSplitRepo {
+        async fn list_for_activity(&self, activity_id: &str) -> Result<Vec<ActivitySplit>> {
+            Ok(self
+                .splits
+                .iter()
+                .filter(|split| split.activity_id == activity_id)
+                .cloned()
+                .collect())
+        }
+
+        async fn list_for_activities(&self, activity_ids: &[String]) -> Result<Vec<ActivitySplit>> {
+            self.calls.lock().unwrap().push(activity_ids.to_vec());
+            Ok(self
+                .splits
+                .iter()
+                .filter(|split| activity_ids.iter().any(|id| id == &split.activity_id))
+                .cloned()
+                .collect())
+        }
+
+        async fn categories_belong_to_taxonomy(&self, _: &str, _: &[String]) -> Result<bool> {
+            unimplemented!()
+        }
+
+        async fn replace_for_activity(
+            &self,
+            _: &str,
+            _: Vec<NewActivitySplit>,
+        ) -> Result<Vec<ActivitySplit>> {
+            unimplemented!()
+        }
+
+        async fn replace_for_activity_clearing_assignment(
+            &self,
+            _: &str,
+            _: &str,
+            _: Vec<NewActivitySplit>,
+        ) -> Result<Vec<ActivitySplit>> {
+            unimplemented!()
+        }
+
+        async fn clear_for_activity(&self, _: &str) -> Result<()> {
+            unimplemented!()
+        }
+    }
+
+    struct MockTaxonomyService {
+        taxonomies: HashMap<String, TaxonomyWithCategories>,
+    }
+
+    #[async_trait]
+    impl TaxonomyServiceTrait for MockTaxonomyService {
+        fn get_taxonomies(&self) -> CoreResult<Vec<Taxonomy>> {
+            Ok(self
+                .taxonomies
+                .values()
+                .map(|taxonomy| taxonomy.taxonomy.clone())
+                .collect())
+        }
+
+        fn get_taxonomy(&self, id: &str) -> CoreResult<Option<TaxonomyWithCategories>> {
+            Ok(self.taxonomies.get(id).cloned())
+        }
+
+        fn get_taxonomies_with_categories(&self) -> CoreResult<Vec<TaxonomyWithCategories>> {
+            Ok(self.taxonomies.values().cloned().collect())
+        }
+
+        async fn create_taxonomy(&self, _: NewTaxonomy) -> CoreResult<Taxonomy> {
+            unimplemented!()
+        }
+
+        async fn update_taxonomy(&self, _: Taxonomy) -> CoreResult<Taxonomy> {
+            unimplemented!()
+        }
+
+        async fn delete_taxonomy(&self, _: &str) -> CoreResult<usize> {
+            unimplemented!()
+        }
+
+        async fn create_category(&self, _: NewCategory) -> CoreResult<Category> {
+            unimplemented!()
+        }
+
+        async fn update_category(&self, _: Category) -> CoreResult<Category> {
+            unimplemented!()
+        }
+
+        async fn delete_category(&self, _: &str, _: &str) -> CoreResult<usize> {
+            unimplemented!()
+        }
+
+        async fn move_category(
+            &self,
+            _: &str,
+            _: &str,
+            _: Option<String>,
+            _: i32,
+        ) -> CoreResult<Category> {
+            unimplemented!()
+        }
+
+        async fn import_taxonomy_json(&self, _: &str) -> CoreResult<Taxonomy> {
+            unimplemented!()
+        }
+
+        fn export_taxonomy_json(&self, _: &str) -> CoreResult<String> {
+            unimplemented!()
+        }
+
+        fn get_asset_assignments(&self, _: &str) -> CoreResult<Vec<AssetTaxonomyAssignment>> {
+            unimplemented!()
+        }
+
+        fn get_category_assignments(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> CoreResult<Vec<AssetTaxonomyAssignment>> {
+            unimplemented!()
+        }
+
+        async fn assign_asset_to_category(
+            &self,
+            _: NewAssetTaxonomyAssignment,
+        ) -> CoreResult<AssetTaxonomyAssignment> {
+            unimplemented!()
+        }
+
+        async fn replace_asset_taxonomy_assignments(
+            &self,
+            _: &str,
+            _: &str,
+            _: Vec<NewAssetTaxonomyAssignment>,
+        ) -> CoreResult<Vec<AssetTaxonomyAssignment>> {
+            unimplemented!()
+        }
+
+        async fn remove_asset_assignment(&self, _: &str) -> CoreResult<usize> {
+            unimplemented!()
+        }
+    }
+
+    struct MockFxService;
+
+    #[async_trait]
+    impl wealthfolio_core::fx::FxServiceTrait for MockFxService {
+        fn initialize(&self) -> CoreResult<()> {
+            Ok(())
+        }
+
+        fn get_historical_rates(&self, _: &str, _: &str, _: i64) -> CoreResult<Vec<ExchangeRate>> {
+            unimplemented!()
+        }
+
+        fn get_latest_exchange_rate(&self, _: &str, _: &str) -> CoreResult<Decimal> {
+            Ok(Decimal::ONE)
+        }
+
+        fn get_exchange_rate_for_date(
+            &self,
+            _: &str,
+            _: &str,
+            _: NaiveDate,
+        ) -> CoreResult<Decimal> {
+            Ok(Decimal::ONE)
+        }
+
+        fn convert_currency(&self, amount: Decimal, _: &str, _: &str) -> CoreResult<Decimal> {
+            Ok(amount)
+        }
+
+        fn convert_currency_for_date(
+            &self,
+            amount: Decimal,
+            _: &str,
+            _: &str,
+            _: NaiveDate,
+        ) -> CoreResult<Decimal> {
+            Ok(amount)
+        }
+
+        fn get_latest_exchange_rates(&self) -> CoreResult<Vec<ExchangeRate>> {
+            unimplemented!()
+        }
+
+        async fn add_exchange_rate(&self, _: NewExchangeRate) -> CoreResult<ExchangeRate> {
+            unimplemented!()
+        }
+
+        async fn update_exchange_rate(
+            &self,
+            _: &str,
+            _: &str,
+            _: Decimal,
+        ) -> CoreResult<ExchangeRate> {
+            unimplemented!()
+        }
+
+        async fn delete_exchange_rate(&self, _: &str) -> CoreResult<()> {
+            unimplemented!()
+        }
+
+        async fn register_currency_pair(&self, _: &str, _: &str) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn register_currency_pair_manual(&self, _: &str, _: &str) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn ensure_fx_pairs(&self, _: Vec<(String, String)>) -> CoreResult<()> {
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct MockBudgetRepo {
+        groups: Vec<BudgetGroup>,
+        group_assignments: Vec<BudgetGroupAssignment>,
+        targets: Vec<BudgetTarget>,
+        rollover_settings: Vec<BudgetRolloverSetting>,
+    }
+
+    #[async_trait]
+    impl BudgetRepositoryTrait for MockBudgetRepo {
+        async fn list_groups(&self) -> Result<Vec<BudgetGroup>> {
+            Ok(self.groups.clone())
+        }
+
+        async fn create_group(&self, _: NewBudgetGroup) -> Result<BudgetGroup> {
+            unimplemented!()
+        }
+
+        async fn update_group(&self, _: &str, _: UpdateBudgetGroup) -> Result<BudgetGroup> {
+            unimplemented!()
+        }
+
+        async fn delete_group(&self, _: &str) -> Result<()> {
+            unimplemented!()
+        }
+
+        async fn delete_group_and_reassign(
+            &self,
+            _: &str,
+            _: &str,
+            _: Vec<NewBudgetGroupAssignment>,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+
+        async fn upsert_system_groups(
+            &self,
+            groups: Vec<NewBudgetGroup>,
+        ) -> Result<Vec<BudgetGroup>> {
+            Ok(groups
+                .into_iter()
+                .map(|group| BudgetGroup {
+                    id: group.id.unwrap_or_else(|| Uuid::new_v4().to_string()),
+                    name: group.name,
+                    key: group.key.unwrap_or_default(),
+                    color: group.color,
+                    icon: group.icon,
+                    sort_order: group.sort_order.unwrap_or_default(),
+                    is_system: group.is_system,
+                    created_at: ts(),
+                    updated_at: ts(),
+                })
+                .collect())
+        }
+
+        async fn list_group_assignments(&self) -> Result<Vec<BudgetGroupAssignment>> {
+            Ok(self.group_assignments.clone())
+        }
+
+        async fn upsert_group_assignment(
+            &self,
+            _: NewBudgetGroupAssignment,
+        ) -> Result<BudgetGroupAssignment> {
+            unimplemented!()
+        }
+
+        async fn upsert_group_assignments(
+            &self,
+            _: Vec<NewBudgetGroupAssignment>,
+        ) -> Result<Vec<BudgetGroupAssignment>> {
+            unimplemented!()
+        }
+
+        async fn upsert_system_group_assignments(
+            &self,
+            _: Vec<NewBudgetGroupAssignment>,
+        ) -> Result<Vec<BudgetGroupAssignment>> {
+            Ok(Vec::new())
+        }
+
+        async fn list_targets(&self) -> Result<Vec<BudgetTarget>> {
+            Ok(self.targets.clone())
+        }
+
+        async fn upsert_target(&self, _: NewBudgetTarget) -> Result<BudgetTarget> {
+            unimplemented!()
+        }
+
+        async fn delete_target(&self, _: &str) -> Result<()> {
+            unimplemented!()
+        }
+
+        async fn list_rollover_settings(&self) -> Result<Vec<BudgetRolloverSetting>> {
+            Ok(self.rollover_settings.clone())
+        }
+
+        async fn upsert_rollover_setting(
+            &self,
+            _: NewBudgetRolloverSetting,
+        ) -> Result<BudgetRolloverSetting> {
+            unimplemented!()
+        }
+
+        async fn delete_rollover_setting(&self, _: &str) -> Result<()> {
+            unimplemented!()
+        }
+
+        async fn disable_category_rollovers(
+            &self,
+            _: &str,
+            _: &[String],
+        ) -> Result<Vec<BudgetRolloverSetting>> {
+            unimplemented!()
+        }
+
+        async fn copy_period_targets(
+            &self,
+            _: &str,
+            _: &str,
+            _: bool,
+        ) -> Result<Vec<BudgetTarget>> {
+            unimplemented!()
+        }
+    }
+
+    struct BudgetFixture {
+        service: BudgetService,
+        eligibility: Arc<MockEligibility>,
+        activity_repo: Arc<MockActivityRepo>,
+        assignment_repo: Arc<MockAssignmentRepo>,
+        split_repo: Arc<MockSplitRepo>,
+    }
+
+    fn budget_fixture(
+        activities: Vec<Activity>,
+        assignments: Vec<ActivityTaxonomyAssignment>,
+        targets: Vec<BudgetTarget>,
+        allowed_accounts: &[&str],
+        allowed_rows: &[&str],
+    ) -> BudgetFixture {
+        let groups = vec![
+            budget_group(BUDGET_GROUP_NEEDS_ID, "needs"),
+            budget_group(BUDGET_GROUP_WANTS_ID, "wants"),
+            budget_group(BUDGET_GROUP_SAVINGS_ID, "savings"),
+            budget_group(BUDGET_GROUP_GIVING_ID, "giving"),
+            budget_group(BUDGET_GROUP_PERSONAL_ID, "personal"),
+            budget_group(BUDGET_GROUP_OTHER_ID, OTHER_GROUP_KEY),
+        ];
+        let budget_repo = Arc::new(MockBudgetRepo {
+            groups,
+            group_assignments: vec![budget_group_assignment(
+                BUDGET_GROUP_NEEDS_ID,
+                "cat_groceries",
+            )],
+            targets,
+            rollover_settings: Vec::new(),
+        });
+        let activity_repo = Arc::new(MockActivityRepo::new(activities));
+        let assignment_repo = Arc::new(MockAssignmentRepo {
+            assignments,
+            calls: Mutex::new(Vec::new()),
+        });
+        let split_repo = Arc::new(MockSplitRepo::default());
+        let live = || ProvenanceInput {
+            role: ProvenanceRole::LiveCanonical,
+            coverage_start: None,
+            manual_current_approved: false,
+        };
+        let eligibility = Arc::new(MockEligibility {
+            account_provenance: allowed_accounts
+                .iter()
+                .map(|id| (id.to_string(), live()))
+                .collect(),
+            row_provenance: Mutex::new(
+                allowed_rows
+                    .iter()
+                    .map(|id| (id.to_string(), live()))
+                    .collect(),
+            ),
+            ..Default::default()
+        });
+        let mut taxonomies = HashMap::new();
+        taxonomies.insert(
+            SPENDING_TAXONOMY.to_string(),
+            taxonomy_with_categories(
+                SPENDING_TAXONOMY,
+                vec![category(SPENDING_TAXONOMY, "cat_groceries", None)],
+            ),
+        );
+        taxonomies.insert(
+            INCOME_TAXONOMY.to_string(),
+            taxonomy_with_categories(INCOME_TAXONOMY, Vec::new()),
+        );
+        let service = BudgetService::new(
+            budget_repo,
+            activity_repo.clone(),
+            Arc::new(MockAccountRepo {
+                accounts: vec![
+                    account("eligible-card", account_types::CREDIT_CARD),
+                    account("denied-card", account_types::CREDIT_CARD),
+                ],
+            }),
+            assignment_repo.clone(),
+            split_repo.clone(),
+            Arc::new(SpendingSettingsService::new(Arc::new(MockSettingsRepo {
+                enabled: true,
+                account_ids: vec!["eligible-card".to_string(), "denied-card".to_string()],
+            }))),
+            Arc::new(MockTaxonomyService { taxonomies }),
+            Arc::new(MockFxService),
+            eligibility.clone(),
+        );
+
+        BudgetFixture {
+            service,
+            eligibility,
+            activity_repo,
+            assignment_repo,
+            split_repo,
+        }
+    }
+
+    #[tokio::test]
+    async fn budget_actuals_direct_provenance_roles_and_coverage_dates() {
+        let ids = [
+            "live-canonical",
+            "historical-context",
+            "opening-before",
+            "opening-at-start",
+            "opening-after",
+            "missing-provenance",
+            "unknown-role",
+            "contextual-reference",
+            "manual-approved",
+            "manual-unapproved",
+        ];
+        let mut activities = ids
+            .iter()
+            .map(|id| activity(id, "eligible-card", "WITHDRAWAL", 10))
+            .collect::<Vec<_>>();
+        activities[2].activity_date = Utc.with_ymd_and_hms(2026, 5, 9, 12, 0, 0).unwrap();
+        activities[3].activity_date = Utc.with_ymd_and_hms(2026, 5, 10, 12, 0, 0).unwrap();
+        activities[4].activity_date = Utc.with_ymd_and_hms(2026, 5, 11, 12, 0, 0).unwrap();
+        let fixture = budget_fixture(
+            activities,
+            ids.iter()
+                .map(|id| assignment(id, "cat_groceries"))
+                .collect(),
+            Vec::new(),
+            &["eligible-card"],
+            &ids,
+        );
+        let coverage = Some(NaiveDate::from_ymd_opt(2026, 5, 10).unwrap());
+        {
+            let provenance = &mut fixture.eligibility.row_provenance.lock().unwrap();
+            provenance.clear();
+            provenance.insert(
+                "live-canonical".into(),
+                ProvenanceInput {
+                    role: ProvenanceRole::LiveCanonical,
+                    coverage_start: None,
+                    manual_current_approved: false,
+                },
+            );
+            provenance.insert(
+                "historical-context".into(),
+                ProvenanceInput {
+                    role: ProvenanceRole::HistoricalContext,
+                    coverage_start: None,
+                    manual_current_approved: false,
+                },
+            );
+            for id in ["opening-before", "opening-at-start", "opening-after"] {
+                provenance.insert(
+                    id.into(),
+                    ProvenanceInput {
+                        role: ProvenanceRole::OpeningBaseline,
+                        coverage_start: coverage,
+                        manual_current_approved: false,
+                    },
+                );
+            }
+
+            provenance.insert(
+                "contextual-reference".into(),
+                ProvenanceInput {
+                    role: ProvenanceRole::ContextualReference,
+                    coverage_start: None,
+                    manual_current_approved: false,
+                },
+            );
+            provenance.insert(
+                "manual-approved".into(),
+                ProvenanceInput {
+                    role: ProvenanceRole::ManualCurrent,
+                    coverage_start: None,
+                    manual_current_approved: true,
+                },
+            );
+            provenance.insert(
+                "manual-unapproved".into(),
+                ProvenanceInput {
+                    role: ProvenanceRole::ManualCurrent,
+                    coverage_start: None,
+                    manual_current_approved: false,
+                },
+            );
+        }
+
+        let meta = category_meta(&[category(SPENDING_TAXONOMY, "cat_groceries", None)]);
+        let actuals = fixture
+            .service
+            .actuals_by_month("2026-05", "2026-05", &meta, &HashMap::new(), "USD", "UTC")
+            .await
+            .unwrap();
+        assert_eq!(
+            actuals["2026-05"][&(SPENDING_TAXONOMY.into(), "cat_groceries".into())],
+            Decimal::new(40, 0)
+        );
+        assert_eq!(
+            fixture.eligibility.row_calls.lock().unwrap().as_slice(),
+            &[(
+                wealthfolio_core::accounts::ENTITY_ACTIVITY.to_string(),
+                vec![
+                    (
+                        "live-canonical".to_string(),
+                        NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()
+                    ),
+                    (
+                        "historical-context".to_string(),
+                        NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()
+                    ),
+                    (
+                        "opening-before".to_string(),
+                        NaiveDate::from_ymd_opt(2026, 5, 9).unwrap()
+                    ),
+                    (
+                        "opening-at-start".to_string(),
+                        NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()
+                    ),
+                    (
+                        "opening-after".to_string(),
+                        NaiveDate::from_ymd_opt(2026, 5, 11).unwrap()
+                    ),
+                    (
+                        "missing-provenance".to_string(),
+                        NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()
+                    ),
+                    (
+                        "unknown-role".to_string(),
+                        NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()
+                    ),
+                    (
+                        "contextual-reference".to_string(),
+                        NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()
+                    ),
+                    (
+                        "manual-approved".to_string(),
+                        NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()
+                    ),
+                    (
+                        "manual-unapproved".to_string(),
+                        NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()
+                    ),
+                ]
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn budget_actuals_filter_eligible_rows_before_assignment_and_split_reads() {
+        let activities = vec![
+            activity("allowed-spend", "eligible-card", "WITHDRAWAL", 40),
+            activity("denied-row", "eligible-card", "WITHDRAWAL", 70),
+            activity("denied-account", "denied-card", "WITHDRAWAL", 90),
+        ];
+        let fixture = budget_fixture(
+            activities,
+            vec![
+                assignment("allowed-spend", "cat_groceries"),
+                assignment("denied-row", "cat_groceries"),
+                assignment("denied-account", "cat_groceries"),
+            ],
+            Vec::new(),
+            &["eligible-card"],
+            &["allowed-spend", "denied-account"],
+        );
+        let spending_meta = category_meta(&[category(SPENDING_TAXONOMY, "cat_groceries", None)]);
+        let actuals = fixture
+            .service
+            .actuals_by_month(
+                "2026-05",
+                "2026-05",
+                &spending_meta,
+                &HashMap::new(),
+                "USD",
+                "UTC",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            fixture
+                .activity_repo
+                .date_range_calls
+                .lock()
+                .unwrap()
+                .as_slice(),
+            &[vec!["eligible-card".to_string()]]
+        );
+        assert_eq!(
+            fixture.eligibility.account_calls.lock().unwrap().as_slice(),
+            &[(
+                vec!["eligible-card".to_string(), "denied-card".to_string()],
+                NaiveDate::from_ymd_opt(2026, 5, 31).unwrap()
+            )]
+        );
+        assert_eq!(
+            fixture.eligibility.row_calls.lock().unwrap().as_slice(),
+            &[(
+                wealthfolio_core::accounts::ENTITY_ACTIVITY.to_string(),
+                vec![
+                    (
+                        "allowed-spend".to_string(),
+                        NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()
+                    ),
+                    (
+                        "denied-row".to_string(),
+                        NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()
+                    ),
+                ]
+            )]
+        );
+        assert_eq!(
+            fixture.assignment_repo.calls.lock().unwrap().as_slice(),
+            &[vec!["allowed-spend".to_string()]]
+        );
+        assert_eq!(
+            fixture.split_repo.calls.lock().unwrap().as_slice(),
+            &[vec!["allowed-spend".to_string()]]
+        );
+        assert_eq!(
+            actuals
+                .get("2026-05")
+                .and_then(|month| month
+                    .get(&(SPENDING_TAXONOMY.to_string(), "cat_groceries".to_string()))),
+            Some(&Decimal::new(40, 0))
+        );
+    }
+
+    #[tokio::test]
+    async fn budget_actuals_transfer_pair_is_all_or_none_before_enrichment() {
+        let mut transfer_in = activity(
+            "transfer-in",
+            "eligible-card",
+            ACTIVITY_TYPE_TRANSFER_IN,
+            50,
+        );
+        transfer_in.source_group_id = Some("transfer-group".to_string());
+        let mut transfer_out = activity(
+            "transfer-out",
+            "eligible-card",
+            ACTIVITY_TYPE_TRANSFER_OUT,
+            50,
+        );
+        transfer_out.source_group_id = Some("transfer-group".to_string());
+        let fixture = budget_fixture(
+            vec![transfer_in, transfer_out],
+            vec![
+                assignment("transfer-in", "cat_groceries"),
+                assignment("transfer-out", "cat_groceries"),
+            ],
+            Vec::new(),
+            &["eligible-card"],
+            &["transfer-in"],
+        );
+        let spending_meta = category_meta(&[category(SPENDING_TAXONOMY, "cat_groceries", None)]);
+        let actuals = fixture
+            .service
+            .actuals_by_month(
+                "2026-05",
+                "2026-05",
+                &spending_meta,
+                &HashMap::new(),
+                "USD",
+                "UTC",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            fixture.eligibility.row_calls.lock().unwrap()[0].1,
+            vec![
+                (
+                    "transfer-in".to_string(),
+                    NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()
+                ),
+                (
+                    "transfer-out".to_string(),
+                    NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()
+                ),
+            ]
+        );
+        assert_eq!(
+            fixture.assignment_repo.calls.lock().unwrap().as_slice(),
+            &[Vec::<String>::new()]
+        );
+        assert_eq!(
+            fixture.split_repo.calls.lock().unwrap().as_slice(),
+            &[Vec::<String>::new()]
+        );
+        assert!(actuals.is_empty());
+    }
+
+    #[tokio::test]
+    async fn budget_actuals_propagate_row_policy_error_before_enrichment() {
+        let fixture = budget_fixture(
+            vec![activity("row", "eligible-card", "WITHDRAWAL", 40)],
+            vec![assignment("row", "cat_groceries")],
+            Vec::new(),
+            &["eligible-card"],
+            &["row"],
+        );
+        *fixture.eligibility.row_error.lock().unwrap() = true;
+        let spending_meta = category_meta(&[category(SPENDING_TAXONOMY, "cat_groceries", None)]);
+        let err = fixture
+            .service
+            .actuals_by_month(
+                "2026-05",
+                "2026-05",
+                &spending_meta,
+                &HashMap::new(),
+                "USD",
+                "UTC",
+            )
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("row policy failed"));
+        assert!(fixture.assignment_repo.calls.lock().unwrap().is_empty());
+        assert!(fixture.split_repo.calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn budget_get_month_view_denies_non_aggregate_provenance_rows_and_records_policy_call() {
+        for row_id in [
+            "missing-provenance",
+            "unknown-role",
+            "historical-context",
+            "contextual-reference",
+        ] {
+            let fixture = budget_fixture(
+                vec![activity(row_id, "eligible-card", "WITHDRAWAL", 40)],
+                vec![assignment(row_id, "cat_groceries")],
+                Vec::new(),
+                &["eligible-card"],
+                &[],
+            );
+            let snapshot = fixture
+                .service
+                .get(Some("2026-05".to_string()), "USD", "UTC")
+                .await
+                .unwrap();
+            assert_eq!(snapshot.computed.totals.spending_actual, 0.0, "{row_id}");
+            assert_eq!(fixture.eligibility.row_calls.lock().unwrap().len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn budget_get_month_view_propagates_account_policy_error_directly() {
+        let fixture = budget_fixture(
+            vec![activity("account-error", "eligible-card", "WITHDRAWAL", 40)],
+            vec![assignment("account-error", "cat_groceries")],
+            Vec::new(),
+            &["eligible-card"],
+            &["account-error"],
+        );
+        *fixture.eligibility.account_error.lock().unwrap() = true;
+        let err = fixture
+            .service
+            .get(Some("2026-05".to_string()), "USD", "UTC")
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("account policy failed"));
+        assert!(fixture.eligibility.row_calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn budget_get_month_view_uses_direct_policy_output_for_live_and_manual_roles() {
+        for (row_id, allowed) in [
+            ("live-canonical", true),
+            ("manual-current-approved", true),
+            ("manual-current-unapproved", false),
+        ] {
+            let allowed_rows = if allowed { vec![row_id] } else { Vec::new() };
+            let fixture = budget_fixture(
+                vec![activity(row_id, "eligible-card", "WITHDRAWAL", 40)],
+                vec![assignment(row_id, "cat_groceries")],
+                Vec::new(),
+                &["eligible-card"],
+                &allowed_rows,
+            );
+            let snapshot = fixture
+                .service
+                .get(Some("2026-05".to_string()), "USD", "UTC")
+                .await
+                .unwrap();
+            assert_eq!(
+                snapshot.computed.totals.spending_actual,
+                if allowed { 40.0 } else { 0.0 },
+                "{row_id}"
+            );
+            assert_eq!(fixture.eligibility.row_calls.lock().unwrap().len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn budget_get_default_planned_targets_do_not_read_actual_policy() {
+        let fixture = budget_fixture(
+            Vec::new(),
+            Vec::new(),
+            vec![target(
+                DEFAULT_PERIOD_KEY,
+                BudgetTargetType::Category,
+                Some(SPENDING_TAXONOMY),
+                Some("cat_groceries"),
+                None,
+                "125",
+            )],
+            &[],
+            &[],
+        );
+        *fixture.eligibility.row_error.lock().unwrap() = true;
+        let snapshot = fixture
+            .service
+            .get(Some(DEFAULT_PERIOD_KEY.to_string()), "USD", "UTC")
+            .await
+            .unwrap();
+
+        assert_eq!(snapshot.computed.totals.spending_planned, 125.0);
+        assert_eq!(snapshot.computed.totals.spending_actual, 0.0);
+        assert!(fixture.eligibility.account_calls.lock().unwrap().is_empty());
+        assert!(fixture.eligibility.row_calls.lock().unwrap().is_empty());
+        assert!(fixture.assignment_repo.calls.lock().unwrap().is_empty());
+        assert!(fixture.split_repo.calls.lock().unwrap().is_empty());
     }
 
     fn target(
@@ -1742,6 +3256,24 @@ mod tests {
         assert_eq!(
             local_month_end_date("2026-05", "Asia/Tokyo").unwrap(),
             NaiveDate::from_ymd_opt(2026, 5, 31).unwrap()
+        );
+    }
+
+    #[test]
+    fn planned_budget_targets_remain_independent_of_actual_activity_filtering() {
+        let targets = vec![target(
+            "2026-05",
+            BudgetTargetType::Category,
+            Some(SPENDING_TAXONOMY),
+            Some("cat_groceries"),
+            None,
+            "125",
+        )];
+        let index = TargetIndex::new(&targets);
+
+        assert_eq!(
+            index.effective_category_decimal("2026-05", SPENDING_TAXONOMY, "cat_groceries"),
+            Decimal::new(125, 0)
         );
     }
 }

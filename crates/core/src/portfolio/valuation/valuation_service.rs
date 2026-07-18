@@ -1,3 +1,4 @@
+use crate::accounts::{AggregateEligibilityServiceTrait, ENTITY_DAILY_VALUATION};
 use crate::activities::{
     Activity, ActivityRepositoryTrait, TransferPairResolution, ACTIVITY_TYPE_SPLIT,
     ACTIVITY_TYPE_TRANSFER_IN, ACTIVITY_TYPE_TRANSFER_OUT, ACTIVITY_TYPE_WITHDRAWAL,
@@ -25,17 +26,12 @@ use async_trait::async_trait;
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use log::{debug, error, warn};
 use rust_decimal::Decimal;
-use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use super::DailyFxRateMap;
-
-static VALUATION_SERVICE_INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(1);
-const SCOPED_HISTORY_CACHE_LIMIT_PER_MODE: usize = 128;
 
 fn parse_decimal_lossy(value: &str) -> Decimal {
     Decimal::from_str(value).unwrap_or(Decimal::ZERO)
@@ -79,7 +75,7 @@ pub trait ValuationServiceTrait: Send + Sync {
     ///
     /// Returns:
     ///     A `Result` containing a vector of `DailyAccountValuation` or an error.
-    fn get_historical_valuations(
+    async fn get_historical_valuations(
         &self,
         account_id: &str,
         start_date_opt: Option<NaiveDate>,
@@ -87,7 +83,7 @@ pub trait ValuationServiceTrait: Send + Sync {
     ) -> CoreResult<Vec<DailyAccountValuation>>;
 
     /// Loads and aggregates valuation history for a concrete account scope.
-    fn get_historical_valuations_for_accounts(
+    async fn get_historical_valuations_for_accounts(
         &self,
         scope_id: &str,
         account_ids: &[String],
@@ -101,7 +97,7 @@ pub trait ValuationServiceTrait: Send + Sync {
     /// Use this for chart/read paths that only need stored valuation totals and
     /// net contribution history. Performance calculations should use
     /// `get_historical_valuations_for_accounts`.
-    fn get_historical_valuation_totals_for_accounts(
+    async fn get_historical_valuation_totals_for_accounts(
         &self,
         scope_id: &str,
         account_ids: &[String],
@@ -116,10 +112,11 @@ pub trait ValuationServiceTrait: Send + Sync {
             start_date_opt,
             end_date_opt,
         )
+        .await
     }
 
     /// Loads real-account valuation histories in an account-keyed shape.
-    fn get_historical_valuations_by_account(
+    async fn get_historical_valuations_by_account(
         &self,
         account_ids: &[String],
         start_date_opt: Option<NaiveDate>,
@@ -129,7 +126,8 @@ pub trait ValuationServiceTrait: Send + Sync {
         for account_id in account_ids {
             histories.insert(
                 account_id.clone(),
-                self.get_historical_valuations(account_id, start_date_opt, end_date_opt)?,
+                self.get_historical_valuations(account_id, start_date_opt, end_date_opt)
+                    .await?,
             );
         }
         Ok(histories)
@@ -144,12 +142,12 @@ pub trait ValuationServiceTrait: Send + Sync {
     ///     A `Result` containing a `HashMap` mapping account IDs to their
     ///     latest `DailyAccountValuation` (if found), or `None` if no history exists.
     ///     latest `DailyAccountValuation` for each account that has one.
-    fn get_latest_valuations(
+    async fn get_latest_valuations(
         &self,
         account_ids: &[String],
     ) -> CoreResult<Vec<DailyAccountValuation>>;
 
-    fn get_valuations_on_date(
+    async fn get_valuations_on_date(
         &self,
         account_ids: &[String],
         date: NaiveDate,
@@ -182,27 +180,8 @@ pub struct ValuationService {
     fx_service: Arc<dyn FxServiceTrait>,
     activity_repository: Option<Arc<dyn ActivityRepositoryTrait>>,
     lot_repository: Option<Arc<dyn LotRepositoryTrait>>,
+    aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
     timezone: Arc<RwLock<String>>,
-    scoped_history_cache: Arc<RwLock<HashMap<ScopedValuationCacheKey, Vec<DailyAccountValuation>>>>,
-    service_instance_id: u64,
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct ScopedValuationCacheKey {
-    service_instance_id: u64,
-    mode: ScopedValuationHistoryMode,
-    scope_id: String,
-    membership_hash: String,
-    base_currency: String,
-    start_date: Option<NaiveDate>,
-    end_date: Option<NaiveDate>,
-    max_calculated_at: String,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum ScopedValuationHistoryMode {
-    TotalsOnly,
-    PerformanceFlows,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -279,6 +258,7 @@ impl ValuationService {
         snapshot_service: Arc<dyn SnapshotServiceTrait>,
         quote_service: Arc<dyn QuoteServiceTrait>,
         fx_service: Arc<dyn FxServiceTrait>,
+        aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
     ) -> Self {
         Self {
             base_currency,
@@ -288,9 +268,8 @@ impl ValuationService {
             valuation_repository,
             activity_repository: None,
             lot_repository: None,
+            aggregate_eligibility_service,
             timezone: Arc::new(RwLock::new(String::new())),
-            scoped_history_cache: Arc::new(RwLock::new(HashMap::new())),
-            service_instance_id: VALUATION_SERVICE_INSTANCE_COUNTER.fetch_add(1, Ordering::Relaxed),
         }
     }
 
@@ -309,26 +288,36 @@ impl ValuationService {
         self
     }
 
-    fn membership_hash(account_ids: &[String]) -> String {
-        let mut ids = account_ids.to_vec();
-        ids.sort();
-        ids.dedup();
-        let digest = Sha256::digest(ids.join("\n").as_bytes());
-        hex::encode(&digest[..8])
-    }
-
-    fn insert_scoped_history_cache(
-        &self,
-        cache_key: ScopedValuationCacheKey,
-        aggregate: &[DailyAccountValuation],
-    ) {
-        let mode = cache_key.mode;
-        let mut cache = self.scoped_history_cache.write().unwrap();
-        let mode_entry_count = cache.keys().filter(|key| key.mode == mode).count();
-        if mode_entry_count >= SCOPED_HISTORY_CACHE_LIMIT_PER_MODE {
-            cache.retain(|key, _| key.mode != mode);
+    async fn filter_aggregate_eligible_valuation_rows(
+        aggregate_eligibility_service: &dyn AggregateEligibilityServiceTrait,
+        records: Vec<DailyAccountValuation>,
+    ) -> CoreResult<Vec<DailyAccountValuation>> {
+        if records.is_empty() {
+            return Ok(records);
         }
-        cache.insert(cache_key, aggregate.to_vec());
+
+        let rows: Vec<(String, NaiveDate)> = records
+            .iter()
+            .map(|valuation| (valuation.id.clone(), valuation.valuation_date))
+            .collect();
+        let eligible_ids = match aggregate_eligibility_service
+            .eligible_entity_ids_for_rows(ENTITY_DAILY_VALUATION, &rows)
+            .await
+        {
+            Ok(eligible_ids) => eligible_ids,
+            Err(err) => {
+                error!(
+                    "Failed to evaluate aggregate eligibility for valuation rows: {}",
+                    err
+                );
+                return Err(err);
+            }
+        };
+
+        Ok(records
+            .into_iter()
+            .filter(|valuation| eligible_ids.contains(&valuation.id))
+            .collect())
     }
 
     fn position_requires_price_quote(position: &Position) -> bool {
@@ -1884,7 +1873,7 @@ impl ValuationServiceTrait for ValuationService {
         Ok(())
     }
 
-    fn get_historical_valuations(
+    async fn get_historical_valuations(
         &self,
         account_id: &str,
         start_date_opt: Option<NaiveDate>,
@@ -1894,14 +1883,19 @@ impl ValuationServiceTrait for ValuationService {
             "Loading historical valuations for account '{}' from {:?} to {:?}",
             account_id, start_date_opt, end_date_opt
         );
-        self.valuation_repository.get_historical_valuations(
+        let records = self.valuation_repository.get_historical_valuations(
             account_id,
             start_date_opt,
             end_date_opt,
+        )?;
+        Self::filter_aggregate_eligible_valuation_rows(
+            self.aggregate_eligibility_service.as_ref(),
+            records,
         )
+        .await
     }
 
-    fn get_historical_valuations_for_accounts(
+    async fn get_historical_valuations_for_accounts(
         &self,
         scope_id: &str,
         account_ids: &[String],
@@ -1909,52 +1903,14 @@ impl ValuationServiceTrait for ValuationService {
         start_date_opt: Option<NaiveDate>,
         end_date_opt: Option<NaiveDate>,
     ) -> CoreResult<Vec<DailyAccountValuation>> {
-        let max_calculated_at = self
-            .valuation_repository
-            .get_max_calculated_at_for_accounts(account_ids, start_date_opt, end_date_opt)?
-            .unwrap_or_default();
-        let mut cache_key = ScopedValuationCacheKey {
-            service_instance_id: self.service_instance_id,
-            mode: ScopedValuationHistoryMode::PerformanceFlows,
-            scope_id: scope_id.to_string(),
-            membership_hash: Self::membership_hash(account_ids),
-            base_currency: base_currency.to_string(),
-            start_date: start_date_opt,
-            end_date: end_date_opt,
-            max_calculated_at,
-        };
-
-        if let Some(cached) = self
-            .scoped_history_cache
-            .read()
-            .unwrap()
-            .get(&cache_key)
-            .cloned()
-        {
-            return Ok(cached);
-        }
-
         let records = self
             .valuation_repository
             .get_historical_valuations_for_accounts(account_ids, start_date_opt, end_date_opt)?;
-
-        let loaded_max_calculated_at = records
-            .iter()
-            .map(|valuation| valuation.calculated_at.to_rfc3339())
-            .max()
-            .unwrap_or_default();
-        if loaded_max_calculated_at != cache_key.max_calculated_at {
-            cache_key.max_calculated_at = loaded_max_calculated_at;
-            if let Some(cached) = self
-                .scoped_history_cache
-                .read()
-                .unwrap()
-                .get(&cache_key)
-                .cloned()
-            {
-                return Ok(cached);
-            }
-        }
+        let records = Self::filter_aggregate_eligible_valuation_rows(
+            self.aggregate_eligibility_service.as_ref(),
+            records,
+        )
+        .await?;
 
         let mut histories_by_account: HashMap<String, Vec<DailyAccountValuation>> =
             HashMap::with_capacity(account_ids.len());
@@ -1992,12 +1948,10 @@ impl ValuationServiceTrait for ValuationService {
             internal_transfer_flow_adjustments_by_date.as_ref(),
         )?;
 
-        self.insert_scoped_history_cache(cache_key, &aggregate);
-
         Ok(aggregate)
     }
 
-    fn get_historical_valuation_totals_for_accounts(
+    async fn get_historical_valuation_totals_for_accounts(
         &self,
         scope_id: &str,
         account_ids: &[String],
@@ -2005,52 +1959,14 @@ impl ValuationServiceTrait for ValuationService {
         start_date_opt: Option<NaiveDate>,
         end_date_opt: Option<NaiveDate>,
     ) -> CoreResult<Vec<DailyAccountValuation>> {
-        let max_calculated_at = self
-            .valuation_repository
-            .get_max_calculated_at_for_accounts(account_ids, start_date_opt, end_date_opt)?
-            .unwrap_or_default();
-        let mut cache_key = ScopedValuationCacheKey {
-            service_instance_id: self.service_instance_id,
-            mode: ScopedValuationHistoryMode::TotalsOnly,
-            scope_id: scope_id.to_string(),
-            membership_hash: Self::membership_hash(account_ids),
-            base_currency: base_currency.to_string(),
-            start_date: start_date_opt,
-            end_date: end_date_opt,
-            max_calculated_at,
-        };
-
-        if let Some(cached) = self
-            .scoped_history_cache
-            .read()
-            .unwrap()
-            .get(&cache_key)
-            .cloned()
-        {
-            return Ok(cached);
-        }
-
         let records = self
             .valuation_repository
             .get_historical_valuations_for_accounts(account_ids, start_date_opt, end_date_opt)?;
-
-        let loaded_max_calculated_at = records
-            .iter()
-            .map(|valuation| valuation.calculated_at.to_rfc3339())
-            .max()
-            .unwrap_or_default();
-        if loaded_max_calculated_at != cache_key.max_calculated_at {
-            cache_key.max_calculated_at = loaded_max_calculated_at;
-            if let Some(cached) = self
-                .scoped_history_cache
-                .read()
-                .unwrap()
-                .get(&cache_key)
-                .cloned()
-            {
-                return Ok(cached);
-            }
-        }
+        let records = Self::filter_aggregate_eligible_valuation_rows(
+            self.aggregate_eligibility_service.as_ref(),
+            records,
+        )
+        .await?;
 
         let mut histories_by_account: HashMap<String, Vec<DailyAccountValuation>> =
             HashMap::with_capacity(account_ids.len());
@@ -2072,12 +1988,10 @@ impl ValuationServiceTrait for ValuationService {
             histories,
         )?;
 
-        self.insert_scoped_history_cache(cache_key, &aggregate);
-
         Ok(aggregate)
     }
 
-    fn get_historical_valuations_by_account(
+    async fn get_historical_valuations_by_account(
         &self,
         account_ids: &[String],
         start_date_opt: Option<NaiveDate>,
@@ -2086,6 +2000,11 @@ impl ValuationServiceTrait for ValuationService {
         let records = self
             .valuation_repository
             .get_historical_valuations_for_accounts(account_ids, start_date_opt, end_date_opt)?;
+        let records = Self::filter_aggregate_eligible_valuation_rows(
+            self.aggregate_eligibility_service.as_ref(),
+            records,
+        )
+        .await?;
 
         let mut histories = HashMap::with_capacity(account_ids.len());
         for account_id in account_ids {
@@ -2101,15 +2020,22 @@ impl ValuationServiceTrait for ValuationService {
         Ok(histories)
     }
 
-    fn get_latest_valuations(
+    async fn get_latest_valuations(
         &self,
         account_ids: &[String],
     ) -> CoreResult<Vec<DailyAccountValuation>> {
         debug!("Loading latest valuations for accounts: {:?}", account_ids);
-        self.valuation_repository.get_latest_valuations(account_ids)
+        let records = self
+            .valuation_repository
+            .get_latest_valuations(account_ids)?;
+        Self::filter_aggregate_eligible_valuation_rows(
+            self.aggregate_eligibility_service.as_ref(),
+            records,
+        )
+        .await
     }
 
-    fn get_valuations_on_date(
+    async fn get_valuations_on_date(
         &self,
         account_ids: &[String],
         date: NaiveDate,
@@ -2118,8 +2044,14 @@ impl ValuationServiceTrait for ValuationService {
             "Loading valuations for accounts {:?} on date {}",
             account_ids, date
         );
-        self.valuation_repository
-            .get_valuations_on_date(account_ids, date)
+        let records = self
+            .valuation_repository
+            .get_valuations_on_date(account_ids, date)?;
+        Self::filter_aggregate_eligible_valuation_rows(
+            self.aggregate_eligibility_service.as_ref(),
+            records,
+        )
+        .await
     }
 
     fn get_accounts_with_negative_balance(
@@ -2134,8 +2066,15 @@ impl ValuationServiceTrait for ValuationService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::accounts::ProvenanceRole;
     use crate::activities::ActivityStatus;
+    use crate::assets::{Asset, InstrumentType, ProviderProfile};
+    use crate::fx::{ExchangeRate, NewExchangeRate};
     use crate::portfolio::snapshot::SnapshotSource;
+    use crate::quotes::{
+        FetchDividendsParams, LatestQuotePair, LatestQuoteSnapshot, ProviderInfo, QuoteImport,
+        QuoteSyncState, ResolvedQuote, SymbolSearchResult, SymbolSyncPlan, SyncMode, SyncResult,
+    };
     use chrono::{DateTime, Utc};
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
@@ -2331,26 +2270,6 @@ mod tests {
     }
 
     #[test]
-    fn scoped_history_cache_keys_separate_totals_from_performance_flows() {
-        let totals_key = ScopedValuationCacheKey {
-            service_instance_id: 1,
-            mode: ScopedValuationHistoryMode::TotalsOnly,
-            scope_id: "all".to_string(),
-            membership_hash: "members".to_string(),
-            base_currency: "CAD".to_string(),
-            start_date: Some(date("2026-01-01")),
-            end_date: Some(date("2026-06-25")),
-            max_calculated_at: "2026-06-25T00:00:00Z".to_string(),
-        };
-        let performance_key = ScopedValuationCacheKey {
-            mode: ScopedValuationHistoryMode::PerformanceFlows,
-            ..totals_key.clone()
-        };
-
-        assert_ne!(totals_key, performance_key);
-    }
-
-    #[test]
     fn valuation_totals_aggregation_skips_internal_transfer_flow_adjustments() {
         let acct_a = vec![
             valuation(
@@ -2476,6 +2395,1211 @@ mod tests {
             ),
             ExternalFlowSource::Unknown,
         );
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum TestValuationRowRole {
+        Current,
+        Historical,
+        ContextualReference,
+        OpeningBaseline,
+        Unknown,
+    }
+
+    #[derive(Clone, Debug)]
+    struct TestValuationPolicyRule {
+        role: TestValuationRowRole,
+        coverage_start: NaiveDate,
+        coverage_end: Option<NaiveDate>,
+        eligible: bool,
+    }
+
+    struct TestAggregateEligibilityService {
+        rules: std::sync::Mutex<HashMap<String, TestValuationPolicyRule>>,
+        calls: std::sync::Mutex<Vec<(String, Vec<(String, NaiveDate)>)>>,
+        error: std::sync::Mutex<bool>,
+    }
+
+    impl TestAggregateEligibilityService {
+        fn new(rules: Vec<(&str, TestValuationRowRole, &str, Option<&str>, bool)>) -> Self {
+            Self {
+                rules: std::sync::Mutex::new(
+                    rules
+                        .into_iter()
+                        .map(|(id, role, coverage_start, coverage_end, eligible)| {
+                            (
+                                id.to_string(),
+                                TestValuationPolicyRule {
+                                    role,
+                                    coverage_start: date(coverage_start),
+                                    coverage_end: coverage_end.map(date),
+                                    eligible,
+                                },
+                            )
+                        })
+                        .collect(),
+                ),
+                calls: std::sync::Mutex::new(Vec::new()),
+                error: std::sync::Mutex::new(false),
+            }
+        }
+
+        fn calls(&self) -> Vec<(String, Vec<(String, NaiveDate)>)> {
+            self.calls.lock().unwrap().clone()
+        }
+
+        fn set_rule(
+            &self,
+            row_id: &str,
+            role: TestValuationRowRole,
+            coverage_start: &str,
+            coverage_end: Option<&str>,
+            eligible: bool,
+        ) {
+            self.rules.lock().unwrap().insert(
+                row_id.to_string(),
+                TestValuationPolicyRule {
+                    role,
+                    coverage_start: date(coverage_start),
+                    coverage_end: coverage_end.map(date),
+                    eligible,
+                },
+            );
+        }
+
+        fn set_error(&self, error: bool) {
+            *self.error.lock().unwrap() = error;
+        }
+    }
+
+    impl TestValuationRowRole {
+        fn eligible_for_aggregate(
+            self,
+            row_date: NaiveDate,
+            coverage_start: NaiveDate,
+            coverage_end: Option<NaiveDate>,
+            manual_current_approved: bool,
+        ) -> bool {
+            if coverage_end
+                .map(|coverage_end| row_date > coverage_end)
+                .unwrap_or(false)
+            {
+                return false;
+            }
+
+            match self {
+                Self::Current => ProvenanceRole::ManualCurrent.eligible_for_aggregate(
+                    &row_date.to_string(),
+                    Some(&coverage_start.to_string()),
+                    manual_current_approved,
+                ),
+                Self::Historical => ProvenanceRole::HistoricalContext.eligible_for_aggregate(
+                    &row_date.to_string(),
+                    Some(&coverage_start.to_string()),
+                    manual_current_approved,
+                ),
+                Self::ContextualReference => ProvenanceRole::ContextualReference
+                    .eligible_for_aggregate(
+                        &row_date.to_string(),
+                        Some(&coverage_start.to_string()),
+                        manual_current_approved,
+                    ),
+                Self::OpeningBaseline => ProvenanceRole::OpeningBaseline.eligible_for_aggregate(
+                    &row_date.to_string(),
+                    Some(&coverage_start.to_string()),
+                    manual_current_approved,
+                ),
+                Self::Unknown => false,
+            }
+        }
+    }
+
+    #[async_trait]
+    impl AggregateEligibilityServiceTrait for TestAggregateEligibilityService {
+        async fn eligible_account_ids(
+            &self,
+            _requested_account_ids: &[String],
+            _as_of: NaiveDate,
+        ) -> CoreResult<HashSet<String>> {
+            Ok(HashSet::new())
+        }
+
+        async fn eligible_entity_ids_for_rows(
+            &self,
+            entity_type: &str,
+            rows: &[(String, NaiveDate)],
+        ) -> CoreResult<HashSet<String>> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((entity_type.to_string(), rows.to_vec()));
+            if *self.error.lock().unwrap() {
+                return Err(CoreError::Unexpected(
+                    "injected eligibility service error".to_string(),
+                ));
+            }
+            let rules = self.rules.lock().unwrap();
+            Ok(rows
+                .iter()
+                .filter(|(id, row_date)| {
+                    rules.get(id).is_some_and(|rule| {
+                        rule.role.eligible_for_aggregate(
+                            *row_date,
+                            rule.coverage_start,
+                            rule.coverage_end,
+                            rule.eligible,
+                        )
+                    })
+                })
+                .map(|(id, _)| id.clone())
+                .collect())
+        }
+    }
+
+    struct TestValuationRepository {
+        valuations: Vec<DailyAccountValuation>,
+        historical_account_reads: std::sync::Mutex<usize>,
+        historical_scope_reads: std::sync::Mutex<usize>,
+    }
+
+    impl TestValuationRepository {
+        fn new(valuations: Vec<DailyAccountValuation>) -> Self {
+            Self {
+                valuations,
+                historical_account_reads: std::sync::Mutex::new(0),
+                historical_scope_reads: std::sync::Mutex::new(0),
+            }
+        }
+
+        fn historical_scope_reads(&self) -> usize {
+            *self.historical_scope_reads.lock().unwrap()
+        }
+
+        fn filter(
+            &self,
+            account_ids: &[String],
+            start_date: Option<NaiveDate>,
+            end_date: Option<NaiveDate>,
+        ) -> Vec<DailyAccountValuation> {
+            self.valuations
+                .iter()
+                .filter(|valuation| account_ids.contains(&valuation.account_id))
+                .filter(|valuation| {
+                    start_date
+                        .map(|start_date| valuation.valuation_date >= start_date)
+                        .unwrap_or(true)
+                })
+                .filter(|valuation| {
+                    end_date
+                        .map(|end_date| valuation.valuation_date <= end_date)
+                        .unwrap_or(true)
+                })
+                .cloned()
+                .collect()
+        }
+    }
+
+    #[async_trait]
+    impl ValuationRepositoryTrait for TestValuationRepository {
+        async fn save_valuations(
+            &self,
+            _valuation_records: &[DailyAccountValuation],
+        ) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn replace_valuations_for_account(
+            &self,
+            _account_id: &str,
+            _since_date: Option<NaiveDate>,
+            _valuation_records: &[DailyAccountValuation],
+        ) -> CoreResult<()> {
+            Ok(())
+        }
+
+        fn get_historical_valuations(
+            &self,
+            account_id: &str,
+            start_date: Option<NaiveDate>,
+            end_date: Option<NaiveDate>,
+        ) -> CoreResult<Vec<DailyAccountValuation>> {
+            *self.historical_account_reads.lock().unwrap() += 1;
+            Ok(self.filter(&[account_id.to_string()], start_date, end_date))
+        }
+
+        fn get_historical_valuations_for_accounts(
+            &self,
+            account_ids: &[String],
+            start_date: Option<NaiveDate>,
+            end_date: Option<NaiveDate>,
+        ) -> CoreResult<Vec<DailyAccountValuation>> {
+            *self.historical_scope_reads.lock().unwrap() += 1;
+            Ok(self.filter(account_ids, start_date, end_date))
+        }
+
+        fn load_latest_valuation_date(&self, account_id: &str) -> CoreResult<Option<NaiveDate>> {
+            Ok(self
+                .valuations
+                .iter()
+                .filter(|valuation| valuation.account_id == account_id)
+                .map(|valuation| valuation.valuation_date)
+                .max())
+        }
+
+        async fn delete_valuations_for_account(
+            &self,
+            _account_id: &str,
+            _since_date: Option<NaiveDate>,
+        ) -> CoreResult<()> {
+            Ok(())
+        }
+
+        fn get_latest_valuations(
+            &self,
+            account_ids: &[String],
+        ) -> CoreResult<Vec<DailyAccountValuation>> {
+            let mut latest = Vec::new();
+            for account_id in account_ids {
+                if let Some(valuation) = self
+                    .valuations
+                    .iter()
+                    .filter(|valuation| &valuation.account_id == account_id)
+                    .max_by_key(|valuation| valuation.valuation_date)
+                {
+                    latest.push(valuation.clone());
+                }
+            }
+            Ok(latest)
+        }
+
+        fn get_valuations_on_date(
+            &self,
+            account_ids: &[String],
+            date: NaiveDate,
+        ) -> CoreResult<Vec<DailyAccountValuation>> {
+            Ok(self
+                .valuations
+                .iter()
+                .filter(|valuation| {
+                    account_ids.contains(&valuation.account_id) && valuation.valuation_date == date
+                })
+                .cloned()
+                .collect())
+        }
+
+        fn get_accounts_with_negative_balance(
+            &self,
+            _account_ids: &[String],
+        ) -> CoreResult<Vec<NegativeBalanceInfo>> {
+            Ok(Vec::new())
+        }
+    }
+
+    struct NoopSnapshotService;
+
+    #[async_trait]
+    impl SnapshotServiceTrait for NoopSnapshotService {
+        async fn recalculate_holdings_snapshots(
+            &self,
+            _account_ids: Option<&[String]>,
+            _mode: crate::portfolio::snapshot::SnapshotRecalcMode,
+        ) -> CoreResult<usize> {
+            Ok(0)
+        }
+
+        fn get_holdings_keyframes(
+            &self,
+            _account_id: &str,
+            _start_date: Option<NaiveDate>,
+            _end_date: Option<NaiveDate>,
+        ) -> CoreResult<Vec<AccountStateSnapshot>> {
+            Ok(Vec::new())
+        }
+
+        fn get_daily_holdings_snapshots(
+            &self,
+            _account_id: &str,
+            _start_date: Option<NaiveDate>,
+            _end_date: Option<NaiveDate>,
+        ) -> CoreResult<Vec<AccountStateSnapshot>> {
+            Ok(Vec::new())
+        }
+
+        fn get_latest_holdings_snapshot(
+            &self,
+            _account_id: &str,
+        ) -> CoreResult<Option<AccountStateSnapshot>> {
+            Ok(None)
+        }
+
+        async fn save_manual_snapshot(
+            &self,
+            _account_id: &str,
+            _snapshot: AccountStateSnapshot,
+        ) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn update_snapshots_source(
+            &self,
+            _account_id: &str,
+            _new_source: &str,
+        ) -> CoreResult<usize> {
+            Ok(0)
+        }
+
+        async fn ensure_holdings_history(&self, _account_id: &str) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn delete_snapshot_for_account(
+            &self,
+            _account_id: &str,
+            _dates: &[NaiveDate],
+        ) -> CoreResult<()> {
+            Ok(())
+        }
+    }
+
+    struct NoopQuoteService;
+
+    #[async_trait]
+    impl QuoteServiceTrait for NoopQuoteService {
+        fn get_latest_quote(&self, _symbol: &str) -> CoreResult<Quote> {
+            unimplemented!()
+        }
+
+        fn get_latest_quotes(&self, _symbols: &[String]) -> CoreResult<HashMap<String, Quote>> {
+            Ok(HashMap::new())
+        }
+
+        fn get_latest_quotes_as_of(
+            &self,
+            _symbols: &[String],
+            _as_of: NaiveDate,
+        ) -> CoreResult<HashMap<String, Quote>> {
+            Ok(HashMap::new())
+        }
+
+        fn get_latest_quotes_snapshot(
+            &self,
+            _asset_ids: &[String],
+        ) -> CoreResult<HashMap<String, LatestQuoteSnapshot>> {
+            Ok(HashMap::new())
+        }
+
+        fn get_latest_quotes_pair(
+            &self,
+            _symbols: &[String],
+        ) -> CoreResult<HashMap<String, LatestQuotePair>> {
+            Ok(HashMap::new())
+        }
+
+        fn get_historical_quotes(&self, _symbol: &str) -> CoreResult<Vec<Quote>> {
+            Ok(Vec::new())
+        }
+
+        fn get_all_historical_quotes(
+            &self,
+        ) -> CoreResult<HashMap<String, Vec<(NaiveDate, Quote)>>> {
+            Ok(HashMap::new())
+        }
+
+        fn get_quotes_in_range(
+            &self,
+            _symbols: &HashSet<String>,
+            _start: NaiveDate,
+            _end: NaiveDate,
+        ) -> CoreResult<Vec<Quote>> {
+            Ok(Vec::new())
+        }
+
+        fn get_quotes_in_range_filled(
+            &self,
+            _symbols: &HashSet<String>,
+            _start: NaiveDate,
+            _end: NaiveDate,
+        ) -> CoreResult<Vec<Quote>> {
+            Ok(Vec::new())
+        }
+
+        async fn get_daily_quotes(
+            &self,
+            _asset_ids: &HashSet<String>,
+            _start: NaiveDate,
+            _end: NaiveDate,
+        ) -> CoreResult<HashMap<NaiveDate, HashMap<String, Quote>>> {
+            Ok(HashMap::new())
+        }
+
+        async fn add_quote(&self, _quote: &Quote) -> CoreResult<Quote> {
+            unimplemented!()
+        }
+
+        async fn update_quote(&self, _quote: Quote) -> CoreResult<Quote> {
+            unimplemented!()
+        }
+
+        async fn delete_quote(&self, _quote_id: &str) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn bulk_upsert_quotes(&self, _quotes: Vec<Quote>) -> CoreResult<usize> {
+            Ok(0)
+        }
+
+        async fn search_symbol(&self, _query: &str) -> CoreResult<Vec<SymbolSearchResult>> {
+            Ok(Vec::new())
+        }
+
+        async fn search_symbol_with_currency(
+            &self,
+            _query: &str,
+            _account_currency: Option<&str>,
+        ) -> CoreResult<Vec<SymbolSearchResult>> {
+            Ok(Vec::new())
+        }
+
+        async fn resolve_symbol_quote(
+            &self,
+            _symbol: &str,
+            _exchange_mic: Option<&str>,
+            _instrument_type: Option<&InstrumentType>,
+            _quote_ccy: Option<&str>,
+            _preferred_provider: Option<&str>,
+        ) -> CoreResult<ResolvedQuote> {
+            Ok(ResolvedQuote::default())
+        }
+
+        async fn get_asset_profile(&self, _asset: &Asset) -> CoreResult<ProviderProfile> {
+            unimplemented!()
+        }
+
+        async fn fetch_quotes_from_provider(
+            &self,
+            _asset_id: &str,
+            _start: NaiveDate,
+            _end: NaiveDate,
+        ) -> CoreResult<Vec<Quote>> {
+            Ok(Vec::new())
+        }
+
+        async fn fetch_quotes_for_symbol(
+            &self,
+            _asset_id: &str,
+            _currency: &str,
+            _start: NaiveDate,
+            _end: NaiveDate,
+        ) -> CoreResult<Vec<Quote>> {
+            Ok(Vec::new())
+        }
+
+        async fn fetch_dividends(
+            &self,
+            _params: FetchDividendsParams,
+        ) -> CoreResult<Vec<wealthfolio_market_data::DividendEvent>> {
+            Ok(Vec::new())
+        }
+
+        async fn sync(
+            &self,
+            _mode: SyncMode,
+            _asset_ids: Option<Vec<String>>,
+        ) -> CoreResult<SyncResult> {
+            unimplemented!()
+        }
+
+        async fn resync(&self, _asset_ids: Option<Vec<String>>) -> CoreResult<SyncResult> {
+            unimplemented!()
+        }
+
+        async fn refresh_sync_state(&self) -> CoreResult<()> {
+            Ok(())
+        }
+
+        fn get_sync_plan(&self) -> CoreResult<Vec<SymbolSyncPlan>> {
+            Ok(Vec::new())
+        }
+
+        async fn handle_activity_created(
+            &self,
+            _symbol: &str,
+            _activity_date: NaiveDate,
+        ) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn handle_activity_deleted(&self, _symbol: &str) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn delete_sync_state(&self, _symbol: &str) -> CoreResult<()> {
+            Ok(())
+        }
+
+        fn get_symbols_needing_sync(&self) -> CoreResult<Vec<QuoteSyncState>> {
+            Ok(Vec::new())
+        }
+
+        fn get_sync_state(&self, _symbol: &str) -> CoreResult<Option<QuoteSyncState>> {
+            Ok(None)
+        }
+
+        async fn mark_profile_enriched(&self, _symbol: &str) -> CoreResult<()> {
+            Ok(())
+        }
+
+        fn get_assets_needing_profile_enrichment(&self) -> CoreResult<Vec<QuoteSyncState>> {
+            Ok(Vec::new())
+        }
+
+        fn get_sync_states_with_errors(&self) -> CoreResult<Vec<QuoteSyncState>> {
+            Ok(Vec::new())
+        }
+
+        async fn reset_sync_errors(&self, _asset_ids: &[String]) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn reset_sync_state_for_profile_change(&self, _asset_id: &str) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn update_position_status_from_holdings(
+            &self,
+            _current_holdings: &HashMap<String, Decimal>,
+        ) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn get_providers_info(&self) -> CoreResult<Vec<ProviderInfo>> {
+            Ok(Vec::new())
+        }
+
+        async fn update_provider_settings(
+            &self,
+            _provider_id: &str,
+            _priority: i32,
+            _enabled: bool,
+        ) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn check_quotes_import(
+            &self,
+            _content: &[u8],
+            _has_header_row: bool,
+        ) -> CoreResult<Vec<QuoteImport>> {
+            Ok(Vec::new())
+        }
+
+        async fn import_quotes(
+            &self,
+            _quotes: Vec<QuoteImport>,
+            _overwrite: bool,
+        ) -> CoreResult<Vec<QuoteImport>> {
+            Ok(Vec::new())
+        }
+    }
+
+    struct NoopFxService;
+
+    #[async_trait]
+    impl FxServiceTrait for NoopFxService {
+        fn initialize(&self) -> CoreResult<()> {
+            Ok(())
+        }
+
+        fn get_historical_rates(
+            &self,
+            _from_currency: &str,
+            _to_currency: &str,
+            _days: i64,
+        ) -> CoreResult<Vec<ExchangeRate>> {
+            Ok(Vec::new())
+        }
+
+        fn get_latest_exchange_rate(
+            &self,
+            _from_currency: &str,
+            _to_currency: &str,
+        ) -> CoreResult<Decimal> {
+            Ok(Decimal::ONE)
+        }
+
+        fn get_exchange_rate_for_date(
+            &self,
+            _from_currency: &str,
+            _to_currency: &str,
+            _date: NaiveDate,
+        ) -> CoreResult<Decimal> {
+            Ok(Decimal::ONE)
+        }
+
+        fn convert_currency(
+            &self,
+            amount: Decimal,
+            _from_currency: &str,
+            _to_currency: &str,
+        ) -> CoreResult<Decimal> {
+            Ok(amount)
+        }
+
+        fn convert_currency_for_date(
+            &self,
+            amount: Decimal,
+            _from_currency: &str,
+            _to_currency: &str,
+            _date: NaiveDate,
+        ) -> CoreResult<Decimal> {
+            Ok(amount)
+        }
+
+        fn get_latest_exchange_rates(&self) -> CoreResult<Vec<ExchangeRate>> {
+            Ok(Vec::new())
+        }
+
+        async fn add_exchange_rate(&self, _new_rate: NewExchangeRate) -> CoreResult<ExchangeRate> {
+            unimplemented!()
+        }
+
+        async fn update_exchange_rate(
+            &self,
+            _from_currency: &str,
+            _to_currency: &str,
+            _rate: Decimal,
+        ) -> CoreResult<ExchangeRate> {
+            unimplemented!()
+        }
+
+        async fn delete_exchange_rate(&self, _rate_id: &str) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn register_currency_pair(
+            &self,
+            _from_currency: &str,
+            _to_currency: &str,
+        ) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn register_currency_pair_manual(
+            &self,
+            _from_currency: &str,
+            _to_currency: &str,
+        ) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn ensure_fx_pairs(&self, _pairs: Vec<(String, String)>) -> CoreResult<()> {
+            Ok(())
+        }
+    }
+
+    fn test_valuation_service(
+        valuation_repository: Arc<TestValuationRepository>,
+        aggregate_eligibility_service: Arc<TestAggregateEligibilityService>,
+    ) -> ValuationService {
+        ValuationService::new(
+            Arc::new(RwLock::new("USD".to_string())),
+            valuation_repository,
+            Arc::new(NoopSnapshotService),
+            Arc::new(NoopQuoteService),
+            Arc::new(NoopFxService),
+            aggregate_eligibility_service,
+        )
+    }
+
+    #[tokio::test]
+    async fn synthetic_current_valuation_rows_pass_when_eligible() {
+        let mut current_1 = valuation(
+            "acct",
+            "2026-07-14",
+            dec!(100),
+            dec!(100),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        current_1.id = "current-1".to_string();
+        let mut current_2 = valuation(
+            "acct",
+            "2026-07-15",
+            dec!(110),
+            dec!(100),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        current_2.id = "current-2".to_string();
+        let valuation_repository = Arc::new(TestValuationRepository::new(vec![
+            current_1.clone(),
+            current_2.clone(),
+        ]));
+        let eligibility = Arc::new(TestAggregateEligibilityService::new(vec![
+            (
+                "current-1",
+                TestValuationRowRole::Current,
+                "2026-07-14",
+                None,
+                true,
+            ),
+            (
+                "current-2",
+                TestValuationRowRole::Current,
+                "2026-07-15",
+                None,
+                true,
+            ),
+        ]));
+        let service = test_valuation_service(valuation_repository, eligibility.clone());
+
+        let filtered = service
+            .get_historical_valuations("acct", None, None)
+            .await
+            .expect("eligible current rows should filter");
+
+        assert_eq!(
+            filtered
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["current-1", "current-2"]
+        );
+        let calls = eligibility.calls();
+        assert_eq!(calls.len(), 1, "rows must be checked in one batch");
+        assert_eq!(calls[0].0, ENTITY_DAILY_VALUATION);
+        assert_eq!(
+            calls[0].1,
+            vec![
+                ("current-1".to_string(), date("2026-07-14")),
+                ("current-2".to_string(), date("2026-07-15")),
+            ],
+            "policy must receive actual valuation row ids and dates",
+        );
+    }
+
+    #[tokio::test]
+    async fn synthetic_historical_and_contextual_rows_fail_closed_when_denied() {
+        let mut live = valuation(
+            "acct",
+            "2026-07-15",
+            dec!(100),
+            dec!(100),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        live.id = "live".to_string();
+        let mut missing = valuation(
+            "acct",
+            "2026-07-14",
+            dec!(90),
+            dec!(90),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        missing.id = "missing-provenance".to_string();
+        let mut historical = valuation(
+            "acct",
+            "2026-07-13",
+            dec!(80),
+            dec!(80),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        historical.id = "historical-context".to_string();
+        let mut contextual = valuation(
+            "acct",
+            "2026-07-12",
+            dec!(70),
+            dec!(70),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        contextual.id = "contextual-reference".to_string();
+        let valuation_repository = Arc::new(TestValuationRepository::new(vec![
+            live.clone(),
+            missing.clone(),
+            historical.clone(),
+            contextual.clone(),
+        ]));
+        let eligibility = Arc::new(TestAggregateEligibilityService::new(vec![
+            (
+                "live",
+                TestValuationRowRole::Current,
+                "2026-07-15",
+                None,
+                true,
+            ),
+            (
+                "historical-context",
+                TestValuationRowRole::Historical,
+                "2026-07-13",
+                None,
+                false,
+            ),
+            (
+                "contextual-reference",
+                TestValuationRowRole::ContextualReference,
+                "2026-07-12",
+                None,
+                false,
+            ),
+        ]));
+        let service = test_valuation_service(valuation_repository, eligibility);
+
+        let filtered = service
+            .get_historical_valuations("acct", None, None)
+            .await
+            .expect("denied rows should filter closed");
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].id, "live");
+    }
+
+    #[tokio::test]
+    async fn opening_baseline_coverage_start_boundary_excludes_prior_row() {
+        let mut before = valuation(
+            "acct",
+            "2026-01-09",
+            dec!(90),
+            dec!(90),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        before.id = "baseline-before".to_string();
+        let mut start = valuation(
+            "acct",
+            "2026-01-10",
+            dec!(100),
+            dec!(100),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        start.id = "baseline-start".to_string();
+        let mut after = valuation(
+            "acct",
+            "2026-01-11",
+            dec!(110),
+            dec!(100),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        after.id = "baseline-after".to_string();
+        let valuation_repository = Arc::new(TestValuationRepository::new(vec![
+            before.clone(),
+            start.clone(),
+            after.clone(),
+        ]));
+        let eligibility = Arc::new(TestAggregateEligibilityService::new(vec![
+            (
+                "baseline-before",
+                TestValuationRowRole::OpeningBaseline,
+                "2026-01-10",
+                None,
+                true,
+            ),
+            (
+                "baseline-start",
+                TestValuationRowRole::OpeningBaseline,
+                "2026-01-10",
+                None,
+                true,
+            ),
+            (
+                "baseline-after",
+                TestValuationRowRole::OpeningBaseline,
+                "2026-01-10",
+                None,
+                true,
+            ),
+        ]));
+        let service = test_valuation_service(valuation_repository, eligibility);
+
+        let filtered = service
+            .get_historical_valuations("acct", None, None)
+            .await
+            .expect("opening baseline boundary should filter");
+
+        assert_eq!(
+            filtered
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["baseline-start", "baseline-after"]
+        );
+    }
+
+    #[tokio::test]
+    async fn mixed_role_rows_are_isolated_by_valuation_row_id() {
+        let mut current = valuation(
+            "acct",
+            "2026-07-15",
+            dec!(100),
+            dec!(100),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        current.id = "manual-current".to_string();
+        let mut historical = valuation(
+            "acct",
+            "2026-07-15",
+            dec!(999),
+            dec!(999),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        historical.id = "historical-same-account-date".to_string();
+        let valuation_repository = Arc::new(TestValuationRepository::new(vec![
+            historical.clone(),
+            current.clone(),
+        ]));
+        let eligibility = Arc::new(TestAggregateEligibilityService::new(vec![
+            (
+                "manual-current",
+                TestValuationRowRole::Current,
+                "2026-07-15",
+                None,
+                true,
+            ),
+            (
+                "historical-same-account-date",
+                TestValuationRowRole::Historical,
+                "2026-07-15",
+                None,
+                false,
+            ),
+        ]));
+        let service = test_valuation_service(valuation_repository, eligibility);
+
+        let filtered = service
+            .get_historical_valuations("acct", None, None)
+            .await
+            .expect("mixed-role rows should filter by row id");
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].id, "manual-current");
+        assert_eq!(filtered[0].total_value_base, dec!(100));
+    }
+
+    #[tokio::test]
+    async fn scoped_valuation_reads_recheck_policy_instead_of_reusing_stale_cache() {
+        let mut day1 = valuation(
+            "acct",
+            "2026-07-14",
+            dec!(100),
+            dec!(100),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        day1.id = "day-1".to_string();
+        let mut day2 = valuation(
+            "acct",
+            "2026-07-15",
+            dec!(110),
+            dec!(110),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        day2.id = "day-2".to_string();
+        let valuation_repository = Arc::new(TestValuationRepository::new(vec![
+            day1.clone(),
+            day2.clone(),
+        ]));
+        let eligibility = Arc::new(TestAggregateEligibilityService::new(vec![
+            (
+                "day-1",
+                TestValuationRowRole::Current,
+                "2026-07-14",
+                None,
+                true,
+            ),
+            (
+                "day-2",
+                TestValuationRowRole::Current,
+                "2026-07-15",
+                None,
+                false,
+            ),
+        ]));
+        let service = test_valuation_service(valuation_repository.clone(), eligibility.clone());
+        let account_ids = vec!["acct".to_string()];
+
+        let first = service
+            .get_historical_valuation_totals_for_accounts("scope", &account_ids, "USD", None, None)
+            .await
+            .expect("first scoped read should aggregate");
+
+        assert_eq!(
+            first
+                .iter()
+                .map(|valuation| valuation.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["scope_2026-07-14"],
+        );
+
+        eligibility.set_rule(
+            "day-2",
+            TestValuationRowRole::Current,
+            "2026-07-15",
+            None,
+            true,
+        );
+
+        let second = service
+            .get_historical_valuation_totals_for_accounts("scope", &account_ids, "USD", None, None)
+            .await
+            .expect("second scoped read should aggregate after policy change");
+
+        assert_eq!(
+            second
+                .iter()
+                .map(|valuation| valuation.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["scope_2026-07-14", "scope_2026-07-15"],
+            "second read must reflect the changed policy without stale cache reuse",
+        );
+        assert_eq!(valuation_repository.historical_scope_reads(), 2);
+        assert_eq!(eligibility.calls().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn eligibility_service_error_fails_closed() {
+        let mut row = valuation(
+            "acct",
+            "2026-07-15",
+            dec!(100),
+            dec!(100),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        row.id = "row".to_string();
+        let valuation_repository = Arc::new(TestValuationRepository::new(vec![row]));
+        let eligibility = Arc::new(TestAggregateEligibilityService::new(vec![(
+            "row",
+            TestValuationRowRole::Current,
+            "2026-07-15",
+            None,
+            true,
+        )]));
+        eligibility.set_error(true);
+        let service = test_valuation_service(valuation_repository, eligibility.clone());
+
+        let result = service
+            .get_historical_valuations("acct", None, None)
+            .await
+            .expect_err("eligibility service errors must propagate");
+
+        assert_eq!(
+            result.to_string(),
+            "Unexpected error: injected eligibility service error"
+        );
+        assert_eq!(eligibility.calls().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn unknown_provenance_role_fails_closed() {
+        let mut unknown = valuation(
+            "acct",
+            "2026-07-15",
+            dec!(100),
+            dec!(100),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        unknown.id = "unknown-role".to_string();
+        let mut current = valuation(
+            "acct",
+            "2026-07-16",
+            dec!(110),
+            dec!(110),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        current.id = "current-role".to_string();
+        let valuation_repository = Arc::new(TestValuationRepository::new(vec![
+            unknown.clone(),
+            current.clone(),
+        ]));
+        let eligibility = Arc::new(TestAggregateEligibilityService::new(vec![
+            (
+                "unknown-role",
+                TestValuationRowRole::Unknown,
+                "2026-07-15",
+                None,
+                true,
+            ),
+            (
+                "current-role",
+                TestValuationRowRole::Current,
+                "2026-07-16",
+                None,
+                true,
+            ),
+        ]));
+        let service = test_valuation_service(valuation_repository, eligibility);
+
+        let filtered = service
+            .get_historical_valuations("acct", None, None)
+            .await
+            .expect("unknown role should filter closed");
+
+        assert_eq!(
+            filtered
+                .iter()
+                .map(|valuation| valuation.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["current-role"]
+        );
+    }
+
+    #[tokio::test]
+    async fn latest_valuation_does_not_fall_back_to_older_eligible_row() {
+        let mut older = valuation(
+            "acct",
+            "2026-07-14",
+            dec!(100),
+            dec!(100),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        older.id = "older-eligible".to_string();
+        let mut latest = valuation(
+            "acct",
+            "2026-07-15",
+            dec!(110),
+            dec!(110),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        latest.id = "latest-ineligible".to_string();
+        let valuation_repository = Arc::new(TestValuationRepository::new(vec![
+            older.clone(),
+            latest.clone(),
+        ]));
+        let eligibility = Arc::new(TestAggregateEligibilityService::new(vec![
+            (
+                "older-eligible",
+                TestValuationRowRole::Current,
+                "2026-07-14",
+                None,
+                true,
+            ),
+            (
+                "latest-ineligible",
+                TestValuationRowRole::Historical,
+                "2026-07-15",
+                None,
+                true,
+            ),
+        ]));
+        let service = test_valuation_service(valuation_repository, eligibility);
+
+        let latest = service
+            .get_latest_valuations(&["acct".to_string()])
+            .await
+            .expect("latest valuation read should filter closed");
+
+        assert!(latest.is_empty());
     }
 
     fn valuation(

@@ -234,6 +234,13 @@ pub trait ActivityRepositoryTrait: Send + Sync {
     fn calculate_average_cost(&self, account_id: &str, asset_id: &str) -> Result<Decimal>;
     fn get_income_activities_data(&self, account_ids: Option<&[String]>)
         -> Result<Vec<IncomeData>>;
+    fn get_income_activities_data_for_activity_ids(
+        &self,
+        activity_ids: &[String],
+    ) -> Result<Vec<IncomeData>> {
+        let _ = activity_ids;
+        unimplemented!("get_income_activities_data_for_activity_ids")
+    }
     fn get_first_activity_date_overall(&self) -> Result<DateTime<Utc>>;
 
     /// Gets the first and last activity dates for each asset in the provided list.

@@ -8,6 +8,7 @@ use axum::{
     routing::get,
     Router,
 };
+use chrono::Utc;
 use wealthfolio_core::{
     accounts::AccountServiceTrait,
     activities::Sort,
@@ -63,7 +64,8 @@ async fn build_data_export_content(
             let base = state.base_currency.read().unwrap().clone();
             let resolved = state
                 .portfolio_service
-                .resolve_account_scope(&AccountScope::All, &base)?;
+                .resolve_account_scope(&AccountScope::All, &base)
+                .await?;
             let account_ids = holdings_account_ids(state, &resolved.account_ids)?;
             if account_ids.is_empty() {
                 return Ok(None);
@@ -92,9 +94,11 @@ async fn build_data_export_content(
         }
         ExportDataType::PortfolioHistory => {
             let base = state.base_currency.read().unwrap().clone();
+            let as_of = Utc::now().date_naive();
             let resolved = state
                 .portfolio_service
-                .resolve_account_scope(&AccountScope::All, &base)?;
+                .resolve_account_scope_as_of(&AccountScope::All, &base, as_of)
+                .await?;
             let records = state
                 .valuation_service
                 .get_historical_valuations_for_accounts(
@@ -103,7 +107,8 @@ async fn build_data_export_content(
                     &resolved.base_currency,
                     None,
                     None,
-                )?;
+                )
+                .await?;
             Ok(format_records(&records, format)?)
         }
     }

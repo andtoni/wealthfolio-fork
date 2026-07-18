@@ -46,7 +46,7 @@ pub fn filter_eligible_accounts(
 #[cfg(test)]
 mod tests {
     use super::*;
-// TrackingMode, VerifiedReceipt, VerifiedReceiptBasis not needed here
+    // TrackingMode, VerifiedReceipt, VerifiedReceiptBasis not needed here
 
     fn make_account(id: &str, include: bool, archived: bool) -> Account {
         let now = chrono::NaiveDateTime::parse_from_str("2026-07-11 00:00:00", "%Y-%m-%d %H:%M:%S")

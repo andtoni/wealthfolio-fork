@@ -137,9 +137,7 @@ impl Config {
         // unauthenticated reverse proxy. Refuse to start without an auth
         // manager so bridge routes cannot be reached in an identity-less mode.
         if household_enabled && auth.is_none() {
-            panic!(
-                "Refusing to start: WF_HOUSEHOLD_ENABLED=true requires authentication"
-            );
+            panic!("Refusing to start: WF_HOUSEHOLD_ENABLED=true requires authentication");
         }
 
         // When auth is enabled, wildcard CORS is incompatible with credentials

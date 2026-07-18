@@ -702,14 +702,14 @@ pub struct MockValuationService {
 
 #[async_trait]
 impl ValuationServiceTrait for MockValuationService {
-    fn get_latest_valuations(
+    async fn get_latest_valuations(
         &self,
         _account_ids: &[String],
     ) -> CoreResult<Vec<DailyAccountValuation>> {
         Ok(self.valuations.clone())
     }
 
-    fn get_historical_valuations(
+    async fn get_historical_valuations(
         &self,
         _account_id: &str,
         _start_date: Option<NaiveDate>,
@@ -718,7 +718,7 @@ impl ValuationServiceTrait for MockValuationService {
         Ok(self.valuations.clone())
     }
 
-    fn get_historical_valuations_for_accounts(
+    async fn get_historical_valuations_for_accounts(
         &self,
         _scope_id: &str,
         _account_ids: &[String],
@@ -729,7 +729,7 @@ impl ValuationServiceTrait for MockValuationService {
         Ok(self.valuations.clone())
     }
 
-    fn get_valuations_on_date(
+    async fn get_valuations_on_date(
         &self,
         _account_ids: &[String],
         _date: NaiveDate,
@@ -769,7 +769,7 @@ impl GoalServiceTrait for MockGoalService {
         unimplemented!("MockGoalService::get_goal")
     }
 
-    async fn create_goal(&self, _goal: NewGoal) -> CoreResult<Goal> {
+    async fn create_goal(&self, _goal: NewGoal, _as_of: chrono::NaiveDate) -> CoreResult<Goal> {
         unimplemented!("MockGoalService::create_goal")
     }
 
@@ -1379,8 +1379,9 @@ impl AllocationServiceTrait for MockAllocationService {
 #[derive(Default)]
 pub struct MockIncomeService;
 
+#[async_trait]
 impl IncomeServiceTrait for MockIncomeService {
-    fn get_income_summary(
+    async fn get_income_summary(
         &self,
         _account_ids: Option<&[String]>,
     ) -> CoreResult<Vec<IncomeSummary>> {
@@ -1501,7 +1502,7 @@ impl PerformanceServiceTrait for MockPerformanceService {
         .await
     }
 
-    fn calculate_accounts_simple_performance(
+    async fn calculate_accounts_simple_performance(
         &self,
         _account_ids: &[String],
     ) -> CoreResult<Vec<wealthfolio_core::performance::SimplePerformanceMetrics>> {
@@ -1564,6 +1565,14 @@ impl CashActivityServiceTrait for MockCashActivityService {
             .filter(|item| activity_ids.contains(&item.activity.id))
             .cloned()
             .collect())
+    }
+
+    async fn get_by_activity_ids_for_aggregate(
+        &self,
+        activity_ids: &[String],
+        _: chrono::NaiveDate,
+    ) -> anyhow::Result<Vec<wealthfolio_spending::cash_activities::CashActivity>> {
+        self.get_by_activity_ids(activity_ids).await
     }
 }
 

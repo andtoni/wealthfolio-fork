@@ -1,14 +1,15 @@
 #[cfg(test)]
 mod tests {
     use async_trait::async_trait;
-    use chrono::NaiveDateTime;
+    use chrono::{NaiveDate, NaiveDateTime, Utc};
+    use std::collections::{HashMap, HashSet};
     use std::sync::{Arc, Mutex};
 
     use crate::accounts::{
-        account_types, Account, AccountPurpose, AccountRepositoryTrait, AccountUpdate, NewAccount,
-        TrackingMode,
+        account_types, Account, AccountPurpose, AccountRepositoryTrait, AccountUpdate,
+        AggregateEligibilityServiceTrait, NewAccount, ProvenanceRole, TrackingMode,
     };
-    use crate::errors::{DatabaseError, Error, Result};
+    use crate::errors::{DatabaseError, Error, Result, ValidationError};
     use crate::portfolios::{
         AccountScope, NewPortfolio, PortfolioRepositoryTrait, PortfolioService,
         PortfolioServiceTrait, PortfolioUpdate, PortfolioWithAccounts,
@@ -177,12 +178,158 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct SemanticPolicyRecord {
+        role: ProvenanceRole,
+        coverage_start_date: Option<NaiveDate>,
+        manual_current_approved: bool,
+    }
+
+    impl SemanticPolicyRecord {
+        fn live_canonical() -> Self {
+            Self {
+                role: ProvenanceRole::LiveCanonical,
+                coverage_start_date: None,
+                manual_current_approved: false,
+            }
+        }
+
+        fn opening_baseline(coverage_start_date: NaiveDate) -> Self {
+            Self {
+                role: ProvenanceRole::OpeningBaseline,
+                coverage_start_date: Some(coverage_start_date),
+                manual_current_approved: false,
+            }
+        }
+
+        fn manual_current_approved() -> Self {
+            Self {
+                role: ProvenanceRole::ManualCurrent,
+                coverage_start_date: None,
+                manual_current_approved: true,
+            }
+        }
+
+        fn historical_context() -> Self {
+            Self {
+                role: ProvenanceRole::HistoricalContext,
+                coverage_start_date: None,
+                manual_current_approved: false,
+            }
+        }
+
+        fn contextual_reference() -> Self {
+            Self {
+                role: ProvenanceRole::ContextualReference,
+                coverage_start_date: None,
+                manual_current_approved: false,
+            }
+        }
+
+        fn is_eligible(&self, as_of: NaiveDate) -> bool {
+            match self.role {
+                ProvenanceRole::LiveCanonical => true,
+                ProvenanceRole::OpeningBaseline => self
+                    .coverage_start_date
+                    .is_some_and(|coverage_start_date| as_of >= coverage_start_date),
+                ProvenanceRole::ManualCurrent => self.manual_current_approved,
+                ProvenanceRole::HistoricalContext | ProvenanceRole::ContextualReference => false,
+            }
+        }
+    }
+
+    struct MockAggregateEligibilityService {
+        records: HashMap<String, SemanticPolicyRecord>,
+        fail_closed: Option<String>,
+        calls: Mutex<Vec<(Vec<String>, NaiveDate)>>,
+    }
+
+    impl Default for MockAggregateEligibilityService {
+        fn default() -> Self {
+            Self {
+                records: HashMap::new(),
+                fail_closed: None,
+                calls: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl MockAggregateEligibilityService {
+        fn semantic(records: HashMap<String, SemanticPolicyRecord>) -> Self {
+            Self {
+                records,
+                ..Default::default()
+            }
+        }
+
+        fn failing(records: HashMap<String, SemanticPolicyRecord>, message: &str) -> Self {
+            Self {
+                records,
+                fail_closed: Some(message.to_string()),
+                ..Default::default()
+            }
+        }
+
+        fn requested_calls(&self) -> Vec<(Vec<String>, NaiveDate)> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl AggregateEligibilityServiceTrait for MockAggregateEligibilityService {
+        async fn eligible_account_ids(
+            &self,
+            requested_account_ids: &[String],
+            as_of: NaiveDate,
+        ) -> Result<HashSet<String>> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((requested_account_ids.to_vec(), as_of));
+            if let Some(message) = &self.fail_closed {
+                return Err(Error::Validation(ValidationError::InvalidInput(
+                    message.clone(),
+                )));
+            }
+            Ok(requested_account_ids
+                .iter()
+                .filter(|id| {
+                    self.records
+                        .get(*id)
+                        .is_some_and(|record| record.is_eligible(as_of))
+                })
+                .cloned()
+                .collect())
+        }
+
+        async fn eligible_entity_ids_for_rows(
+            &self,
+            _entity_type: &str,
+            rows: &[(String, NaiveDate)],
+        ) -> Result<HashSet<String>> {
+            Ok(rows
+                .iter()
+                .filter(|(id, date)| {
+                    self.records
+                        .get(id)
+                        .is_some_and(|record| record.is_eligible(*date))
+                })
+                .map(|(id, _)| id.clone())
+                .collect())
+        }
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     fn make_service_with(repo: MockPortfolioRepo, account_ids: &[&str]) -> PortfolioService {
+        let records = account_ids
+            .iter()
+            .map(|id| ((*id).to_string(), SemanticPolicyRecord::live_canonical()))
+            .collect();
         PortfolioService::new(
             Arc::new(repo),
             Arc::new(MockAccountRepo::with_ids(account_ids)),
+            Arc::new(MockAggregateEligibilityService::semantic(records)),
         )
     }
 
@@ -190,9 +337,15 @@ mod tests {
         repo: MockPortfolioRepo,
         accounts: Vec<Account>,
     ) -> PortfolioService {
+        let account_ids: Vec<String> = accounts.iter().map(|account| account.id.clone()).collect();
+        let records = account_ids
+            .iter()
+            .map(|id| (id.clone(), SemanticPolicyRecord::live_canonical()))
+            .collect();
         PortfolioService::new(
             Arc::new(repo),
             Arc::new(MockAccountRepo::with_accounts(accounts)),
+            Arc::new(MockAggregateEligibilityService::semantic(records)),
         )
     }
 
@@ -288,32 +441,88 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_account_filter_all() {
-        let svc = make_service_with(MockPortfolioRepo::default(), &[]);
-        let ids = svc.resolve_account_filter(&AccountScope::All).unwrap();
-        assert_eq!(ids, vec!["a1", "a2"]);
-    }
-
-    #[tokio::test]
-    async fn resolve_account_filter_single_account() {
-        let svc = make_service_with(MockPortfolioRepo::default(), &[]);
-        let ids = svc
-            .resolve_account_filter(&AccountScope::Account {
-                account_id: "a1".to_string(),
-            })
-            .unwrap();
-        assert_eq!(ids, vec!["a1"]);
-    }
-
-    #[tokio::test]
-    async fn resolve_account_scope_all_uses_real_accounts() {
-        let svc = make_service_with(MockPortfolioRepo::default(), &["a1", "a2"]);
+    async fn portfolio_current_semantic_policy_filters_roles_and_dates() {
+        let today = Utc::now().date_naive();
+        let records = HashMap::from([
+            (
+                "live-canonical".to_string(),
+                SemanticPolicyRecord::live_canonical(),
+            ),
+            (
+                "opening-baseline".to_string(),
+                SemanticPolicyRecord::opening_baseline(today),
+            ),
+            (
+                "manual-approved".to_string(),
+                SemanticPolicyRecord::manual_current_approved(),
+            ),
+            (
+                "historical-context".to_string(),
+                SemanticPolicyRecord::historical_context(),
+            ),
+            (
+                "contextual-reference".to_string(),
+                SemanticPolicyRecord::contextual_reference(),
+            ),
+        ]);
+        let policy = Arc::new(MockAggregateEligibilityService::semantic(records));
+        let svc = PortfolioService::new(
+            Arc::new(MockPortfolioRepo::default()),
+            Arc::new(MockAccountRepo::with_ids(&[
+                "live-canonical",
+                "opening-baseline",
+                "manual-approved",
+                "historical-context",
+                "contextual-reference",
+                "unknown",
+                "missing",
+            ])),
+            policy.clone(),
+        );
         let scope = svc
-            .resolve_account_scope(&AccountScope::All, "USD")
+            .resolve_account_scope(
+                &AccountScope::Accounts {
+                    account_ids: vec![
+                        "missing".to_string(),
+                        "manual-approved".to_string(),
+                        "historical-context".to_string(),
+                        "live-canonical".to_string(),
+                        "contextual-reference".to_string(),
+                        "opening-baseline".to_string(),
+                        "unknown".to_string(),
+                        "manual-approved".to_string(),
+                    ],
+                },
+                "USD",
+            )
+            .await
             .unwrap();
-        assert_eq!(scope.scope_id, "all");
-        assert_eq!(scope.account_ids, vec!["a1", "a2"]);
+        assert!(scope.scope_id.starts_with("accounts:"));
+        assert_eq!(scope.scope_id.len(), "accounts:".len() + 16);
+        assert_eq!(
+            scope.account_ids,
+            vec![
+                "live-canonical".to_string(),
+                "manual-approved".to_string(),
+                "opening-baseline".to_string(),
+            ]
+        );
         assert_eq!(scope.base_currency, "USD");
+        assert_eq!(
+            policy.requested_calls(),
+            vec![(
+                vec![
+                    "contextual-reference".to_string(),
+                    "historical-context".to_string(),
+                    "live-canonical".to_string(),
+                    "manual-approved".to_string(),
+                    "missing".to_string(),
+                    "opening-baseline".to_string(),
+                    "unknown".to_string(),
+                ],
+                today,
+            )]
+        );
     }
 
     #[tokio::test]
@@ -326,10 +535,147 @@ mod tests {
                 },
                 "USD",
             )
+            .await
             .unwrap();
         assert!(scope.scope_id.starts_with("accounts:"));
         assert_eq!(scope.scope_id.len(), "accounts:".len() + 16);
         assert_eq!(scope.account_ids, vec!["a1", "a2"]);
+    }
+
+    #[tokio::test]
+    async fn portfolio_as_of_semantic_policy_uses_requested_date_and_exact_scope() {
+        let as_of = NaiveDate::from_ymd_opt(2024, 5, 6).unwrap();
+        let records = HashMap::from([
+            (
+                "live-canonical".to_string(),
+                SemanticPolicyRecord::live_canonical(),
+            ),
+            (
+                "opening-baseline".to_string(),
+                SemanticPolicyRecord::opening_baseline(
+                    NaiveDate::from_ymd_opt(2024, 5, 7).unwrap(),
+                ),
+            ),
+            (
+                "manual-approved".to_string(),
+                SemanticPolicyRecord::manual_current_approved(),
+            ),
+            (
+                "historical-context".to_string(),
+                SemanticPolicyRecord::historical_context(),
+            ),
+            (
+                "contextual-reference".to_string(),
+                SemanticPolicyRecord::contextual_reference(),
+            ),
+        ]);
+        let policy = Arc::new(MockAggregateEligibilityService::semantic(records));
+        let svc = PortfolioService::new(
+            Arc::new(MockPortfolioRepo::default()),
+            Arc::new(MockAccountRepo::with_ids(&[
+                "opening-baseline",
+                "manual-approved",
+                "historical-context",
+                "live-canonical",
+                "contextual-reference",
+                "missing",
+                "unknown",
+            ])),
+            policy.clone(),
+        );
+
+        let scope = svc
+            .resolve_account_scope_as_of(
+                &AccountScope::Accounts {
+                    account_ids: vec![
+                        "unknown".to_string(),
+                        "historical-context".to_string(),
+                        "manual-approved".to_string(),
+                        "opening-baseline".to_string(),
+                        "live-canonical".to_string(),
+                        "missing".to_string(),
+                        "contextual-reference".to_string(),
+                        "live-canonical".to_string(),
+                    ],
+                },
+                "USD",
+                as_of,
+            )
+            .await
+            .unwrap();
+
+        assert!(scope.scope_id.starts_with("accounts:"));
+        assert_eq!(scope.scope_id.len(), "accounts:".len() + 16);
+        assert_eq!(
+            scope.account_ids,
+            vec!["live-canonical".to_string(), "manual-approved".to_string(),]
+        );
+        assert_eq!(
+            policy.requested_calls(),
+            vec![(
+                vec![
+                    "contextual-reference".to_string(),
+                    "historical-context".to_string(),
+                    "live-canonical".to_string(),
+                    "manual-approved".to_string(),
+                    "missing".to_string(),
+                    "opening-baseline".to_string(),
+                    "unknown".to_string(),
+                ],
+                as_of,
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn portfolio_account_policy_error_propagates_without_partial_result() {
+        let today = Utc::now().date_naive();
+        let records = HashMap::from([
+            (
+                "live-canonical".to_string(),
+                SemanticPolicyRecord::live_canonical(),
+            ),
+            (
+                "opening-baseline".to_string(),
+                SemanticPolicyRecord::opening_baseline(today),
+            ),
+        ]);
+        let policy = Arc::new(MockAggregateEligibilityService::failing(
+            records,
+            "policy failure",
+        ));
+        let svc = PortfolioService::new(
+            Arc::new(MockPortfolioRepo::default()),
+            Arc::new(MockAccountRepo::with_ids(&[
+                "live-canonical",
+                "opening-baseline",
+            ])),
+            policy.clone(),
+        );
+
+        let err = svc
+            .resolve_account_scope_for_purpose(
+                &AccountScope::Accounts {
+                    account_ids: vec![
+                        "opening-baseline".to_string(),
+                        "live-canonical".to_string(),
+                        "live-canonical".to_string(),
+                    ],
+                },
+                "CAD",
+                AccountPurpose::Holdings,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("policy failure"));
+        assert_eq!(
+            policy.requested_calls(),
+            vec![(
+                vec!["live-canonical".to_string(), "opening-baseline".to_string()],
+                today
+            )]
+        );
     }
 
     #[tokio::test]
@@ -370,6 +716,7 @@ mod tests {
                 },
                 "USD",
             )
+            .await
             .unwrap();
 
         assert_eq!(scope.account_ids, vec!["active", "hidden"]);
@@ -385,6 +732,7 @@ mod tests {
                 },
                 "USD",
             )
+            .await
             .unwrap_err();
         assert!(matches!(err, Error::Validation(_)));
         assert!(err.to_string().contains("unknown account"));
@@ -400,6 +748,7 @@ mod tests {
                 },
                 "USD",
             )
+            .await
             .unwrap();
         assert_eq!(scope.scope_id, "portfolio:empty");
         assert!(scope.account_ids.is_empty());
@@ -446,6 +795,24 @@ mod tests {
                 hidden,
                 archived,
             ])),
+            Arc::new(MockAggregateEligibilityService::semantic(HashMap::from([
+                (
+                    "security-holdings".to_string(),
+                    SemanticPolicyRecord::live_canonical(),
+                ),
+                (
+                    "security-transactions".to_string(),
+                    SemanticPolicyRecord::live_canonical(),
+                ),
+                ("cash".to_string(), SemanticPolicyRecord::live_canonical()),
+                ("crypto".to_string(), SemanticPolicyRecord::live_canonical()),
+                ("card".to_string(), SemanticPolicyRecord::live_canonical()),
+                ("hidden".to_string(), SemanticPolicyRecord::live_canonical()),
+                (
+                    "archived".to_string(),
+                    SemanticPolicyRecord::live_canonical(),
+                ),
+            ]))),
         );
         let filter = AccountScope::Accounts {
             account_ids: vec![
@@ -460,9 +827,10 @@ mod tests {
             ],
         };
 
-        let unfiltered = svc.resolve_account_scope(&filter, "CAD").unwrap();
+        let unfiltered = svc.resolve_account_scope(&filter, "CAD").await.unwrap();
         let filtered = svc
             .resolve_account_scope_for_purpose(&filter, "CAD", AccountPurpose::Holdings)
+            .await
             .unwrap();
 
         assert_eq!(filtered.scope_id, unfiltered.scope_id);

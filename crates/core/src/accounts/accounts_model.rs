@@ -411,6 +411,48 @@ pub enum VerifiedReceiptBasis {
     OpeningBaseline,
 }
 
+/// Immutable provenance role used by all financial aggregate paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProvenanceRole {
+    LiveCanonical,
+    OpeningBaseline,
+    ManualCurrent,
+    HistoricalContext,
+    ContextualReference,
+}
+
+impl ProvenanceRole {
+    /// Returns whether a row may contribute to an aggregate.
+    pub fn eligible_for_aggregate(
+        self,
+        row_date: &str,
+        verified_coverage_start: Option<&str>,
+        manual_current_approved: bool,
+    ) -> bool {
+        match self {
+            Self::LiveCanonical => true,
+            Self::OpeningBaseline => verified_coverage_start.is_some_and(|start| row_date >= start),
+            Self::ManualCurrent => manual_current_approved,
+            Self::HistoricalContext | Self::ContextualReference => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProvenanceRecord {
+    pub entity_type: String,
+    pub entity_id: String,
+    pub role: ProvenanceRole,
+    pub source_system: Option<String>,
+    pub source_record_id: Option<String>,
+    pub import_run_id: Option<String>,
+    pub actor_id: Option<String>,
+    pub coverage_start_date: Option<String>,
+    pub manual_current_approved: bool,
+}
+
 /// A verified receipt makes an account eligible for current financial aggregates.
 ///
 /// An account is eligible for current valuations, current net worth, holdings,

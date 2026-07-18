@@ -404,7 +404,9 @@ pub async fn auth_me(
     };
     let token = extract_token(&request)?;
     let claims = auth.validate_token(&token)?;
-    Ok(Json(serde_json::json!({"authenticated": true, "subject": claims.sub})))
+    Ok(Json(
+        serde_json::json!({"authenticated": true, "subject": claims.sub}),
+    ))
 }
 
 pub async fn auth_status(

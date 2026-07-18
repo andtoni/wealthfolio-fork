@@ -1705,7 +1705,7 @@ mod optional_decimal_format {
 }
 
 /// Model for income data from activities
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IncomeData {
     pub date: String,

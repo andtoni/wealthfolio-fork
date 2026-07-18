@@ -12,7 +12,7 @@ use wealthfolio_connect::{
 };
 use wealthfolio_core::{
     accounts::VerifiedReceiptRepositoryTrait,
-    accounts::AccountService,
+    accounts::{AccountService, AggregateEligibilityService},
     activities::ActivityService,
     assets::{AlternativeAssetService, AssetClassificationService, AssetService},
     events::DomainEvent,
@@ -38,7 +38,7 @@ use wealthfolio_core::{
 use wealthfolio_device_sync::{engine::DeviceSyncRuntimeState, DeviceEnrollService};
 use wealthfolio_storage_sqlite::{
     accounts::VerifiedReceiptRepository,
-    accounts::AccountRepository,
+    accounts::{AccountRepository, ProvenanceRepository},
     activities::ActivityRepository,
     agent::{McpAuditRepository, PatRepository},
     ai_chat::AiChatRepository,
@@ -109,6 +109,12 @@ pub async fn initialize_context(
         Arc::new(BrokerSyncStateRepository::new(pool.clone(), writer.clone()));
     let verified_receipt_repository: Arc<dyn VerifiedReceiptRepositoryTrait> =
         Arc::new(VerifiedReceiptRepository::new(pool.clone()));
+    let provenance_repository = Arc::new(ProvenanceRepository::new(pool.clone()));
+    let aggregate_eligibility_service = Arc::new(AggregateEligibilityService::new(
+        account_repository.clone(),
+        verified_receipt_repository.clone(),
+        provenance_repository.clone(),
+    ));
 
     // Domain event sink - TauriDomainEventSink sends events to a channel
     // The worker will be started by the caller after the context is managed
@@ -211,6 +217,7 @@ pub async fn initialize_context(
     let portfolio_service = Arc::new(PortfolioService::new(
         portfolio_repository,
         account_repository.clone(),
+        aggregate_eligibility_service.clone(),
     ));
 
     // Custom provider service
@@ -278,6 +285,7 @@ pub async fn initialize_context(
             activity_splits_repo.clone(),
             activity_events_repo.clone(),
             events_service.clone(),
+            aggregate_eligibility_service.clone(),
         ),
     );
 
@@ -314,6 +322,7 @@ pub async fn initialize_context(
         spending_settings_service.clone(),
         taxonomy_service.clone(),
         fx_service.clone(),
+        aggregate_eligibility_service.clone(),
     ));
 
     // Spending: analytics — needs activity repo + assignment repo (re-built since the
@@ -337,6 +346,7 @@ pub async fn initialize_context(
             events_service.clone(),
             fx_service.clone(),
             activity_events_repo.clone(),
+            aggregate_eligibility_service.clone(),
         ));
 
     // Spending: reconciled period insight (powers the Spending Insight dashboard).
@@ -356,6 +366,7 @@ pub async fn initialize_context(
         spending_settings_service.clone(),
         taxonomy_service.clone(),
         fx_service.clone(),
+        aggregate_eligibility_service.clone(),
     ));
 
     // Import run repository for tracking CSV imports
@@ -376,7 +387,11 @@ pub async fn initialize_context(
         )
         .with_event_sink(domain_event_sink.clone()),
     );
-    let goal_service = Arc::new(GoalService::new(goal_repo.clone(), account_service.clone()));
+    let goal_service = Arc::new(GoalService::new(
+        goal_repo.clone(),
+        account_service.clone(),
+        aggregate_eligibility_service.clone(),
+    ));
     let limits_service = Arc::new(ContributionLimitService::new_with_timezone(
         fx_service.clone(),
         limit_repository.clone(),
@@ -389,6 +404,7 @@ pub async fn initialize_context(
         activity_repository.clone(),
         base_currency.clone(),
         timezone.clone(),
+        aggregate_eligibility_service.clone(),
     ));
 
     let snapshot_service = Arc::new(
@@ -418,6 +434,7 @@ pub async fn initialize_context(
             snapshot_service.clone(),
             quote_service.clone(),
             fx_service.clone(),
+            aggregate_eligibility_service.clone(),
         )
         .with_activity_repository(activity_repository.clone(), timezone.clone())
         .with_lot_repository(lots_repository.clone()),
@@ -427,6 +444,7 @@ pub async fn initialize_context(
         PerformanceService::new_with_timezone(
             valuation_service.clone(),
             quote_service.clone(),
+            aggregate_eligibility_service.clone(),
             timezone.clone(),
         )
         .with_activity_repository(activity_repository.clone(), fx_service.clone())
@@ -441,6 +459,7 @@ pub async fn initialize_context(
             snapshot_service.clone(),
             holdings_valuation_service.clone(),
             classification_service.clone(),
+            aggregate_eligibility_service.clone(),
             timezone.clone(),
         )
         .with_income_dependencies(activity_repository.clone(), fx_service.clone())
@@ -483,7 +502,7 @@ pub async fn initialize_context(
         quote_service.clone(),
         valuation_repository.clone(),
         fx_service.clone(),
-        verified_receipt_repository.clone(),
+        aggregate_eligibility_service.clone(),
     ));
 
     let alternative_asset_repository = Arc::new(AlternativeAssetRepository::new(
@@ -632,6 +651,7 @@ pub async fn initialize_context(
             device_sync_runtime,
             broker_sync_running,
             verified_receipt_repository,
+            aggregate_eligibility_service,
             health_service,
             custom_provider_service,
             portfolio_service,

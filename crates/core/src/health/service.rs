@@ -1027,6 +1027,7 @@ async fn gather_valuation_quality_issues(
 
     let histories = valuation_service
         .get_historical_valuations_by_account(account_ids, None, None)
+        .await
         .unwrap_or_else(|error| {
             warn!("Failed to check generated valuation quality: {}", error);
             HashMap::new()

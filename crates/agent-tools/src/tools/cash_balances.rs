@@ -118,6 +118,7 @@ impl AgentTool for GetCashBalances {
         let valuation_by_account: HashMap<_, _> = env
             .valuation_service()
             .get_latest_valuations(&target_ids)
+            .await
             .map_err(|e| AgentToolError::ExecutionFailed(e.to_string()))?
             .into_iter()
             .map(|valuation| (valuation.account_id.clone(), valuation))

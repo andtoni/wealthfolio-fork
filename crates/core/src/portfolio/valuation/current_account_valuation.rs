@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     accounts::{
-        account_supports_portfolio_scope, filter_eligible_accounts, Account,
-        AccountPurpose, AccountServiceTrait, VerifiedReceiptRepositoryTrait,
+        account_supports_portfolio_scope, Account, AccountPurpose, AccountServiceTrait,
+        AggregateEligibilityServiceTrait, ENTITY_SNAPSHOT,
     },
     assets::{Asset, AssetServiceTrait, InstrumentType},
     errors::Result,
@@ -35,7 +35,7 @@ pub struct CurrentAccountValuationService<'a> {
     asset_service: &'a dyn AssetServiceTrait,
     quote_service: &'a dyn QuoteServiceTrait,
     fx_service: &'a dyn FxServiceTrait,
-    verified_receipt_repository: &'a dyn VerifiedReceiptRepositoryTrait,
+    aggregate_eligibility_service: &'a dyn AggregateEligibilityServiceTrait,
 }
 
 impl<'a> CurrentAccountValuationService<'a> {
@@ -45,7 +45,7 @@ impl<'a> CurrentAccountValuationService<'a> {
         asset_service: &'a dyn AssetServiceTrait,
         quote_service: &'a dyn QuoteServiceTrait,
         fx_service: &'a dyn FxServiceTrait,
-        verified_receipt_repository: &'a dyn VerifiedReceiptRepositoryTrait,
+        aggregate_eligibility_service: &'a dyn AggregateEligibilityServiceTrait,
     ) -> Self {
         Self {
             account_service,
@@ -53,7 +53,7 @@ impl<'a> CurrentAccountValuationService<'a> {
             asset_service,
             quote_service,
             fx_service,
-            verified_receipt_repository,
+            aggregate_eligibility_service,
         }
     }
 
@@ -85,7 +85,9 @@ impl<'a> CurrentAccountValuationService<'a> {
         include_accounts: bool,
         calculated_at: DateTime<Utc>,
     ) -> Result<CurrentValuationResponse> {
-        let accounts = self.resolve_eligible_requested_accounts(account_ids).await?;
+        let accounts = self
+            .resolve_eligible_requested_accounts(account_ids, latest_snapshot_cutoff)
+            .await?;
         if accounts.is_empty() {
             return Ok(empty_current_valuation_response(
                 scope_id,
@@ -95,8 +97,17 @@ impl<'a> CurrentAccountValuationService<'a> {
         }
 
         let account_ids: Vec<String> = accounts.iter().map(|account| account.id.clone()).collect();
-        let snapshots =
-            self.latest_snapshots_with_positions(&account_ids, latest_snapshot_cutoff)?;
+        let snapshots = self
+            .latest_snapshots_with_positions(&account_ids, latest_snapshot_cutoff)
+            .await?;
+        let accounts = filter_accounts_with_snapshots(accounts, &snapshots);
+        if accounts.is_empty() {
+            return Ok(empty_current_valuation_response(
+                scope_id,
+                base_currency,
+                calculated_at,
+            ));
+        }
         let assets_by_id = self.load_assets_by_id(&snapshots).await?;
         let latest_quote_pairs =
             self.load_latest_quotes(&snapshots, &assets_by_id, latest_snapshot_cutoff)?;
@@ -133,26 +144,30 @@ impl<'a> CurrentAccountValuationService<'a> {
     async fn resolve_eligible_requested_accounts(
         &self,
         account_ids: &[String],
+        as_of: NaiveDate,
     ) -> Result<Vec<Account>> {
         let accounts = self.resolve_requested_accounts(account_ids)?;
-        if accounts.is_empty() {
-            return Ok(Vec::new());
-        }
-        let eligible_ids = self
-            .verified_receipt_repository
-            .get_eligible_account_ids()
-            .await?;
-        Ok(filter_eligible_accounts(accounts, &eligible_ids))
+        filter_requested_accounts_by_aggregate_policy(
+            accounts,
+            as_of,
+            self.aggregate_eligibility_service,
+        )
+        .await
     }
 
-    fn latest_snapshots_with_positions(
+    async fn latest_snapshots_with_positions(
         &self,
         account_ids: &[String],
         latest_snapshot_cutoff: NaiveDate,
     ) -> Result<HashMap<String, AccountStateSnapshot>> {
-        let mut snapshots = self
+        let snapshots = self
             .snapshot_repository
             .get_latest_snapshots_before_date(account_ids, latest_snapshot_cutoff)?;
+        let mut snapshots = filter_latest_snapshots_by_aggregate_policy(
+            snapshots,
+            self.aggregate_eligibility_service,
+        )
+        .await?;
         if snapshots.is_empty() {
             return Ok(snapshots);
         }
@@ -218,6 +233,54 @@ impl<'a> CurrentAccountValuationService<'a> {
             })
             .collect())
     }
+}
+
+pub(super) async fn filter_requested_accounts_by_aggregate_policy(
+    accounts: Vec<Account>,
+    as_of: NaiveDate,
+    aggregate_eligibility_service: &dyn AggregateEligibilityServiceTrait,
+) -> Result<Vec<Account>> {
+    if accounts.is_empty() {
+        return Ok(Vec::new());
+    }
+    let requested_ids: Vec<String> = accounts.iter().map(|account| account.id.clone()).collect();
+    let eligible_ids = aggregate_eligibility_service
+        .eligible_account_ids(&requested_ids, as_of)
+        .await?;
+    Ok(accounts
+        .into_iter()
+        .filter(|account| eligible_ids.contains(&account.id))
+        .collect())
+}
+
+pub(super) async fn filter_latest_snapshots_by_aggregate_policy(
+    snapshots: HashMap<String, AccountStateSnapshot>,
+    aggregate_eligibility_service: &dyn AggregateEligibilityServiceTrait,
+) -> Result<HashMap<String, AccountStateSnapshot>> {
+    if snapshots.is_empty() {
+        return Ok(snapshots);
+    }
+    let rows: Vec<(String, NaiveDate)> = snapshots
+        .values()
+        .map(|snapshot| (snapshot.id.clone(), snapshot.snapshot_date))
+        .collect();
+    let eligible_ids = aggregate_eligibility_service
+        .eligible_entity_ids_for_rows(ENTITY_SNAPSHOT, &rows)
+        .await?;
+    Ok(snapshots
+        .into_iter()
+        .filter(|(_, snapshot)| eligible_ids.contains(&snapshot.id))
+        .collect())
+}
+
+fn filter_accounts_with_snapshots(
+    accounts: Vec<Account>,
+    snapshots: &HashMap<String, AccountStateSnapshot>,
+) -> Vec<Account> {
+    accounts
+        .into_iter()
+        .filter(|account| snapshots.contains_key(&account.id))
+        .collect()
 }
 
 #[derive(Debug, Clone)]
