@@ -387,10 +387,10 @@ mod migration_tests {
         let row = diesel::sql_query("SELECT binding_version, receipt_binding FROM disclosure_receipts WHERE idempotency_key='k'")
             .get_result::<BindingRow>(&mut conn)
             .unwrap();
-        assert_eq!(row.binding_version, 1);
+        assert_eq!(row.binding_version, 2);
         assert_eq!(
             row.receipt_binding.as_deref(),
-            Some("v1;1:d8:issuer#p1:k1:715:activity_upsert1:r1:a6:<null>8:accepted")
+            Some("v2;1:d8:issuer#p1:k1:715:activity_upsert1:r1:a1:00:8:accepted")
         );
         let _ = std::fs::remove_file(path);
     }

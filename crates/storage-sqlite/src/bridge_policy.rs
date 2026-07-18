@@ -193,9 +193,10 @@ fn receipt(deployment_id: &str, r: ReceiptRow) -> DisclosureReceipt {
     }
 }
 
-const RECEIPT_BINDING_VERSION: i64 = 1;
+const RECEIPT_BINDING_VERSION: i64 = 2;
 
 // The binding is deliberately explicit so every receipt identity field is visible at call sites.
+// V2 encodes successor presence separately so None cannot collide with a literal sentinel value.
 #[allow(clippy::too_many_arguments)]
 fn canonical_receipt_binding(
     deployment: &str,
@@ -209,6 +210,7 @@ fn canonical_receipt_binding(
     outcome: &str,
 ) -> String {
     let generation = generation.to_string();
+    let successor_present = if successor.is_some() { "1" } else { "0" };
     let fields = [
         deployment,
         subject,
@@ -217,10 +219,11 @@ fn canonical_receipt_binding(
         operation,
         resource,
         account,
-        successor.unwrap_or("<null>"),
+        successor_present,
+        successor.unwrap_or(""),
         outcome,
     ];
-    let mut out = String::from("v1;");
+    let mut out = String::from("v2;");
     for field in fields {
         out.push_str(&field.len().to_string());
         out.push(':');
@@ -230,11 +233,11 @@ fn canonical_receipt_binding(
 }
 
 fn is_canonical_receipt_binding(binding: &str, expected: &str) -> bool {
-    if binding != expected || !binding.starts_with("v1;") {
+    if binding != expected || !binding.starts_with("v2;") {
         return false;
     }
     let mut rest = &binding.as_bytes()[3..];
-    for _ in 0..9 {
+    for _ in 0..10 {
         let Some(colon) = rest.iter().position(|b| *b == b':') else {
             return false;
         };
@@ -313,6 +316,39 @@ fn upsert_activity_row(
     Ok(())
 }
 
+fn reject_conflicting_activity_overlays(
+    c: &mut SqliteConnection,
+    pending_id: &str,
+    posted_id: &str,
+    deployment_id: &str,
+) -> std::result::Result<(), diesel::result::Error> {
+    let conflicts = sql_query(
+        "SELECT count(*) count FROM activities pending JOIN activities posted \
+         WHERE pending.id=? AND posted.id=? AND (\
+           (pending.notes IS NOT NULL AND posted.notes IS NOT NULL AND pending.notes<>posted.notes) OR \
+           (pending.activity_type_override IS NOT NULL AND posted.activity_type_override IS NOT NULL AND pending.activity_type_override<>posted.activity_type_override) OR \
+           (pending.is_user_modified=1 AND posted.is_user_modified=1 AND pending.subtype IS NOT NULL AND posted.subtype IS NOT NULL AND pending.subtype<>posted.subtype) OR \
+           EXISTS (SELECT 1 FROM activity_attribution_overlays predecessor \
+                   JOIN activity_attribution_overlays successor \
+                     ON successor.deployment_id=predecessor.deployment_id \
+                  WHERE predecessor.deployment_id=? AND predecessor.activity_id=pending.id \
+                    AND successor.activity_id=posted.id \
+                    AND predecessor.attributed_person_subject_id IS NOT NULL \
+                    AND successor.attributed_person_subject_id IS NOT NULL \
+                    AND predecessor.attributed_person_subject_id<>successor.attributed_person_subject_id)\
+         )",
+    )
+    .bind::<Text, _>(pending_id)
+    .bind::<Text, _>(posted_id)
+    .bind::<Text, _>(deployment_id)
+    .get_result::<Count>(c)?
+    .count;
+    if conflicts != 0 {
+        return Err(diesel::result::Error::RollbackTransaction);
+    }
+    Ok(())
+}
+
 fn do_upsert_activity(
     c: &mut SqliteConnection,
     op: &DisclosureOperation,
@@ -388,7 +424,32 @@ impl BridgePolicyStore {
         let d = self.deployment_id.clone();
         let result: std::result::Result<DisclosureReceipt, BridgePolicyError> = self.writer.exec(move |c| {
             let inner: std::result::Result<DisclosureReceipt, BridgePolicyError> = c.transaction::<_, crate::StorageError, _>(|c| {
-                // 1. Check generation
+                // Resolve exact durable replays before checking the current generation. A
+                // completed lifecycle removes the pending source row, and a later revoke may
+                // advance the deployment generation without invalidating its durable receipt.
+                if let Some(existing) = sql_query("SELECT person_subject_id subject,idempotency_key,access_generation,operation,resource_id,account_id,lifecycle_successor_id,binding_version,receipt_binding,outcome FROM disclosure_receipts WHERE deployment_id=? AND person_subject_id=? AND idempotency_key=?")
+                    .bind::<Text,_>(&d)
+                    .bind::<Text,_>(&op.subject)
+                    .bind::<Text,_>(&op.idempotency_key)
+                    .get_result::<ReceiptRow>(c)
+                    .optional()?
+                {
+                    let expected_binding = canonical_receipt_binding(&d, &existing.subject, &existing.idempotency_key, existing.access_generation, &existing.operation, &existing.resource_id, &existing.account_id, existing.lifecycle_successor_id.as_deref(), &existing.outcome);
+                    if existing.binding_version != RECEIPT_BINDING_VERSION
+                        || existing.outcome != "accepted"
+                        || existing.operation != op.kind.as_str()
+                        || existing.resource_id != op.resource_id
+                        || existing.access_generation != op.access_generation
+                        || existing.lifecycle_successor_id != op.lifecycle_successor_id
+                        || op.activity.as_ref().is_some_and(|a| a.account_id != existing.account_id)
+                        || existing.receipt_binding.as_deref().is_none_or(|b| !is_canonical_receipt_binding(b, &expected_binding))
+                    {
+                        return Ok(Err(BridgePolicyError::IdempotencyConflict));
+                    }
+                    return Ok(Ok(receipt(&d, existing)));
+                }
+
+                // Reject new work at a stale generation.
                 let actual = match sql_query("SELECT access_generation generation FROM policy_deployments WHERE id=?")
                     .bind::<Text,_>(&d)
                     .get_result::<Gen>(c)
@@ -400,28 +461,6 @@ impl BridgePolicyStore {
                 };
                 if actual != op.access_generation {
                     return Ok(Err(BridgePolicyError::StaleGeneration { expected: op.access_generation, actual }));
-                }
-
-                // A completed lifecycle removes the pending source row. Resolve
-                // exact durable replays before looking up that source row.
-                if let Some(existing) = sql_query("SELECT person_subject_id subject,idempotency_key,access_generation,operation,resource_id,account_id,lifecycle_successor_id,binding_version,receipt_binding,outcome FROM disclosure_receipts WHERE deployment_id=? AND person_subject_id=? AND idempotency_key=?")
-                    .bind::<Text,_>(&d)
-                    .bind::<Text,_>(&op.subject)
-                    .bind::<Text,_>(&op.idempotency_key)
-                    .get_result::<ReceiptRow>(c)
-                    .optional()?
-                {
-                    let expected_binding = canonical_receipt_binding(&d, &op.subject, &op.idempotency_key, actual, op.kind.as_str(), &op.resource_id, &existing.account_id, op.lifecycle_successor_id.as_deref(), "accepted");
-                    if existing.binding_version != RECEIPT_BINDING_VERSION || existing.receipt_binding.as_deref().is_none_or(|b| !is_canonical_receipt_binding(b, &expected_binding)) {
-                        return Ok(Err(BridgePolicyError::IdempotencyConflict));
-                    }
-                    if existing.operation != op.kind.as_str() || existing.resource_id != op.resource_id || existing.access_generation != actual
-                        || existing.lifecycle_successor_id != op.lifecycle_successor_id
-                        || op.activity.as_ref().is_some_and(|a| a.account_id != existing.account_id)
-                    {
-                        return Ok(Err(BridgePolicyError::IdempotencyConflict));
-                    }
-                    return Ok(Ok(receipt(&d, existing)));
                 }
 
                 // 2. Resolve account
@@ -485,6 +524,7 @@ impl BridgePolicyStore {
                     {
                         return Err(diesel::result::Error::NotFound.into());
                     }
+                    reject_conflicting_activity_overlays(c, p, n, &d)?;
                     let projection_count = sql_query("SELECT count(*) AS count FROM activity_disclosure_projections WHERE deployment_id=? AND person_subject_id=? AND activity_id=? AND account_id=? AND access_generation=?")
                         .bind::<Text,_>(&d)
                         .bind::<Text,_>(&op.subject)
@@ -545,7 +585,7 @@ impl BridgePolicyStore {
 
                 // 7. Write receipt
                 let binding = canonical_receipt_binding(&d, &op.subject, &op.idempotency_key, actual, op.kind.as_str(), &op.resource_id, &account.account_id, op.lifecycle_successor_id.as_deref(), "accepted");
-                sql_query("INSERT INTO disclosure_receipts(deployment_id,person_subject_id,idempotency_key,account_id,access_generation,operation,resource_id,lifecycle_successor_id,binding_version,receipt_binding,outcome) VALUES(?,?,?,?,?,?,?,?,1,?,'accepted')")
+                sql_query("INSERT INTO disclosure_receipts(deployment_id,person_subject_id,idempotency_key,account_id,access_generation,operation,resource_id,lifecycle_successor_id,binding_version,receipt_binding,outcome) VALUES(?,?,?,?,?,?,?,?,2,?,'accepted')")
                     .bind::<Text,_>(&d)
                     .bind::<Text,_>(&op.subject)
                     .bind::<Text,_>(&op.idempotency_key)
@@ -567,7 +607,7 @@ impl BridgePolicyStore {
                     resource_id: op.resource_id,
                     lifecycle_successor_id: op.lifecycle_successor_id,
                     outcome: ReceiptOutcome::Accepted,
-                    binding_version: 1,
+                    binding_version: RECEIPT_BINDING_VERSION,
                     receipt_binding: binding,
                 }))
             }).map_err(|e: crate::StorageError| wealthfolio_core::Error::from(e))?;
@@ -630,7 +670,7 @@ impl BridgePolicyStore {
                     return Err(crate::StorageError::from(diesel::result::Error::RollbackTransaction));
                 }
                 let binding = canonical_receipt_binding(&d, &s, &k, g, "projection_fence", &a, &a, None, "revoked");
-                sql_query("INSERT INTO disclosure_receipts(deployment_id,person_subject_id,idempotency_key,account_id,access_generation,operation,resource_id,lifecycle_successor_id,binding_version,receipt_binding,outcome) VALUES(?,?,?,?,?,'projection_fence',?,NULL,1,?,'revoked')")
+                sql_query("INSERT INTO disclosure_receipts(deployment_id,person_subject_id,idempotency_key,account_id,access_generation,operation,resource_id,lifecycle_successor_id,binding_version,receipt_binding,outcome) VALUES(?,?,?,?,?,'projection_fence',?,NULL,2,?,'revoked')")
                     .bind::<Text,_>(&d)
                     .bind::<Text,_>(&s)
                     .bind::<Text,_>(&k)
@@ -649,7 +689,7 @@ impl BridgePolicyStore {
                     resource_id: a,
                     lifecycle_successor_id: None,
                     outcome: ReceiptOutcome::Revoked,
-                    binding_version: 1,
+                    binding_version: RECEIPT_BINDING_VERSION,
                     receipt_binding: binding,
                 }))
             }).map_err(|e: crate::StorageError| wealthfolio_core::Error::from(e))?;

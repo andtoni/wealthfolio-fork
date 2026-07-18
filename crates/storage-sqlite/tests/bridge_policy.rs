@@ -562,8 +562,8 @@ async fn commit_lifecycle_path_migrates_only_projected_candidate() {
     oracle_c
         .execute("DELETE FROM activities WHERE id='pending-commit'", [])
         .unwrap();
-    let binding = "v1;12:deployment-15:alice9:lifecycle1:115:activity_upsert14:pending-commit2:a113:posted-commit8:accepted";
-    oracle_c.execute("INSERT INTO disclosure_receipts(deployment_id,person_subject_id,idempotency_key,account_id,access_generation,operation,resource_id,lifecycle_successor_id,binding_version,receipt_binding,outcome) VALUES('deployment-1','alice','lifecycle','a1',1,'activity_upsert','pending-commit','posted-commit',1,?,'accepted')", [binding]).unwrap();
+    let binding = "v2;12:deployment-15:alice9:lifecycle1:115:activity_upsert14:pending-commit2:a11:113:posted-commit8:accepted";
+    oracle_c.execute("INSERT INTO disclosure_receipts(deployment_id,person_subject_id,idempotency_key,account_id,access_generation,operation,resource_id,lifecycle_successor_id,binding_version,receipt_binding,outcome) VALUES('deployment-1','alice','lifecycle','a1',1,'activity_upsert','pending-commit','posted-commit',2,?,'accepted')", [binding]).unwrap();
     let actual = canonical_snapshot_for_lifecycle_oracle(&c);
     let expected = canonical_snapshot_for_lifecycle_oracle(&oracle_c);
     assert_eq!(actual.len(), expected.len());

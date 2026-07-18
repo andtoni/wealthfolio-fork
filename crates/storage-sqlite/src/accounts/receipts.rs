@@ -144,7 +144,7 @@ impl VerifiedReceiptRepositoryTrait for VerifiedReceiptRepository {
             .pool
             .get()
             .map_err(|e| to_core_err(format!("pool error: {e}")))?;
-        sql_query(
+        let affected = sql_query(
             "INSERT INTO verified_receipts(id, account_id, basis, as_of, provider_receipt_ref, \
              verification_state, coverage_start_date) \
              VALUES(?, ?, ?, ?, ?, ?, ?) \
@@ -154,7 +154,8 @@ impl VerifiedReceiptRepositoryTrait for VerifiedReceiptRepository {
                provider_receipt_ref=excluded.provider_receipt_ref, \
                verification_state=excluded.verification_state, \
                coverage_start_date=excluded.coverage_start_date, \
-               updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')",
+               updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') \
+             WHERE verified_receipts.account_id=excluded.account_id",
         )
         .bind::<Text, _>(&receipt.id)
         .bind::<Text, _>(&receipt.account_id)
@@ -165,7 +166,18 @@ impl VerifiedReceiptRepositoryTrait for VerifiedReceiptRepository {
         .bind::<Nullable<Text>, _>(receipt.coverage_start_date.as_deref())
         .execute(&mut c)
         .map_err(to_core_err)?;
-        Ok(receipt)
+        if affected != 1 {
+            return Err(to_core_err("verified receipt account identity mismatch"));
+        }
+        sql_query(
+            "SELECT id, account_id, basis, as_of, provider_receipt_ref, \
+             verification_state, coverage_start_date, created_at, updated_at \
+             FROM verified_receipts WHERE id=?",
+        )
+        .bind::<Text, _>(&receipt.id)
+        .get_result::<VerifiedReceiptRow>(&mut c)
+        .map(VerifiedReceiptRow::into_domain)
+        .map_err(to_core_err)
     }
 
     async fn delete(&self, id: &str) -> Result<bool> {
