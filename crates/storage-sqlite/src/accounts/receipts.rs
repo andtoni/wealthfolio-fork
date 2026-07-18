@@ -37,7 +37,7 @@ impl ProviderIdentityRepositoryTrait for ProviderIdentityRepository {
             .get()
             .map_err(|e| to_core_err(format!("pool error: {e}")))?;
         let row = sql_query(
-            "SELECT account_id, provider, provider_account_id, lifecycle_state, last_sync_at \
+            "SELECT account_id, provider, provider_account_id, lifecycle_state, provider_display_name, last_sync_at \
              FROM provider_identities WHERE account_id = ?",
         )
         .bind::<Text, _>(account_id)
@@ -52,24 +52,28 @@ impl ProviderIdentityRepositoryTrait for ProviderIdentityRepository {
             .pool
             .get()
             .map_err(|e| to_core_err(format!("pool error: {e}")))?;
-        sql_query(
-            "INSERT INTO provider_identities(account_id, provider, provider_account_id, lifecycle_state, last_sync_at) \
-             VALUES(?, ?, ?, ?, ?) \
+        let affected = sql_query(
+            "INSERT INTO provider_identities(account_id, provider, provider_account_id, lifecycle_state, provider_display_name, last_sync_at) \
+             VALUES(?, ?, ?, ?, ?, ?) \
              ON CONFLICT(account_id) DO UPDATE SET \
-               provider=excluded.provider, \
-               provider_account_id=excluded.provider_account_id, \
                lifecycle_state=excluded.lifecycle_state, \
+               provider_display_name=excluded.provider_display_name, \
                last_sync_at=excluded.last_sync_at, \
-               updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')"
+               updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') \
+             WHERE provider_identities.provider=excluded.provider \
+               AND provider_identities.provider_account_id=excluded.provider_account_id"
         )
-            .bind::<Text, _>(&identity.account_id)
-            .bind::<Text, _>(&identity.provider)
-            .bind::<Text, _>(&identity.provider_account_id)
-            .bind::<Text, _>(&identity.lifecycle_state)
-            .bind::<Nullable<Text>, _>(identity.provider_display_name.as_deref())
-            .bind::<Nullable<Text>, _>(identity.last_sync_at.as_deref())
-            .execute(&mut c)
-            .map_err(to_core_err)?;
+        .bind::<Text, _>(&identity.account_id)
+        .bind::<Text, _>(&identity.provider)
+        .bind::<Text, _>(&identity.provider_account_id)
+        .bind::<Text, _>(&identity.lifecycle_state)
+        .bind::<Nullable<Text>, _>(identity.provider_display_name.as_deref())
+        .bind::<Nullable<Text>, _>(identity.last_sync_at.as_deref())
+        .execute(&mut c)
+        .map_err(to_core_err)?;
+        if affected != 1 {
+            return Err(to_core_err("immutable provider identity mismatch"));
+        }
         Ok(identity)
     }
 
@@ -94,7 +98,7 @@ impl ProviderIdentityRepositoryTrait for ProviderIdentityRepository {
             .get()
             .map_err(|e| to_core_err(format!("pool error: {e}")))?;
         let rows: Vec<ProviderIdentityRow> = sql_query(
-            "SELECT account_id, provider, provider_account_id, lifecycle_state, last_sync_at \
+            "SELECT account_id, provider, provider_account_id, lifecycle_state, provider_display_name, last_sync_at \
              FROM provider_identities ORDER BY provider, account_id",
         )
         .load(&mut c)

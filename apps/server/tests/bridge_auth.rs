@@ -188,10 +188,21 @@ async fn bearer_bridge_commit_returns_accepted_receipt() {
     let commit = server.client.post(format!("{}/api/v1/bridge/commit", server.base)).header(header::AUTHORIZATION, format!("Bearer {jwt}"))
         .json(&serde_json::json!({"idempotency_key": idempotency_key, "subject": subject, "access_generation": access_generation, "kind": "ActivityUpsert", "resource_id": "bridge-activity", "activity": {"account_id": "bridge-account", "activity_type": "DEPOSIT", "status": "POSTED", "activity_date": "2026-01-01", "amount": "1", "currency": "USD", "notes": null, "activity_type_override": null, "needs_review": false}})).send().await.unwrap();
     assert_eq!(commit.status(), 200);
-    assert_eq!(
-        commit.json::<serde_json::Value>().await.unwrap(),
-        serde_json::json!({"subject": subject, "idempotencyKey": idempotency_key, "accessGeneration": access_generation, "operation": "activity_upsert", "resourceId": "bridge-activity", "outcome": "Accepted"})
-    );
+    let receipt = commit.json::<serde_json::Value>().await.unwrap();
+    assert_eq!(receipt["deploymentId"], "default");
+    assert_eq!(receipt["accountId"], "bridge-account");
+    assert_eq!(receipt["subject"], subject);
+    assert_eq!(receipt["idempotencyKey"], idempotency_key);
+    assert_eq!(receipt["accessGeneration"], access_generation);
+    assert_eq!(receipt["operation"], "activity_upsert");
+    assert_eq!(receipt["resourceId"], "bridge-activity");
+    assert!(receipt["lifecycleSuccessorId"].is_null());
+    assert_eq!(receipt["outcome"], "Accepted");
+    assert_eq!(receipt["bindingVersion"], 1);
+    assert!(receipt["receiptBinding"]
+        .as_str()
+        .unwrap()
+        .starts_with("v1;"));
 }
 
 #[tokio::test]

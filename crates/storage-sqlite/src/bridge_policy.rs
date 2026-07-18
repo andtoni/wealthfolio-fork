@@ -85,11 +85,14 @@ pub enum ReceiptOutcome {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DisclosureReceipt {
+    pub deployment_id: String,
+    pub account_id: String,
     pub subject: String,
     pub idempotency_key: String,
     pub access_generation: i64,
     pub operation: String,
     pub resource_id: String,
+    pub lifecycle_successor_id: Option<String>,
     pub outcome: ReceiptOutcome,
     pub binding_version: i64,
     pub receipt_binding: String,
@@ -170,13 +173,16 @@ struct ReceiptRow {
     #[diesel(sql_type=Text)]
     outcome: String,
 }
-fn receipt(r: ReceiptRow) -> DisclosureReceipt {
+fn receipt(deployment_id: &str, r: ReceiptRow) -> DisclosureReceipt {
     DisclosureReceipt {
+        deployment_id: deployment_id.to_owned(),
+        account_id: r.account_id,
         subject: r.subject,
         idempotency_key: r.idempotency_key,
         access_generation: r.access_generation,
         operation: r.operation,
         resource_id: r.resource_id,
+        lifecycle_successor_id: r.lifecycle_successor_id,
         outcome: if r.outcome == "revoked" {
             ReceiptOutcome::Revoked
         } else {
@@ -279,6 +285,34 @@ struct State {
 }
 
 // ── SQL helpers that return diesel errors for the transaction closure to convert ──
+fn upsert_activity_row(
+    c: &mut SqliteConnection,
+    resource_id: &str,
+    act: &ActivityPayload,
+) -> std::result::Result<(), diesel::result::Error> {
+    if let Some(existing) = sql_query("SELECT account_id FROM activities WHERE id=?")
+        .bind::<Text, _>(resource_id)
+        .get_result::<Account>(c)
+        .optional()?
+    {
+        if existing.account_id != act.account_id {
+            return Err(diesel::result::Error::RollbackTransaction);
+        }
+    }
+    sql_query(
+        "INSERT INTO activities(id,account_id,activity_type,status,activity_date,amount,currency,notes,activity_type_override,is_user_modified,needs_review,created_at,updated_at) VALUES(?,?,?,?,?,?,?,NULL,NULL,0,0,'now','now') ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,activity_type=excluded.activity_type,status=excluded.status,activity_date=excluded.activity_date,amount=excluded.amount,currency=excluded.currency,updated_at='now'"
+    )
+        .bind::<Text,_>(resource_id)
+        .bind::<Text,_>(&act.account_id)
+        .bind::<Text,_>(&act.activity_type)
+        .bind::<Text,_>(&act.status)
+        .bind::<Text,_>(&act.activity_date)
+        .bind::<Text,_>(&act.amount)
+        .bind::<Text,_>(&act.currency)
+        .execute(c)?;
+    Ok(())
+}
+
 fn do_upsert_activity(
     c: &mut SqliteConnection,
     op: &DisclosureOperation,
@@ -287,34 +321,7 @@ fn do_upsert_activity(
     d: &str,
 ) -> std::result::Result<(), diesel::result::Error> {
     if let Some(ref act) = op.activity {
-        if let Some(existing) = sql_query("SELECT account_id FROM activities WHERE id=?")
-            .bind::<Text, _>(&op.resource_id)
-            .get_result::<Account>(c)
-            .optional()?
-        {
-            if existing.account_id != act.account_id {
-                return Err(diesel::result::Error::RollbackTransaction);
-            }
-        }
-        let needs_review_val: i32 = if act.needs_review.unwrap_or(false) {
-            1
-        } else {
-            0
-        };
-        sql_query(
-            "INSERT INTO activities(id,account_id,activity_type,status,activity_date,amount,currency,notes,activity_type_override,is_user_modified,needs_review,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,0,?,'now','now') ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,activity_type=excluded.activity_type,status=excluded.status,activity_date=excluded.activity_date,amount=excluded.amount,currency=excluded.currency,notes=coalesce(excluded.notes,activities.notes),activity_type_override=coalesce(excluded.activity_type_override,activities.activity_type_override),needs_review=coalesce(excluded.needs_review,activities.needs_review),updated_at='now'"
-        )
-            .bind::<Text,_>(&op.resource_id)
-            .bind::<Text,_>(&act.account_id)
-            .bind::<Text,_>(&act.activity_type)
-            .bind::<Text,_>(&act.status)
-            .bind::<Text,_>(&act.activity_date)
-            .bind::<Text,_>(&act.amount)
-            .bind::<Text,_>(&act.currency)
-            .bind::<Nullable<Text>,_>(act.notes.as_deref())
-            .bind::<Nullable<Text>,_>(act.activity_type_override.as_deref())
-            .bind::<Integer,_>(needs_review_val)
-            .execute(c)?;
+        upsert_activity_row(c, &op.resource_id, act)?;
     }
     sql_query(
         "INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?) ON CONFLICT(deployment_id,person_subject_id,activity_id) DO UPDATE SET account_id=excluded.account_id,access_generation=excluded.access_generation"
@@ -414,7 +421,7 @@ impl BridgePolicyStore {
                     {
                         return Ok(Err(BridgePolicyError::IdempotencyConflict));
                     }
-                    return Ok(Ok(receipt(existing)));
+                    return Ok(Ok(receipt(&d, existing)));
                 }
 
                 // 2. Resolve account
@@ -462,6 +469,12 @@ impl BridgePolicyStore {
                     let pending = sql_query("SELECT account_id,status FROM activities WHERE id=?")
                         .bind::<Text,_>(p)
                         .get_result::<ActivityIdentity>(c)?;
+                    // A posted observation may be the first sighting of the successor.
+                    // Create/update its provider-owned row inside this same transaction,
+                    // then migrate the pending row's user-owned overlays onto it.
+                    if let Some(ref activity) = op.activity {
+                        upsert_activity_row(c, n, activity)?;
+                    }
                     let posted = sql_query("SELECT account_id,status FROM activities WHERE id=?")
                         .bind::<Text,_>(n)
                         .get_result::<ActivityIdentity>(c)?;
@@ -488,7 +501,9 @@ impl BridgePolicyStore {
                             .bind::<Text,_>(p)
                             .execute(c)?;
                     }
-                    sql_query("UPDATE activities SET notes=coalesce((SELECT notes FROM activities WHERE id=?),notes),activity_type_override=coalesce((SELECT activity_type_override FROM activities WHERE id=?),activity_type_override),is_user_modified=max(is_user_modified,coalesce((SELECT is_user_modified FROM activities WHERE id=?),0)),needs_review=max(needs_review,coalesce((SELECT needs_review FROM activities WHERE id=?),0)) WHERE id=?")
+                    sql_query("UPDATE activities SET notes=coalesce((SELECT notes FROM activities WHERE id=?),notes),activity_type_override=coalesce((SELECT activity_type_override FROM activities WHERE id=?),activity_type_override),subtype=CASE WHEN coalesce((SELECT is_user_modified FROM activities WHERE id=?),0)=1 THEN coalesce((SELECT subtype FROM activities WHERE id=?),subtype) ELSE subtype END,is_user_modified=max(is_user_modified,coalesce((SELECT is_user_modified FROM activities WHERE id=?),0)),needs_review=max(needs_review,coalesce((SELECT needs_review FROM activities WHERE id=?),0)) WHERE id=?")
+                        .bind::<Text,_>(p)
+                        .bind::<Text,_>(p)
                         .bind::<Text,_>(p)
                         .bind::<Text,_>(p)
                         .bind::<Text,_>(p)
@@ -543,11 +558,14 @@ impl BridgePolicyStore {
                     .execute(c)?;
 
                 Ok(Ok(DisclosureReceipt {
+                    deployment_id: d,
+                    account_id: account.account_id,
                     subject: op.subject,
                     idempotency_key: op.idempotency_key,
                     access_generation: actual,
                     operation: op.kind.as_str().into(),
                     resource_id: op.resource_id,
+                    lifecycle_successor_id: op.lifecycle_successor_id,
                     outcome: ReceiptOutcome::Accepted,
                     binding_version: 1,
                     receipt_binding: binding,
@@ -587,7 +605,7 @@ impl BridgePolicyStore {
                     if existing.binding_version != RECEIPT_BINDING_VERSION || existing.operation != "projection_fence" || existing.outcome != "revoked" || existing.resource_id != a || existing.account_id != a || existing.receipt_binding.as_deref().is_none_or(|b| !is_canonical_receipt_binding(b, &expected_binding)) {
                         return Ok(Err(BridgePolicyError::IdempotencyConflict));
                     }
-                    return Ok(Ok(receipt(existing)));
+                    return Ok(Ok(receipt(&d, existing)));
                 }
 
                 sql_query("UPDATE policy_deployments SET access_generation=access_generation+1 WHERE id=?")
@@ -622,11 +640,14 @@ impl BridgePolicyStore {
                     .bind::<Text,_>(&binding)
                     .execute(c)?;
                 Ok(Ok(DisclosureReceipt {
+                    deployment_id: d,
+                    account_id: a.clone(),
                     subject: s,
                     idempotency_key: k,
                     access_generation: g,
                     operation: "projection_fence".into(),
                     resource_id: a,
+                    lifecycle_successor_id: None,
                     outcome: ReceiptOutcome::Revoked,
                     binding_version: 1,
                     receipt_binding: binding,
@@ -682,7 +703,7 @@ impl BridgePolicyStore {
             .pool
             .get()
             .map_err(|e| BridgePolicyError::Storage(e.to_string()))?;
-        Ok(sql_query("SELECT person_subject_id subject,idempotency_key,access_generation,operation,resource_id,account_id,lifecycle_successor_id,binding_version,receipt_binding,outcome FROM disclosure_receipts WHERE deployment_id=? AND person_subject_id=? AND idempotency_key=?").bind::<Text,_>(&self.deployment_id).bind::<Text,_>(s).bind::<Text,_>(k).get_result::<ReceiptRow>(&mut c).optional().map_err(sqlerr)?.map(receipt))
+        Ok(sql_query("SELECT person_subject_id subject,idempotency_key,access_generation,operation,resource_id,account_id,lifecycle_successor_id,binding_version,receipt_binding,outcome FROM disclosure_receipts WHERE deployment_id=? AND person_subject_id=? AND idempotency_key=?").bind::<Text,_>(&self.deployment_id).bind::<Text,_>(s).bind::<Text,_>(k).get_result::<ReceiptRow>(&mut c).optional().map_err(sqlerr)?.map(|row| receipt(&self.deployment_id, row)))
     }
     pub async fn seed_migration_fixture(&self, p: &str, n: &str) -> Result<()> {
         let (p, n, d) = (p.to_owned(), n.to_owned(), self.deployment_id.clone());

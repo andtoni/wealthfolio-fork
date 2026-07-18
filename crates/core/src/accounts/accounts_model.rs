@@ -262,7 +262,7 @@ fn default_include_in_net_worth() -> bool {
 }
 
 fn default_name_source() -> String {
-    "provider".to_string()
+    "user".to_string()
 }
 
 impl Account {

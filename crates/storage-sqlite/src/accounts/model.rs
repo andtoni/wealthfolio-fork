@@ -268,7 +268,7 @@ impl From<AccountUpdate> for AccountDB {
             is_archived: domain.is_archived.unwrap_or(false),
             tracking_mode,
             include_in_net_worth: domain.include_in_net_worth.unwrap_or(true),
-            name_source: domain.name_source.unwrap_or_else(|| "provider".to_string()),
+            name_source: domain.name_source.unwrap_or_else(|| "user".to_string()),
         }
     }
 }

@@ -305,6 +305,92 @@ async fn existing_activity_payload_account_mismatch_is_rejected_without_mutation
 }
 
 #[tokio::test]
+async fn repeated_provider_upsert_preserves_user_owned_overlays() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let c = Connection::open(&path).unwrap();
+    c.execute("UPDATE activities SET notes='user note',activity_type_override='FEE',subtype='USER_SUBTYPE',is_user_modified=1,needs_review=1 WHERE id='x1'", []).unwrap();
+
+    store
+        .commit(
+            DisclosureOperation::new(
+                "provider-revision",
+                "alice",
+                generation,
+                DisclosureKind::ActivityUpsert,
+                "x1",
+            )
+            .with_activity(ActivityPayload {
+                account_id: "a1".into(),
+                activity_type: "WITHDRAWAL".into(),
+                status: "POSTED".into(),
+                activity_date: "2026-02-01".into(),
+                amount: "25".into(),
+                currency: "USD".into(),
+                notes: Some("provider note".into()),
+                activity_type_override: Some("PROVIDER_OVERRIDE".into()),
+                needs_review: Some(false),
+            }),
+        )
+        .await
+        .unwrap();
+
+    let overlays: (Option<String>, Option<String>, Option<String>, i64, i64, String) = c.query_row(
+        "SELECT notes,activity_type_override,subtype,is_user_modified,needs_review,amount FROM activities WHERE id='x1'",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+    ).unwrap();
+    assert_eq!(
+        overlays,
+        (
+            Some("user note".into()),
+            Some("FEE".into()),
+            Some("USER_SUBTYPE".into()),
+            1,
+            1,
+            "25".into()
+        )
+    );
+}
+
+#[tokio::test]
+async fn provider_cannot_seed_user_owned_overlays() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let generation = store.grant("alice", "a1").await.unwrap();
+    store
+        .commit(
+            DisclosureOperation::new(
+                "new-provider-row",
+                "alice",
+                generation,
+                DisclosureKind::ActivityUpsert,
+                "provider-new",
+            )
+            .with_activity(ActivityPayload {
+                account_id: "a1".into(),
+                activity_type: "WITHDRAWAL".into(),
+                status: "POSTED".into(),
+                activity_date: "2026-02-01".into(),
+                amount: "25".into(),
+                currency: "USD".into(),
+                notes: Some("provider note".into()),
+                activity_type_override: Some("PROVIDER_OVERRIDE".into()),
+                needs_review: Some(true),
+            }),
+        )
+        .await
+        .unwrap();
+    let c = Connection::open(&path).unwrap();
+    let overlays: (Option<String>, Option<String>, i64) = c.query_row(
+        "SELECT notes,activity_type_override,needs_review FROM activities WHERE id='provider-new'", [],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ).unwrap();
+    assert_eq!(overlays, (None, None, 0));
+}
+
+#[tokio::test]
 async fn revoke_atomically_fences_and_fanout_isolated() {
     let (_dir, path, store) = store(D1).await;
     seed(&path, &[D1], &["alice", "bob"]);

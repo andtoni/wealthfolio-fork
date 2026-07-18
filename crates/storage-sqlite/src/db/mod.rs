@@ -366,6 +366,36 @@ mod migration_tests {
     }
 
     #[test]
+    fn legacy_receipts_are_backfilled_with_canonical_binding() {
+        #[derive(diesel::QueryableByName)]
+        struct BindingRow {
+            #[diesel(sql_type = diesel::sql_types::BigInt)]
+            binding_version: i64,
+            #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+            receipt_binding: Option<String>,
+        }
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("wealthfolio-binding-{nonce}.db"));
+        let mut conn = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+        migrate_until(&mut conn, "20260717000002");
+        conn.batch_execute("PRAGMA foreign_keys = OFF; INSERT INTO disclosure_receipts (deployment_id, person_subject_id, idempotency_key, account_id, access_generation, operation, resource_id, lifecycle_successor_id, outcome, binding_version, receipt_binding) VALUES ('d', 'issuer#p', 'k', 'a', 7, 'activity_upsert', 'r', NULL, 'accepted', 0, NULL);").unwrap();
+        conn.run_pending_migrations(MIGRATIONS).unwrap();
+        let row = diesel::sql_query("SELECT binding_version, receipt_binding FROM disclosure_receipts WHERE idempotency_key='k'")
+            .get_result::<BindingRow>(&mut conn)
+            .unwrap();
+        assert_eq!(row.binding_version, 1);
+        assert_eq!(
+            row.receipt_binding.as_deref(),
+            Some("v1;1:d8:issuer#p1:k1:715:activity_upsert1:r1:a6:<null>8:accepted")
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn embedded_receipt_migrations_guard_and_revert_preserve_rows() {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)

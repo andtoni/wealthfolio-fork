@@ -715,16 +715,13 @@ fn name_source_round_trip_via_serde() {
 }
 
 #[test]
-fn name_source_default_serde_for_provider() {
-    // When name_source is not present in JSON, the serde default kicks in
-    // for the Account struct which has #[serde(default = "default_name_source")] on name_source.
-    // But Account also derives Serialize, Deserialize, so missing fields get their defaults.
-    // Provide all required non-default fields for serde deserialization.
+fn name_source_default_serde_is_fail_safe_user_owned() {
+    // Missing provenance must never authorize a provider to overwrite an existing name.
     let json = r#"{"id":"acc-1","name":"Test","accountType":"CASH","currency":"USD","isDefault":false,"isActive":true,"isArchived":false,"trackingMode":"NOT_SET","createdAt":"2026-01-01T00:00:00","updatedAt":"2026-01-01T00:00:00"}"#;
     let account: Account = serde_json::from_str(json).unwrap();
     assert_eq!(
-        account.name_source, "provider",
-        "name_source defaults to provider via serde default"
+        account.name_source, "user",
+        "missing name provenance defaults to user ownership"
     );
 }
 

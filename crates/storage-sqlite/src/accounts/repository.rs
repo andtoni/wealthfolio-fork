@@ -65,6 +65,8 @@ impl AccountRepositoryTrait for AccountRepository {
         // Capture which optional fields were explicitly set before conversion
         let is_archived_provided = account_update.is_archived.is_some();
         let tracking_mode_provided = account_update.tracking_mode.is_some();
+        let include_in_net_worth_provided = account_update.include_in_net_worth.is_some();
+        let name_source_provided = account_update.name_source.is_some();
 
         self.writer
             .exec_tx(move |tx| {
@@ -96,6 +98,12 @@ impl AccountRepositoryTrait for AccountRepository {
                 }
                 if !tracking_mode_provided {
                     account_db.tracking_mode = existing.tracking_mode;
+                }
+                if !include_in_net_worth_provided {
+                    account_db.include_in_net_worth = existing.include_in_net_worth;
+                }
+                if !name_source_provided {
+                    account_db.name_source = existing.name_source;
                 }
 
                 diesel::update(accounts.find(&account_db.id))

@@ -49,27 +49,72 @@ mod tests {
         let err = require_own_subject(None, "subject").expect_err("missing auth must fail closed");
         assert!(matches!(err, ApiError::Unauthorized(_)));
     }
+
+    #[test]
+    fn receipt_response_serializes_complete_binding_identity() {
+        use wealthfolio_storage_sqlite::bridge_policy::{DisclosureReceipt, ReceiptOutcome};
+        let value = serde_json::to_value(receipt(DisclosureReceipt {
+            deployment_id: "deployment-1".into(),
+            account_id: "account-1".into(),
+            subject: "issuer#subject".into(),
+            idempotency_key: "key-1".into(),
+            access_generation: 2,
+            operation: "activity_upsert".into(),
+            resource_id: "activity-1".into(),
+            lifecycle_successor_id: Some("activity-2".into()),
+            outcome: ReceiptOutcome::Accepted,
+            binding_version: 1,
+            receipt_binding: "v1;binding".into(),
+        }))
+        .unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "deploymentId": "deployment-1",
+                "accountId": "account-1",
+                "subject": "issuer#subject",
+                "idempotencyKey": "key-1",
+                "accessGeneration": 2,
+                "operation": "activity_upsert",
+                "resourceId": "activity-1",
+                "lifecycleSuccessorId": "activity-2",
+                "outcome": "Accepted",
+                "bindingVersion": 1,
+                "receiptBinding": "v1;binding"
+            })
+        );
+    }
 }
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReceiptResponse {
+    deployment_id: String,
+    account_id: String,
     subject: String,
     idempotency_key: String,
     access_generation: i64,
     operation: String,
     resource_id: String,
+    lifecycle_successor_id: Option<String>,
     outcome: String,
+    binding_version: i64,
+    receipt_binding: String,
 }
 
 fn receipt(r: wealthfolio_storage_sqlite::bridge_policy::DisclosureReceipt) -> ReceiptResponse {
     ReceiptResponse {
+        deployment_id: r.deployment_id,
+        account_id: r.account_id,
         subject: r.subject,
         idempotency_key: r.idempotency_key,
         access_generation: r.access_generation,
         operation: r.operation,
         resource_id: r.resource_id,
+        lifecycle_successor_id: r.lifecycle_successor_id,
         outcome: format!("{:?}", r.outcome),
+        binding_version: r.binding_version,
+        receipt_binding: r.receipt_binding,
     }
 }
 
