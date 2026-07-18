@@ -318,7 +318,11 @@ export {
 } from "../shared/connect";
 
 // Provider Connections Commands
-export { listProviderConnections, startProviderConnection } from "../shared/provider-connections";
+export {
+  completePlaidConnection,
+  listProviderConnections,
+  startProviderConnection,
+} from "../shared/provider-connections";
 
 // AI Providers Commands
 export {

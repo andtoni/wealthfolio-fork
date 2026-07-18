@@ -1,43 +1,44 @@
-// Provider Connections — contract-safe local status for typed provider allowlist.
-//
-// No real provider network calls, credentials, or secrets are involved.
-// See apps/server/src/api/provider_connections.rs for the backend module.
-
 import { invoke } from "#platform";
 
-// ────────────────────────────────────────────────────────────────────────────
-// Types
-// ────────────────────────────────────────────────────────────────────────────
-
-/** Canonical provider identifiers. */
 export type ProviderKind = "investec" | "mercury" | "plaid" | "snaptrade";
 
-/** Truthful connection status for one provider. */
+export type ProviderConnectionState =
+  | "configured"
+  | "not_configured"
+  | "unavailable"
+  | "auth_required"
+  | "pending"
+  | "link_ready"
+  | "connected"
+  | "completed";
+
 export interface ProviderConnectionStatus {
   provider: ProviderKind;
-  /** One of `"not_configured"` or `"unavailable"`. Never `"connected"`. */
-  status: "not_configured" | "unavailable" | "auth_required";
-  /** Human-readable explanation suitable for UI display. */
+  status: ProviderConnectionState;
   message: string;
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// API Functions
-// ────────────────────────────────────────────────────────────────────────────
+export interface ProviderConnectionStartResponse extends ProviderConnectionStatus {
+  /** Short-lived Plaid Link token. Never persist this value. */
+  linkToken?: string;
+  /** Short-lived SnapTrade connection redirect. Never persist this value. */
+  redirectUrl?: string;
+}
 
-/**
- * Fetch provider connection statuses.
- * Returns truthful `not_configured` states — no secrets, no synthetic URLs.
- */
+export interface ProviderConnectionCompleteResponse extends ProviderConnectionStatus {}
+
 export async function listProviderConnections(): Promise<ProviderConnectionStatus[]> {
   return invoke<ProviderConnectionStatus[]>("list_provider_connections");
 }
 
-/**
- * Initiate a provider connection attempt. Always fails closed — returns 501
- * Not Implemented for every provider because real provider linking is not
- * yet implemented. No URL, token, or credentials are generated.
- */
-export async function startProviderConnection(provider: ProviderKind): Promise<void> {
-  await invoke("start_provider_connection", { provider });
+export async function startProviderConnection(
+  provider: ProviderKind,
+): Promise<ProviderConnectionStartResponse> {
+  return invoke<ProviderConnectionStartResponse>("start_provider_connection", { provider });
+}
+
+export async function completePlaidConnection(
+  publicToken: string,
+): Promise<ProviderConnectionCompleteResponse> {
+  return invoke<ProviderConnectionCompleteResponse>("complete_plaid_connection", { publicToken });
 }

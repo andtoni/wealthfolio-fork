@@ -1,4 +1,5 @@
 import {
+  completePlaidConnection,
   listProviderConnections,
   startProviderConnection,
   type ProviderConnectionStatus,
@@ -8,6 +9,94 @@ import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+
+const PLAID_SCRIPT_URL = "https://cdn.plaid.com/link/v2/stable/link-initialize.js";
+
+interface PlaidHandler {
+  open(): void;
+  destroy(): void;
+}
+
+interface PlaidApi {
+  create(options: {
+    token: string;
+    onSuccess(publicToken: string): void;
+    onExit(error: { display_message?: string | null } | null): void;
+  }): PlaidHandler;
+}
+
+declare global {
+  interface Window {
+    Plaid?: PlaidApi;
+  }
+}
+
+let plaidScriptPromise: Promise<PlaidApi> | undefined;
+
+export function loadPlaidLink(): Promise<PlaidApi> {
+  if (window.Plaid) return Promise.resolve(window.Plaid);
+  if (plaidScriptPromise) return plaidScriptPromise;
+
+  const promise = new Promise<PlaidApi>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(
+      `script[src="${PLAID_SCRIPT_URL}"]`,
+    );
+    const script = existing ?? document.createElement("script");
+    const onLoad = () => {
+      if (window.Plaid) resolve(window.Plaid);
+      else reject(new Error("Plaid Link did not initialize."));
+    };
+    const onError = () => reject(new Error("Unable to load Plaid Link."));
+    script.addEventListener("load", onLoad, { once: true });
+    script.addEventListener("error", onError, { once: true });
+    if (!existing) {
+      script.src = PLAID_SCRIPT_URL;
+      script.async = true;
+      document.head.appendChild(script);
+    }
+  }).catch((error: unknown) => {
+    plaidScriptPromise = undefined;
+    throw error;
+  });
+  plaidScriptPromise = promise;
+  return promise;
+}
+
+export function validatedHttpsRedirect(value: string): string {
+  const redirect = new URL(value);
+  if (
+    redirect.protocol !== "https:" ||
+    !redirect.hostname ||
+    redirect.username ||
+    redirect.password
+  ) {
+    throw new Error("Provider returned an invalid redirect.");
+  }
+  return redirect.href;
+}
+
+async function openPlaid(linkToken: string): Promise<void> {
+  if (!linkToken) throw new Error("Plaid did not return a link token.");
+  const plaid = await loadPlaidLink();
+  await new Promise<void>((resolve, reject) => {
+    let handler: PlaidHandler;
+    handler = plaid.create({
+      token: linkToken,
+      onSuccess: (publicToken) => {
+        void completePlaidConnection(publicToken)
+          .then(() => resolve())
+          .catch(reject)
+          .finally(() => handler.destroy());
+      },
+      onExit: (error) => {
+        handler.destroy();
+        if (error) reject(new Error(error.display_message || "Plaid Link was not completed."));
+        else resolve();
+      },
+    });
+    handler.open();
+  });
+}
 
 const PROVIDER_NAMES: Record<string, string> = {
   investec: "Investec",
@@ -28,22 +117,30 @@ function ProviderCard({ status }: { status: ProviderConnectionStatus }) {
   const icon = PROVIDER_ICONS[status.provider] ?? <Icons.Link className="h-5 w-5" />;
   const queryClient = useQueryClient();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const supportsBrowserConnect = status.provider === "plaid" || status.provider === "snaptrade";
+  const canConnect = supportsBrowserConnect && status.status === "configured";
 
   const startMutation = useMutation({
-    mutationFn: () => startProviderConnection(status.provider),
-    onSuccess: () => {
-      setErrorMsg(
-        "Provider is not yet available for direct linking. Use CSV import or manually add accounts instead.",
-      );
-      queryClient.invalidateQueries({ queryKey: ["provider-connections"] });
+    mutationFn: async () => {
+      const result = await startProviderConnection(status.provider);
+      if (status.provider === "snaptrade") {
+        if (!result.redirectUrl) throw new Error("SnapTrade did not return a redirect.");
+        window.location.assign(validatedHttpsRedirect(result.redirectUrl));
+        return;
+      }
+      if (status.provider === "plaid") {
+        await openPlaid(result.linkToken ?? "");
+      }
     },
-    onError: (err: Error) => {
-      setErrorMsg(
-        err.message ||
-          "Provider linking is not yet implemented. No URL, token, or credentials were generated.",
-      );
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["provider-connections"] });
+    },
+    onError: (error: Error) => {
+      setErrorMsg(error.message || "Provider connection could not be started.");
     },
   });
+
+  const stateLabel = status.status === "configured" ? "Configured" : status.status.replaceAll("_", " ");
 
   return (
     <Card className="border">
@@ -60,19 +157,21 @@ function ProviderCard({ status }: { status: ProviderConnectionStatus }) {
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <span className="bg-muted text-muted-foreground inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider">
-              {status.status === "not_configured" ? "Off" : status.status}
+              {stateLabel}
             </span>
-            <button
-              type="button"
-              disabled={startMutation.isPending}
-              onClick={() => {
-                setErrorMsg(null);
-                startMutation.mutate();
-              }}
-              className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-8 items-center rounded-md px-3 text-xs font-medium transition-colors disabled:opacity-50"
-            >
-              {startMutation.isPending ? "Connecting..." : "Connect"}
-            </button>
+            {supportsBrowserConnect && (
+              <button
+                type="button"
+                disabled={!canConnect || startMutation.isPending}
+                onClick={() => {
+                  setErrorMsg(null);
+                  startMutation.mutate();
+                }}
+                className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-8 items-center rounded-md px-3 text-xs font-medium transition-colors disabled:opacity-50"
+              >
+                {startMutation.isPending ? "Connecting..." : "Connect"}
+              </button>
+            )}
           </div>
         </div>
         {errorMsg && (
@@ -107,8 +206,8 @@ export function ProviderConnectionsSection() {
         )}
       </p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {providers.map((p) => (
-          <ProviderCard key={p.provider} status={p} />
+        {providers.map((provider) => (
+          <ProviderCard key={provider.provider} status={provider} />
         ))}
       </div>
     </div>

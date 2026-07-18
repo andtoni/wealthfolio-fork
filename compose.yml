@@ -15,6 +15,8 @@ services:
       - "${WF_PORT:-8088}:8088"
     volumes:
       - wealthfolio-data:/data
+    secrets:
+      - finance_sync_control_token
     environment:
       WF_LISTEN_ADDR: "0.0.0.0:8088"
       WF_DB_PATH: "/data/wealthfolio.db"
@@ -67,6 +69,11 @@ services:
       # Required when auth is enabled — set to your app's origin, e.g. https://wealthfolio.example.com
       WF_CORS_ALLOW_ORIGINS: "${WF_CORS_ALLOW_ORIGINS:-}"
       WF_REQUEST_TIMEOUT_MS: "${WF_REQUEST_TIMEOUT_MS:-30000}"
+
+      # Internal, subject-bound provider Connect proxy. The dedicated token is
+      # mounted from an Infisical-rendered ephemeral file and is never sent to browsers.
+      FINANCE_SYNC_CONTROL_URL: "${FINANCE_SYNC_CONTROL_URL:?Set the internal Finance Sync control URL}"
+      FINANCE_SYNC_CONTROL_TOKEN_FILE: "/run/secrets/finance_sync_control_token"
     healthcheck:
       test:
         ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8088/api/v1/healthz"]
@@ -85,6 +92,10 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=64M
+
+secrets:
+  finance_sync_control_token:
+    file: ${FINANCE_SYNC_CONTROL_TOKEN_FILE_SOURCE:?provide an Infisical-rendered ephemeral control token file}
 
 volumes:
   wealthfolio-data:

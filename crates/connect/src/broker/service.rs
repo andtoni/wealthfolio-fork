@@ -21,7 +21,8 @@ use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 use wealthfolio_core::accounts::{
-    account_types, Account, AccountServiceTrait, AccountUpdate, NewAccount, TrackingMode,
+    account_types, Account, AccountServiceTrait, AccountUpdate, NewAccount, ProviderIdentity,
+    ProviderIdentityRepositoryTrait, TrackingMode,
 };
 use wealthfolio_core::activities::{
     compute_idempotency_key, ActivityRepositoryTrait, ActivityServiceTrait, ActivityUpsert,
@@ -78,6 +79,7 @@ pub struct BrokerSyncService {
     snapshot_service: Option<Arc<dyn SnapshotServiceTrait>>,
     quote_store: Option<Arc<dyn QuoteStore>>,
     event_sink: Arc<dyn DomainEventSink>,
+    provider_identity_repository: Option<Arc<dyn ProviderIdentityRepositoryTrait>>,
 }
 
 impl BrokerSyncService {
@@ -104,7 +106,42 @@ impl BrokerSyncService {
             snapshot_service: None,
             quote_store: None,
             event_sink: Arc::new(NoOpDomainEventSink),
+            provider_identity_repository: None,
         }
+    }
+
+    /// Persists immutable provider identity separately from user-owned account overlays.
+    pub fn with_provider_identity_repository(
+        mut self,
+        repository: Arc<dyn ProviderIdentityRepositoryTrait>,
+    ) -> Self {
+        self.provider_identity_repository = Some(repository);
+        self
+    }
+
+    async fn record_provider_identity(
+        &self,
+        account_id: &str,
+        provider_account_id: &str,
+        broker_account: &BrokerAccount,
+    ) -> Result<()> {
+        if let Some(repository) = &self.provider_identity_repository {
+            repository
+                .upsert(ProviderIdentity {
+                    account_id: account_id.to_owned(),
+                    provider: DEFAULT_BROKERAGE_PROVIDER.to_owned(),
+                    provider_account_id: provider_account_id.to_owned(),
+                    lifecycle_state: if broker_account.status.as_deref() == Some("closed") {
+                        "closed".to_owned()
+                    } else {
+                        "active".to_owned()
+                    },
+                    provider_display_name: Some(broker_account.display_name()),
+                    last_sync_at: Some(Utc::now().to_rfc3339()),
+                })
+                .await?;
+        }
+        Ok(())
     }
 
     /// Sets the snapshot service for emitting HoldingsChanged events during broker sync.
@@ -257,6 +294,8 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                 };
 
                 self.account_service.update_account(account_update).await?;
+                self.record_provider_identity(&existing.id, &provider_account_id, broker_account)
+                    .await?;
 
                 debug!(
                     "Updated provider metadata for account {} ({}): name_source={}, provider_name={}",
@@ -301,6 +340,8 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
 
             // Create the account via AccountService (handles FX rate registration)
             let account = self.account_service.create_account(new_account).await?;
+            self.record_provider_identity(&account.id, &provider_account_id, broker_account)
+                .await?;
 
             // Collect info for NewAccountInfo
             new_accounts_info.push(NewAccountInfo {

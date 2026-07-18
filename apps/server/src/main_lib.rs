@@ -49,7 +49,10 @@ use wealthfolio_core::{
 };
 use wealthfolio_device_sync::{engine::DeviceSyncRuntimeState, DeviceEnrollService};
 use wealthfolio_storage_sqlite::{
-    accounts::{AccountRepository, ProvenanceRepository, VerifiedReceiptRepository},
+    accounts::{
+        AccountRepository, ProvenanceRepository, ProviderIdentityRepository,
+        VerifiedReceiptRepository,
+    },
     activities::ActivityRepository,
     agent::{McpAuditRepository, PatRepository},
     ai_chat::AiChatRepository,
@@ -732,6 +735,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
             import_run_repository,
             snapshot_repository.clone(),
         )
+        .with_provider_identity_repository(Arc::new(ProviderIdentityRepository::new(pool.clone())))
         .with_event_sink(domain_event_sink.clone())
         .with_snapshot_service(snapshot_service.clone())
         .with_quote_store(market_data_repository.clone()),

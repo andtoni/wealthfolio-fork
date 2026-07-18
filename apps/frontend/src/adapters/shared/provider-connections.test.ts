@@ -8,68 +8,64 @@ vi.mock("#platform", () => ({
   invoke: mocks.invoke,
 }));
 
-import { listProviderConnections, startProviderConnection } from "./provider-connections";
+import {
+  completePlaidConnection,
+  listProviderConnections,
+  startProviderConnection,
+} from "./provider-connections";
 
 describe("provider-connections shared adapter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("returns typed provider connection statuses", async () => {
-    const fakeResponse = [
-      { provider: "investec", status: "not_configured", message: "Not configured yet." },
-      { provider: "mercury", status: "not_configured", message: "Not configured yet." },
-      { provider: "plaid", status: "not_configured", message: "Not configured yet." },
-      { provider: "snaptrade", status: "not_configured", message: "Not configured yet." },
+  it("returns typed provider connection statuses without secret fields", async () => {
+    const response = [
+      { provider: "investec", status: "configured", message: "Configured." },
+      { provider: "mercury", status: "configured", message: "Configured." },
+      { provider: "plaid", status: "configured", message: "Ready." },
+      { provider: "snaptrade", status: "configured", message: "Ready." },
     ];
-    mocks.invoke.mockResolvedValue(fakeResponse);
+    mocks.invoke.mockResolvedValue(response);
 
     const result = await listProviderConnections();
 
-    expect(result).toHaveLength(4);
-    const providers = result.map((p) => p.provider).sort();
-    expect(providers).toEqual(["investec", "mercury", "plaid", "snaptrade"]);
-
-    for (const p of result) {
-      expect(p.status).toBe("not_configured");
-      expect(p.message).toBeTruthy();
-      // No secret/token/apiKey fields — verify at runtime with Object.keys
-      const keys = Object.keys(p);
-      expect(keys).not.toContain("secret");
-      expect(keys).not.toContain("token");
-      expect(keys).not.toContain("apiKey");
-      expect(keys).not.toContain("accessToken");
-    }
-
+    expect(result).toEqual(response);
     expect(mocks.invoke).toHaveBeenCalledWith("list_provider_connections");
+    for (const provider of result) {
+      expect(Object.keys(provider)).not.toContain("accessToken");
+      expect(Object.keys(provider)).not.toContain("secret");
+    }
   });
 
-  it("propagates backend errors", async () => {
-    mocks.invoke.mockRejectedValue(new Error("Network error"));
+  it("returns only the short-lived provider start material", async () => {
+    const response = {
+      provider: "plaid",
+      status: "link_ready",
+      message: "Ready.",
+      linkToken: "link-short-lived",
+    };
+    mocks.invoke.mockResolvedValue(response);
 
-    await expect(listProviderConnections()).rejects.toThrow("Network error");
-  });
-
-  it("startProviderConnection calls invoke with provider", async () => {
-    mocks.invoke.mockResolvedValue(undefined);
-
-    await startProviderConnection("plaid");
-
+    await expect(startProviderConnection("plaid")).resolves.toEqual(response);
     expect(mocks.invoke).toHaveBeenCalledWith("start_provider_connection", { provider: "plaid" });
   });
 
-  it("startProviderConnection propagates errors", async () => {
-    mocks.invoke.mockRejectedValue(new Error("Not implemented"));
+  it("sends a Plaid public token only to the completion command", async () => {
+    const response = { provider: "plaid", status: "completed", message: "Connected." };
+    mocks.invoke.mockResolvedValue(response);
 
-    await expect(startProviderConnection("investec")).rejects.toThrow("Not implemented");
+    await expect(completePlaidConnection("public-short-lived")).resolves.toEqual(response);
+    expect(mocks.invoke).toHaveBeenCalledWith("complete_plaid_connection", {
+      publicToken: "public-short-lived",
+    });
   });
 
-  it("startProviderConnection accepts all provider kinds", async () => {
-    mocks.invoke.mockResolvedValue(undefined);
+  it("propagates backend failures", async () => {
+    mocks.invoke.mockRejectedValue(new Error("Provider connection service is unavailable."));
 
-    for (const provider of ["investec", "mercury", "plaid", "snaptrade"] as const) {
-      await startProviderConnection(provider);
-      expect(mocks.invoke).toHaveBeenCalledWith("start_provider_connection", { provider });
-    }
+    await expect(listProviderConnections()).rejects.toThrow("unavailable");
+    await expect(startProviderConnection("snaptrade")).rejects.toThrow("unavailable");
+    await expect(completePlaidConnection("public-token")).rejects.toThrow("unavailable");
   });
 });

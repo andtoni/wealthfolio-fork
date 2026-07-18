@@ -413,6 +413,7 @@ export const COMMANDS: CommandMap = {
   // Provider Connections (typed allowlist: investec, mercury, plaid, snaptrade)
   list_provider_connections: { method: "GET", path: "/provider-connections" },
   start_provider_connection: { method: "POST", path: "/provider-connections/{provider}/start" },
+  complete_plaid_connection: { method: "POST", path: "/provider-connections/plaid/complete" },
 };
 
 /**
@@ -499,6 +500,11 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
     case "start_provider_connection": {
       const { provider } = payload as { provider: string };
       url = `${API_PREFIX}/provider-connections/${encodeURIComponent(provider)}/start`;
+      break;
+    }
+    case "complete_plaid_connection": {
+      const { publicToken } = payload as { publicToken: string };
+      body = JSON.stringify({ publicToken });
       break;
     }
     case "update_settings": {
