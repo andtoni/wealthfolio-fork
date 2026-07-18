@@ -74,6 +74,16 @@ pub async fn list_provider_connections() -> Result<Vec<ProviderConnectionStatus>
 #[tauri::command]
 pub async fn start_provider_connection(provider: String) -> Result<(), String> {
     Err(format!(
-        "Direct {provider} linking is not yet implemented. Authenticated subject is required (not available in this runtime)."
+        "Direct {provider} linking is not available in this runtime. Use the authenticated Wealthfolio web application."
     ))
+}
+
+/// Tauri has no server-authenticated subject to bind to Finance Sync, so Plaid
+/// completion must fail closed without inspecting, logging, or persisting the token.
+#[tauri::command]
+pub async fn complete_plaid_connection(_public_token: String) -> Result<(), String> {
+    Err(
+        "Plaid completion is not available in this runtime. Use the authenticated Wealthfolio web application."
+            .to_string(),
+    )
 }
