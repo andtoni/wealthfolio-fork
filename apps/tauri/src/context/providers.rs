@@ -650,6 +650,7 @@ pub async fn initialize_context(
             device_enroll_service,
             device_sync_runtime,
             broker_sync_running,
+            verified_receipt_repository,
             aggregate_eligibility_service,
             health_service,
             custom_provider_service,
