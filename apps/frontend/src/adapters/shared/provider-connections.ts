@@ -3,6 +3,7 @@ import { invoke } from "#platform";
 export type ProviderKind = "investec" | "mercury" | "plaid" | "snaptrade";
 
 export type ProviderConnectionState =
+  | "available"
   | "configured"
   | "not_configured"
   | "unavailable"
@@ -21,6 +22,8 @@ export interface ProviderConnectionStatus {
 export interface ProviderConnectionStartResponse extends ProviderConnectionStatus {
   /** Short-lived Plaid Link token. Never persist this value. */
   linkToken?: string;
+  /** One-use Plaid continuation bound to the authenticated subject. Never persist. */
+  continuationToken?: string;
   /** Short-lived SnapTrade connection redirect. Never persist this value. */
   redirectUrl?: string;
 }
@@ -39,6 +42,10 @@ export async function startProviderConnection(
 
 export async function completePlaidConnection(
   publicToken: string,
+  continuationToken: string,
 ): Promise<ProviderConnectionCompleteResponse> {
-  return invoke<ProviderConnectionCompleteResponse>("complete_plaid_connection", { publicToken });
+  return invoke<ProviderConnectionCompleteResponse>("complete_plaid_connection", {
+    publicToken,
+    continuationToken,
+  });
 }

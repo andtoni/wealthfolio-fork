@@ -503,8 +503,11 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       break;
     }
     case "complete_plaid_connection": {
-      const { publicToken } = payload as { publicToken: string };
-      body = JSON.stringify({ publicToken });
+      const { publicToken, continuationToken } = payload as {
+        publicToken: string;
+        continuationToken: string;
+      };
+      body = JSON.stringify({ publicToken, continuationToken });
       break;
     }
     case "update_settings": {

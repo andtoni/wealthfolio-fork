@@ -63,6 +63,7 @@ async fn spawn_server() -> TestServer {
                 rusqlite::params!["default", "urn:wealthfolio:password#local"],
             )
             .unwrap();
+        connection.execute("INSERT INTO household_membership_epochs(deployment_id,household_id,person_subject_id,role,start_epoch) VALUES('default','test-household','urn:wealthfolio:password#local','owner',1)", []).unwrap();
         connection.execute("INSERT INTO accounts(id,name,account_type,currency,is_default,is_active,is_archived,tracking_mode) VALUES(?,?, 'CASH','USD',0,1,0,'TRANSACTIONS')", rusqlite::params!["bridge-account", "bridge-account"]).unwrap();
         connection
             .execute(
@@ -70,6 +71,8 @@ async fn spawn_server() -> TestServer {
                 rusqlite::params!["bridge-account", "default"],
             )
             .unwrap();
+        connection.execute("INSERT INTO account_ownership_arrangements(deployment_id,id,household_id,account_id,kind,start_epoch) VALUES('default','bridge-account-ownership','test-household','bridge-account','owned',1)", []).unwrap();
+        connection.execute("INSERT INTO account_ownership_participants(deployment_id,arrangement_id,person_subject_id) VALUES('default','bridge-account-ownership','urn:wealthfolio:password#local')", []).unwrap();
         app_router(state, &config)
     };
 
@@ -198,11 +201,28 @@ async fn bearer_bridge_commit_returns_accepted_receipt() {
     assert_eq!(receipt["resourceId"], "bridge-activity");
     assert!(receipt["lifecycleSuccessorId"].is_null());
     assert_eq!(receipt["outcome"], "Accepted");
-    assert_eq!(receipt["bindingVersion"], 1);
+    assert_eq!(receipt["bindingVersion"], 2);
     assert!(receipt["receiptBinding"]
         .as_str()
         .unwrap()
-        .starts_with("v1;"));
+        .starts_with("v2;"));
+    let recovered = server
+        .client
+        .get(format!(
+            "{}/api/v1/bridge/receipts/{}/{}",
+            server.base,
+            urlencoding::encode(subject),
+            idempotency_key
+        ))
+        .header(header::AUTHORIZATION, format!("Bearer {jwt}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(recovered.status(), 200);
+    assert_eq!(
+        recovered.json::<serde_json::Value>().await.unwrap(),
+        receipt
+    );
 }
 
 #[tokio::test]

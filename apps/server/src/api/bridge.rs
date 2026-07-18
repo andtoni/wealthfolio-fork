@@ -131,6 +131,20 @@ pub async fn handle_grant(
     }
 }
 
+pub async fn handle_receipt(
+    State(state): State<Arc<AppState>>,
+    auth: Option<Extension<AuthenticatedSubject>>,
+    axum::extract::Path((subject, key)): axum::extract::Path<(String, String)>,
+) -> Result<Json<ReceiptResponse>, ApiError> {
+    require_own_subject(auth, &subject)?;
+    let store = get_bridge(&state)?;
+    match store.get_receipt(&subject, &key) {
+        Ok(Some(value)) => Ok(Json(receipt(value))),
+        Ok(None) => Err(ApiError::NotFound),
+        Err(_) => Err(ApiError::Internal("receipt lookup failed".into())),
+    }
+}
+
 pub async fn handle_commit(
     State(state): State<Arc<AppState>>,
     auth: Option<Extension<AuthenticatedSubject>>,

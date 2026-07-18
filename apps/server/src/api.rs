@@ -193,6 +193,10 @@ pub fn app_router(state: Arc<AppState>, config: &Config) -> Router {
                 axum::routing::post(crate::api::bridge::handle_commit),
             )
             .route(
+                "/bridge/receipts/{subject}/{key}",
+                axum::routing::get(crate::api::bridge::handle_receipt),
+            )
+            .route(
                 "/bridge/revoke/{subject}/{account}/{key}",
                 axum::routing::post(crate::api::bridge::handle_revoke),
             )

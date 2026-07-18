@@ -34,6 +34,11 @@ fn seed(path: &str, deployments: &[&str], subjects: &[&str]) {
                 params![d, s],
             )
             .unwrap();
+            c.execute(
+                "INSERT INTO household_membership_epochs(deployment_id,household_id,person_subject_id,role,start_epoch) VALUES(?,?,?,?,1)",
+                params![d, format!("{d}-household"), s, "owner"],
+            )
+            .unwrap();
         }
     }
     let owner_deployment = deployments[0];
@@ -44,6 +49,19 @@ fn seed(path: &str, deployments: &[&str], subjects: &[&str]) {
             params![a, owner_deployment],
         )
         .unwrap();
+        let arrangement = format!("{owner_deployment}-{a}-ownership");
+        c.execute(
+            "INSERT INTO account_ownership_arrangements(deployment_id,id,household_id,account_id,kind,start_epoch) VALUES(?,?,?,?,?,1)",
+            params![owner_deployment, arrangement, format!("{owner_deployment}-household"), a, "owned"],
+        )
+        .unwrap();
+        for subject in subjects {
+            c.execute(
+                "INSERT INTO account_ownership_participants(deployment_id,arrangement_id,person_subject_id) VALUES(?,?,?)",
+                params![owner_deployment, arrangement, subject],
+            )
+            .unwrap();
+        }
     }
     for (id, account) in [("x1", "a1"), ("x2", "a2")] {
         c.execute("INSERT INTO activities(id,account_id,activity_type,status,activity_date,amount,currency,is_user_modified,needs_review,created_at,updated_at) VALUES(?,?, 'DEPOSIT','POSTED','2026-01-01','1','USD',0,0,'2026-01-01','2026-01-01')", params![id,account]).unwrap();
@@ -174,6 +192,8 @@ async fn same_subject_and_key_do_not_collide_across_deployments() {
         [D2],
     )
     .unwrap();
+    c.execute("INSERT INTO account_ownership_arrangements(deployment_id,id,household_id,account_id,kind,start_epoch) VALUES(?, 'd2-b1-ownership', ?, 'b1', 'owned', 1)", params![D2, format!("{D2}-household")]).unwrap();
+    c.execute("INSERT INTO account_ownership_participants(deployment_id,arrangement_id,person_subject_id) VALUES(?, 'd2-b1-ownership', 'alice')", [D2]).unwrap();
     c.execute("INSERT INTO activities(id,account_id,activity_type,status,activity_date,amount,currency,is_user_modified,needs_review,created_at,updated_at) VALUES('y1','b1','DEPOSIT','POSTED','2026-01-01','1','USD',0,0,'2026-01-01','2026-01-01')", []).unwrap();
     let pool = db::create_pool(&path).unwrap();
     let writer = db::write_actor::spawn_writer((*pool).clone()).unwrap();
@@ -864,4 +884,51 @@ async fn lifecycle_commit_preserves_complete_overlay_state_exactly() {
     );
     let source_counts: (i64, i64, i64, i64) = c.query_row("SELECT (SELECT count(*) FROM activities WHERE id='p-exact'), (SELECT count(*) FROM activity_taxonomy_assignments WHERE activity_id='p-exact'), (SELECT count(*) FROM spending_activity_splits WHERE activity_id='p-exact'), (SELECT count(*) FROM spending_activity_events WHERE activity_id='p-exact')", [], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).unwrap();
     assert_eq!(source_counts, (0, 0, 0, 0));
+}
+
+#[tokio::test]
+async fn grant_requires_current_owner_membership_and_account_participation() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let connection = Connection::open(&path).unwrap();
+    connection
+        .execute(
+            "INSERT INTO person_subjects(deployment_id,id) VALUES(?, 'mallory')",
+            [D1],
+        )
+        .unwrap();
+    let error = store.grant("mallory", "a1").await.unwrap_err();
+    assert!(matches!(error, BridgePolicyError::Storage(_)));
+}
+
+#[tokio::test]
+async fn replay_rejects_changed_provider_payload() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let operation = DisclosureOperation::new(
+        "payload-bound",
+        "alice",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "payload-bound-activity",
+    )
+    .with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "DEPOSIT".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-07-18".into(),
+        amount: "10.00".into(),
+        currency: "USD".into(),
+        notes: None,
+        activity_type_override: None,
+        needs_review: None,
+    });
+    store.commit(operation.clone()).await.unwrap();
+    let mut changed = operation;
+    changed.activity.as_mut().unwrap().amount = "11.00".into();
+    assert!(matches!(
+        store.commit(changed).await.unwrap_err(),
+        BridgePolicyError::IdempotencyConflict
+    ));
 }

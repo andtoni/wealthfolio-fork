@@ -59,6 +59,7 @@ impl std::str::FromStr for ProviderKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderStatus {
+    Available,
     Configured,
     NotConfigured,
     Unavailable,
@@ -86,6 +87,8 @@ pub struct ProviderConnectionStartResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link_token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub continuation_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub redirect_url: Option<String>,
 }
 
@@ -93,12 +96,14 @@ pub struct ProviderConnectionStartResponse {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PlaidCompleteRequest {
     public_token: String,
+    continuation_token: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct FinanceSyncPlaidCompleteRequest<'a> {
     public_token: &'a str,
+    continuation_token: &'a str,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -257,9 +262,15 @@ fn validate_start(response: &ProviderConnectionStartResponse) -> ApiResult<()> {
                 .link_token
                 .as_deref()
                 .ok_or_else(service_unavailable)?;
+            let continuation = response
+                .continuation_token
+                .as_deref()
+                .ok_or_else(service_unavailable)?;
             if response.redirect_url.is_some()
                 || token.is_empty()
                 || token.len() > MAX_LINK_VALUE_BYTES
+                || continuation.len() < 32
+                || continuation.len() > MAX_LINK_VALUE_BYTES
             {
                 return Err(service_unavailable());
             }
@@ -271,8 +282,10 @@ fn validate_start(response: &ProviderConnectionStartResponse) -> ApiResult<()> {
                 .ok_or_else(service_unavailable)?;
             let url = Url::parse(redirect).map_err(|_| service_unavailable())?;
             if response.link_token.is_some()
+                || response.continuation_token.is_some()
                 || url.scheme() != "https"
-                || !url.has_host()
+                || url.host_str() != Some("app.snaptrade.com")
+                || url.path() != "/snapTrade/redeemToken"
                 || !url.username().is_empty()
                 || url.password().is_some()
                 || redirect.len() > MAX_LINK_VALUE_BYTES
@@ -281,7 +294,10 @@ fn validate_start(response: &ProviderConnectionStartResponse) -> ApiResult<()> {
             }
         }
         ProviderKind::Investec | ProviderKind::Mercury => {
-            if response.link_token.is_some() || response.redirect_url.is_some() {
+            if response.link_token.is_some()
+                || response.continuation_token.is_some()
+                || response.redirect_url.is_some()
+            {
                 return Err(service_unavailable());
             }
         }
@@ -342,9 +358,13 @@ async fn complete_plaid_connection(
         ));
     }
     let token = request.public_token.trim();
+    let continuation = request.continuation_token.trim();
     if token.is_empty()
         || token.len() > MAX_PUBLIC_TOKEN_BYTES
         || token.chars().any(char::is_control)
+        || continuation.len() < 32
+        || continuation.len() > MAX_LINK_VALUE_BYTES
+        || continuation.chars().any(char::is_control)
     {
         return Err(ApiError::BadRequest(
             "Invalid Plaid completion request.".to_string(),
@@ -353,6 +373,7 @@ async fn complete_plaid_connection(
     let subject = subject(auth_subject)?;
     let body = FinanceSyncPlaidCompleteRequest {
         public_token: token,
+        continuation_token: continuation,
     };
     let response: ProviderConnectionCompleteResponse = FinanceSyncControl::from_env()?
         .post(
@@ -406,12 +427,17 @@ mod tests {
             status: ProviderStatus::LinkReady,
             message: "ready".to_string(),
             link_token: None,
-            redirect_url: Some("https://connect.snaptrade.com/redirect".to_string()),
+            continuation_token: None,
+            redirect_url: Some(
+                "https://app.snaptrade.com/snapTrade/redeemToken?token=short-lived".to_string(),
+            ),
         };
         assert!(validate_start(&valid).is_ok());
 
         let insecure = ProviderConnectionStartResponse {
-            redirect_url: Some("http://connect.snaptrade.com/redirect".to_string()),
+            redirect_url: Some(
+                "http://app.snaptrade.com/snapTrade/redeemToken?token=short-lived".to_string(),
+            ),
             ..valid
         };
         assert!(validate_start(&insecure).is_err());

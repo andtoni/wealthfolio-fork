@@ -146,6 +146,21 @@ struct ActivityIdentity {
     status: String,
 }
 #[derive(QueryableByName)]
+struct ActivityProviderState {
+    #[diesel(sql_type=Text)]
+    account_id: String,
+    #[diesel(sql_type=Text)]
+    activity_type: String,
+    #[diesel(sql_type=Text)]
+    status: String,
+    #[diesel(sql_type=Text)]
+    activity_date: String,
+    #[diesel(sql_type=Text)]
+    amount: String,
+    #[diesel(sql_type=Text)]
+    currency: String,
+}
+#[derive(QueryableByName)]
 struct Household {
     #[diesel(sql_type=Text)]
     household_id: String,
@@ -288,6 +303,25 @@ struct State {
 }
 
 // ── SQL helpers that return diesel errors for the transaction closure to convert ──
+fn replay_activity_payload_matches(
+    c: &mut SqliteConnection,
+    resource_id: &str,
+    activity: &ActivityPayload,
+) -> std::result::Result<bool, diesel::result::Error> {
+    let state = sql_query("SELECT account_id,activity_type,status,activity_date,CAST(amount AS TEXT) amount,currency FROM activities WHERE id=?")
+        .bind::<Text, _>(resource_id)
+        .get_result::<ActivityProviderState>(c)
+        .optional()?;
+    Ok(state.is_some_and(|current| {
+        current.account_id == activity.account_id
+            && current.activity_type == activity.activity_type
+            && current.status == activity.status
+            && current.activity_date == activity.activity_date
+            && current.amount == activity.amount
+            && current.currency == activity.currency
+    }))
+}
+
 fn upsert_activity_row(
     c: &mut SqliteConnection,
     resource_id: &str,
@@ -411,8 +445,23 @@ impl BridgePolicyStore {
             subject.to_owned(),
             account.to_owned(),
         );
-        self.writer.exec(move|c|Ok(c.transaction::<_,crate::StorageError,_>(|c|{let h=sql_query("SELECT household_id FROM account_ownership_arrangements WHERE deployment_id=? AND account_id=? AND end_epoch IS NULL UNION SELECT id household_id FROM households WHERE deployment_id=? LIMIT 1").bind::<Text,_>(&d).bind::<Text,_>(&a).bind::<Text,_>(&d).get_result::<Household>(c)?.household_id;sql_query("UPDATE policy_deployments SET access_generation=access_generation+1 WHERE id=?").bind::<Text,_>(&d).execute(c)?;let g=sql_query("SELECT access_generation generation FROM policy_deployments WHERE id=?").bind::<Text,_>(&d).get_result::<Gen>(c)?.generation;sql_query("INSERT INTO account_access_epochs(deployment_id,household_id,account_id,person_subject_id,start_generation) SELECT ?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM account_access_epochs WHERE deployment_id=? AND account_id=? AND person_subject_id=? AND end_generation IS NULL)").bind::<Text,_>(&d).bind::<Text,_>(&h).bind::<Text,_>(&a).bind::<Text,_>(&s).bind::<BigInt,_>(g).bind::<Text,_>(&d).bind::<Text,_>(&a).bind::<Text,_>(&s).execute(c)?;Ok(g)})?)).await.map_err(err)
+        self.writer.exec(move|c|Ok(c.transaction::<_,crate::StorageError,_>(|c|{let h=sql_query("SELECT arrangement.household_id FROM account_ownership_arrangements arrangement JOIN account_ownership_participants participant ON participant.deployment_id=arrangement.deployment_id AND participant.arrangement_id=arrangement.id JOIN household_membership_epochs membership ON membership.deployment_id=arrangement.deployment_id AND membership.household_id=arrangement.household_id AND membership.person_subject_id=participant.person_subject_id WHERE arrangement.deployment_id=? AND arrangement.account_id=? AND arrangement.end_epoch IS NULL AND participant.person_subject_id=? AND membership.end_epoch IS NULL AND membership.role='owner'").bind::<Text,_>(&d).bind::<Text,_>(&a).bind::<Text,_>(&s).get_result::<Household>(c)?.household_id;sql_query("UPDATE policy_deployments SET access_generation=access_generation+1 WHERE id=?").bind::<Text,_>(&d).execute(c)?;let g=sql_query("SELECT access_generation generation FROM policy_deployments WHERE id=?").bind::<Text,_>(&d).get_result::<Gen>(c)?.generation;sql_query("INSERT INTO account_access_epochs(deployment_id,household_id,account_id,person_subject_id,start_generation) SELECT ?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM account_access_epochs WHERE deployment_id=? AND account_id=? AND person_subject_id=? AND end_generation IS NULL)").bind::<Text,_>(&d).bind::<Text,_>(&h).bind::<Text,_>(&a).bind::<Text,_>(&s).bind::<BigInt,_>(g).bind::<Text,_>(&d).bind::<Text,_>(&a).bind::<Text,_>(&s).execute(c)?;Ok(g)})?)).await.map_err(err)
     }
+    pub fn get_receipt(&self, subject: &str, key: &str) -> Result<Option<DisclosureReceipt>> {
+        let mut connection = self
+            .pool
+            .get()
+            .map_err(|error| BridgePolicyError::Storage(error.to_string()))?;
+        let row = sql_query("SELECT person_subject_id subject,idempotency_key,access_generation,operation,resource_id,account_id,lifecycle_successor_id,binding_version,receipt_binding,outcome FROM disclosure_receipts WHERE deployment_id=? AND person_subject_id=? AND idempotency_key=?")
+            .bind::<Text, _>(&self.deployment_id)
+            .bind::<Text, _>(subject)
+            .bind::<Text, _>(key)
+            .get_result::<ReceiptRow>(&mut connection)
+            .optional()
+            .map_err(sqlerr)?;
+        Ok(row.map(|value| receipt(&self.deployment_id, value)))
+    }
+
     pub async fn commit(&self, op: DisclosureOperation) -> Result<DisclosureReceipt> {
         self.commit_with_fault(op, CommitFault::None).await
     }
@@ -435,6 +484,16 @@ impl BridgePolicyStore {
                     .optional()?
                 {
                     let expected_binding = canonical_receipt_binding(&d, &existing.subject, &existing.idempotency_key, existing.access_generation, &existing.operation, &existing.resource_id, &existing.account_id, existing.lifecycle_successor_id.as_deref(), &existing.outcome);
+                    let payload_matches = if op.kind == DisclosureKind::ActivityUpsert
+                        && op.lifecycle_successor_id.is_none()
+                    {
+                        match op.activity.as_ref() {
+                            Some(activity) => replay_activity_payload_matches(c, &op.resource_id, activity)?,
+                            None => false,
+                        }
+                    } else {
+                        true
+                    };
                     if existing.binding_version != RECEIPT_BINDING_VERSION
                         || existing.outcome != "accepted"
                         || existing.operation != op.kind.as_str()
@@ -442,6 +501,7 @@ impl BridgePolicyStore {
                         || existing.access_generation != op.access_generation
                         || existing.lifecycle_successor_id != op.lifecycle_successor_id
                         || op.activity.as_ref().is_some_and(|a| a.account_id != existing.account_id)
+                        || !payload_matches
                         || existing.receipt_binding.as_deref().is_none_or(|b| !is_canonical_receipt_binding(b, &expected_binding))
                     {
                         return Ok(Err(BridgePolicyError::IdempotencyConflict));

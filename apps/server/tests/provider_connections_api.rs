@@ -89,12 +89,15 @@ async fn start_control_server(root: &TempDir) -> tokio::task::JoinHandle<()> {
         (
             StatusCode::OK,
             Json(
-                json!({"provider":"plaid","status":"link_ready","message":"Plaid Link is ready.","linkToken":"short-lived-link"}),
+                json!({"provider":"plaid","status":"link_ready","message":"Plaid Link is ready.","linkToken":"short-lived-link","continuationToken":"continuation-token-1234567890123456"}),
             ),
         )
     }
     async fn complete(headers: HeaderMap, Json(body): Json<Value>) -> impl IntoResponse {
-        if !valid_control_headers(&headers) || body != json!({"publicToken":"public-token"}) {
+        if !valid_control_headers(&headers)
+            || body
+                != json!({"publicToken":"public-token","continuationToken":"continuation-token-1234567890123456"})
+        {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({"error":"request_failed"})),
@@ -155,7 +158,7 @@ async fn routes_fail_closed_without_application_auth() {
                     .method(method)
                     .uri(uri)
                     .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from("{\"publicToken\":\"x\"}"))
+                    .body(Body::from("{\"publicToken\":\"x\",\"continuationToken\":\"continuation-token-1234567890123456\"}"))
                     .unwrap(),
             )
             .await
@@ -243,7 +246,7 @@ async fn plaid_start_and_completion_proxy_only_short_lived_browser_values() {
                 .uri("/api/v1/provider-connections/plaid/complete")
                 .header(header::AUTHORIZATION, format!("Bearer {token}"))
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from("{\"publicToken\":\"public-token\"}"))
+                .body(Body::from("{\"publicToken\":\"public-token\",\"continuationToken\":\"continuation-token-1234567890123456\"}"))
                 .unwrap(),
         )
         .await

@@ -15,13 +15,16 @@ describe("provider connection browser safeguards", () => {
   });
 
   it("accepts only credential-free HTTPS redirects", () => {
-    expect(validatedHttpsRedirect("https://connect.snaptrade.com/start?id=short-lived")).toBe(
-      "https://connect.snaptrade.com/start?id=short-lived",
-    );
-    expect(() => validatedHttpsRedirect("http://connect.snaptrade.com/start")).toThrow(
+    const official =
+      "https://app.snaptrade.com/snapTrade/redeemToken?token=short-lived";
+    expect(validatedHttpsRedirect(official)).toBe(official);
+    expect(() => validatedHttpsRedirect("http://app.snaptrade.com/snapTrade/redeemToken")).toThrow(
       "invalid redirect",
     );
-    expect(() => validatedHttpsRedirect("https://user:secret@example.com/start")).toThrow(
+    expect(() => validatedHttpsRedirect("https://example.com/snapTrade/redeemToken")).toThrow(
+      "invalid redirect",
+    );
+    expect(() => validatedHttpsRedirect("https://user:secret@app.snaptrade.com/snapTrade/redeemToken")).toThrow(
       "invalid redirect",
     );
   });

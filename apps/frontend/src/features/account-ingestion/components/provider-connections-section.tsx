@@ -66,7 +66,8 @@ export function validatedHttpsRedirect(value: string): string {
   const redirect = new URL(value);
   if (
     redirect.protocol !== "https:" ||
-    !redirect.hostname ||
+    redirect.hostname !== "app.snaptrade.com" ||
+    redirect.pathname !== "/snapTrade/redeemToken" ||
     redirect.username ||
     redirect.password
   ) {
@@ -75,15 +76,15 @@ export function validatedHttpsRedirect(value: string): string {
   return redirect.href;
 }
 
-async function openPlaid(linkToken: string): Promise<void> {
-  if (!linkToken) throw new Error("Plaid did not return a link token.");
+async function openPlaid(linkToken: string, continuationToken: string): Promise<void> {
+  if (!linkToken || !continuationToken) throw new Error("Plaid did not return a complete link session.");
   const plaid = await loadPlaidLink();
   await new Promise<void>((resolve, reject) => {
     let handler: PlaidHandler;
     handler = plaid.create({
       token: linkToken,
       onSuccess: (publicToken) => {
-        void completePlaidConnection(publicToken)
+        void completePlaidConnection(publicToken, continuationToken)
           .then(() => resolve())
           .catch(reject)
           .finally(() => handler.destroy());
@@ -118,7 +119,9 @@ function ProviderCard({ status }: { status: ProviderConnectionStatus }) {
   const queryClient = useQueryClient();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const supportsBrowserConnect = status.provider === "plaid" || status.provider === "snaptrade";
-  const canConnect = supportsBrowserConnect && status.status === "configured";
+  const canConnect =
+    supportsBrowserConnect &&
+    (status.status === "available" || status.status === "configured");
 
   const startMutation = useMutation({
     mutationFn: async () => {
@@ -129,7 +132,7 @@ function ProviderCard({ status }: { status: ProviderConnectionStatus }) {
         return;
       }
       if (status.provider === "plaid") {
-        await openPlaid(result.linkToken ?? "");
+        await openPlaid(result.linkToken ?? "", result.continuationToken ?? "");
       }
     },
     onSuccess: () => {

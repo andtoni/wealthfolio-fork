@@ -44,6 +44,7 @@ describe("provider-connections shared adapter", () => {
       status: "link_ready",
       message: "Ready.",
       linkToken: "link-short-lived",
+      continuationToken: "continuation-short-lived",
     };
     mocks.invoke.mockResolvedValue(response);
 
@@ -51,13 +52,16 @@ describe("provider-connections shared adapter", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("start_provider_connection", { provider: "plaid" });
   });
 
-  it("sends a Plaid public token only to the completion command", async () => {
+  it("sends Plaid completion tokens only to the completion command", async () => {
     const response = { provider: "plaid", status: "completed", message: "Connected." };
     mocks.invoke.mockResolvedValue(response);
 
-    await expect(completePlaidConnection("public-short-lived")).resolves.toEqual(response);
+    await expect(
+      completePlaidConnection("public-short-lived", "continuation-short-lived"),
+    ).resolves.toEqual(response);
     expect(mocks.invoke).toHaveBeenCalledWith("complete_plaid_connection", {
       publicToken: "public-short-lived",
+      continuationToken: "continuation-short-lived",
     });
   });
 
@@ -66,6 +70,8 @@ describe("provider-connections shared adapter", () => {
 
     await expect(listProviderConnections()).rejects.toThrow("unavailable");
     await expect(startProviderConnection("snaptrade")).rejects.toThrow("unavailable");
-    await expect(completePlaidConnection("public-token")).rejects.toThrow("unavailable");
+    await expect(
+      completePlaidConnection("public-token", "continuation-token"),
+    ).rejects.toThrow("unavailable");
   });
 });
