@@ -583,7 +583,8 @@ async fn commit_lifecycle_path_migrates_only_projected_candidate() {
         .execute("DELETE FROM activities WHERE id='pending-commit'", [])
         .unwrap();
     let binding = "v2;12:deployment-15:alice9:lifecycle1:115:activity_upsert14:pending-commit2:a11:113:posted-commit8:accepted";
-    oracle_c.execute("INSERT INTO disclosure_receipts(deployment_id,person_subject_id,idempotency_key,account_id,access_generation,operation,resource_id,lifecycle_successor_id,binding_version,receipt_binding,outcome) VALUES('deployment-1','alice','lifecycle','a1',1,'activity_upsert','pending-commit','posted-commit',2,?,'accepted')", [binding]).unwrap();
+    let payload_digest = "9a3ad975dda9967db19e4821c3a0b4ff3e1bc48548c0d7ffa2e69b651131ca24";
+    oracle_c.execute("INSERT INTO disclosure_receipts(deployment_id,person_subject_id,idempotency_key,account_id,access_generation,operation,resource_id,lifecycle_successor_id,binding_version,receipt_binding,payload_digest,outcome) VALUES('deployment-1','alice','lifecycle','a1',1,'activity_upsert','pending-commit','posted-commit',2,?,?,'accepted')", params![binding, payload_digest]).unwrap();
     let actual = canonical_snapshot_for_lifecycle_oracle(&c);
     let expected = canonical_snapshot_for_lifecycle_oracle(&oracle_c);
     assert_eq!(actual.len(), expected.len());
@@ -705,12 +706,38 @@ async fn lifecycle_replay_rejects_different_successor_and_account() {
         DisclosureKind::ActivityUpsert,
         "p-replay-identity",
     )
-    .with_lifecycle("n-replay-identity");
+    .with_lifecycle("n-replay-identity")
+    .with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "DEPOSIT".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-01-01".into(),
+        amount: "1".into(),
+        currency: "USD".into(),
+        notes: None,
+        activity_type_override: None,
+        needs_review: None,
+    });
     store.commit(first.clone()).await.unwrap();
     assert!(matches!(
         store
             .commit(first.clone().with_lifecycle("other-successor"))
             .await,
+        Err(BridgePolicyError::IdempotencyConflict)
+    ));
+    let changed_payload = first.clone().with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "DEPOSIT".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-01-01".into(),
+        amount: "2".into(),
+        currency: "USD".into(),
+        notes: None,
+        activity_type_override: None,
+        needs_review: None,
+    });
+    assert!(matches!(
+        store.commit(changed_payload).await,
         Err(BridgePolicyError::IdempotencyConflict)
     ));
     let wrong_account = first.with_activity(ActivityPayload {

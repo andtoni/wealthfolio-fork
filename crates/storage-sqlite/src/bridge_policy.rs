@@ -5,6 +5,7 @@ use diesel::{
     sql_types::{BigInt, Integer, Nullable, Text},
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DisclosureKind {
@@ -146,21 +147,6 @@ struct ActivityIdentity {
     status: String,
 }
 #[derive(QueryableByName)]
-struct ActivityProviderState {
-    #[diesel(sql_type=Text)]
-    account_id: String,
-    #[diesel(sql_type=Text)]
-    activity_type: String,
-    #[diesel(sql_type=Text)]
-    status: String,
-    #[diesel(sql_type=Text)]
-    activity_date: String,
-    #[diesel(sql_type=Text)]
-    amount: String,
-    #[diesel(sql_type=Text)]
-    currency: String,
-}
-#[derive(QueryableByName)]
 struct Household {
     #[diesel(sql_type=Text)]
     household_id: String,
@@ -185,6 +171,8 @@ struct ReceiptRow {
     binding_version: i64,
     #[diesel(sql_type=Nullable<Text>)]
     receipt_binding: Option<String>,
+    #[diesel(sql_type=Nullable<Text>)]
+    payload_digest: Option<String>,
     #[diesel(sql_type=Text)]
     outcome: String,
 }
@@ -303,23 +291,38 @@ struct State {
 }
 
 // ── SQL helpers that return diesel errors for the transaction closure to convert ──
-fn replay_activity_payload_matches(
-    c: &mut SqliteConnection,
-    resource_id: &str,
-    activity: &ActivityPayload,
-) -> std::result::Result<bool, diesel::result::Error> {
-    let state = sql_query("SELECT account_id,activity_type,status,activity_date,CAST(amount AS TEXT) amount,currency FROM activities WHERE id=?")
-        .bind::<Text, _>(resource_id)
-        .get_result::<ActivityProviderState>(c)
-        .optional()?;
-    Ok(state.is_some_and(|current| {
-        current.account_id == activity.account_id
-            && current.activity_type == activity.activity_type
-            && current.status == activity.status
-            && current.activity_date == activity.activity_date
-            && current.amount == activity.amount
-            && current.currency == activity.currency
-    }))
+fn disclosure_payload_digest(op: &DisclosureOperation) -> String {
+    fn field(hasher: &mut Sha256, value: &str) {
+        hasher.update(value.len().to_string().as_bytes());
+        hasher.update(b":");
+        hasher.update(value.as_bytes());
+    }
+    fn optional_field(hasher: &mut Sha256, value: Option<&str>) {
+        field(hasher, if value.is_some() { "1" } else { "0" });
+        field(hasher, value.unwrap_or(""));
+    }
+
+    let mut hasher = Sha256::new();
+    field(&mut hasher, "wealthfolio-bridge-payload-v1");
+    field(&mut hasher, op.kind.as_str());
+    field(&mut hasher, &op.resource_id);
+    optional_field(&mut hasher, op.lifecycle_successor_id.as_deref());
+    field(&mut hasher, if op.activity.is_some() { "1" } else { "0" });
+    if let Some(activity) = &op.activity {
+        field(&mut hasher, &activity.account_id);
+        field(&mut hasher, &activity.activity_type);
+        field(&mut hasher, &activity.status);
+        field(&mut hasher, &activity.activity_date);
+        field(&mut hasher, &activity.amount);
+        field(&mut hasher, &activity.currency);
+        optional_field(&mut hasher, activity.notes.as_deref());
+        optional_field(&mut hasher, activity.activity_type_override.as_deref());
+        let needs_review = activity
+            .needs_review
+            .map(|value| if value { "true" } else { "false" });
+        optional_field(&mut hasher, needs_review);
+    }
+    format!("{:x}", hasher.finalize())
 }
 
 fn upsert_activity_row(
@@ -452,7 +455,7 @@ impl BridgePolicyStore {
             .pool
             .get()
             .map_err(|error| BridgePolicyError::Storage(error.to_string()))?;
-        let row = sql_query("SELECT person_subject_id subject,idempotency_key,access_generation,operation,resource_id,account_id,lifecycle_successor_id,binding_version,receipt_binding,outcome FROM disclosure_receipts WHERE deployment_id=? AND person_subject_id=? AND idempotency_key=?")
+        let row = sql_query("SELECT person_subject_id subject,idempotency_key,access_generation,operation,resource_id,account_id,lifecycle_successor_id,binding_version,receipt_binding,payload_digest,outcome FROM disclosure_receipts WHERE deployment_id=? AND person_subject_id=? AND idempotency_key=?")
             .bind::<Text, _>(&self.deployment_id)
             .bind::<Text, _>(subject)
             .bind::<Text, _>(key)
@@ -473,10 +476,11 @@ impl BridgePolicyStore {
         let d = self.deployment_id.clone();
         let result: std::result::Result<DisclosureReceipt, BridgePolicyError> = self.writer.exec(move |c| {
             let inner: std::result::Result<DisclosureReceipt, BridgePolicyError> = c.transaction::<_, crate::StorageError, _>(|c| {
+                let payload_digest = disclosure_payload_digest(&op);
                 // Resolve exact durable replays before checking the current generation. A
                 // completed lifecycle removes the pending source row, and a later revoke may
                 // advance the deployment generation without invalidating its durable receipt.
-                if let Some(existing) = sql_query("SELECT person_subject_id subject,idempotency_key,access_generation,operation,resource_id,account_id,lifecycle_successor_id,binding_version,receipt_binding,outcome FROM disclosure_receipts WHERE deployment_id=? AND person_subject_id=? AND idempotency_key=?")
+                if let Some(existing) = sql_query("SELECT person_subject_id subject,idempotency_key,access_generation,operation,resource_id,account_id,lifecycle_successor_id,binding_version,receipt_binding,payload_digest,outcome FROM disclosure_receipts WHERE deployment_id=? AND person_subject_id=? AND idempotency_key=?")
                     .bind::<Text,_>(&d)
                     .bind::<Text,_>(&op.subject)
                     .bind::<Text,_>(&op.idempotency_key)
@@ -484,16 +488,7 @@ impl BridgePolicyStore {
                     .optional()?
                 {
                     let expected_binding = canonical_receipt_binding(&d, &existing.subject, &existing.idempotency_key, existing.access_generation, &existing.operation, &existing.resource_id, &existing.account_id, existing.lifecycle_successor_id.as_deref(), &existing.outcome);
-                    let payload_matches = if op.kind == DisclosureKind::ActivityUpsert
-                        && op.lifecycle_successor_id.is_none()
-                    {
-                        match op.activity.as_ref() {
-                            Some(activity) => replay_activity_payload_matches(c, &op.resource_id, activity)?,
-                            None => false,
-                        }
-                    } else {
-                        true
-                    };
+                    let payload_matches = existing.payload_digest.as_deref() == Some(payload_digest.as_str());
                     if existing.binding_version != RECEIPT_BINDING_VERSION
                         || existing.outcome != "accepted"
                         || existing.operation != op.kind.as_str()
@@ -645,7 +640,7 @@ impl BridgePolicyStore {
 
                 // 7. Write receipt
                 let binding = canonical_receipt_binding(&d, &op.subject, &op.idempotency_key, actual, op.kind.as_str(), &op.resource_id, &account.account_id, op.lifecycle_successor_id.as_deref(), "accepted");
-                sql_query("INSERT INTO disclosure_receipts(deployment_id,person_subject_id,idempotency_key,account_id,access_generation,operation,resource_id,lifecycle_successor_id,binding_version,receipt_binding,outcome) VALUES(?,?,?,?,?,?,?,?,2,?,'accepted')")
+                sql_query("INSERT INTO disclosure_receipts(deployment_id,person_subject_id,idempotency_key,account_id,access_generation,operation,resource_id,lifecycle_successor_id,binding_version,receipt_binding,payload_digest,outcome) VALUES(?,?,?,?,?,?,?,?,2,?,?,'accepted')")
                     .bind::<Text,_>(&d)
                     .bind::<Text,_>(&op.subject)
                     .bind::<Text,_>(&op.idempotency_key)
@@ -655,6 +650,7 @@ impl BridgePolicyStore {
                     .bind::<Text,_>(&op.resource_id)
                     .bind::<Nullable<Text>,_>(op.lifecycle_successor_id.as_deref())
                     .bind::<Text,_>(&binding)
+                    .bind::<Text,_>(&payload_digest)
                     .execute(c)?;
 
                 Ok(Ok(DisclosureReceipt {
@@ -694,7 +690,7 @@ impl BridgePolicyStore {
         let result: std::result::Result<DisclosureReceipt, BridgePolicyError> = self.writer.exec(move |c| {
             let inner: std::result::Result<DisclosureReceipt, BridgePolicyError> = c.transaction::<_, crate::StorageError, _>(|c| {
                 // Idempotency check: look up existing receipt before mutating
-                if let Some(existing) = sql_query("SELECT person_subject_id subject,idempotency_key,access_generation,operation,resource_id,account_id,lifecycle_successor_id,binding_version,receipt_binding,outcome FROM disclosure_receipts WHERE deployment_id=? AND person_subject_id=? AND idempotency_key=?")
+                if let Some(existing) = sql_query("SELECT person_subject_id subject,idempotency_key,access_generation,operation,resource_id,account_id,lifecycle_successor_id,binding_version,receipt_binding,payload_digest,outcome FROM disclosure_receipts WHERE deployment_id=? AND person_subject_id=? AND idempotency_key=?")
                     .bind::<Text,_>(&d)
                     .bind::<Text,_>(&s)
                     .bind::<Text,_>(&k)
@@ -803,7 +799,7 @@ impl BridgePolicyStore {
             .pool
             .get()
             .map_err(|e| BridgePolicyError::Storage(e.to_string()))?;
-        Ok(sql_query("SELECT person_subject_id subject,idempotency_key,access_generation,operation,resource_id,account_id,lifecycle_successor_id,binding_version,receipt_binding,outcome FROM disclosure_receipts WHERE deployment_id=? AND person_subject_id=? AND idempotency_key=?").bind::<Text,_>(&self.deployment_id).bind::<Text,_>(s).bind::<Text,_>(k).get_result::<ReceiptRow>(&mut c).optional().map_err(sqlerr)?.map(|row| receipt(&self.deployment_id, row)))
+        Ok(sql_query("SELECT person_subject_id subject,idempotency_key,access_generation,operation,resource_id,account_id,lifecycle_successor_id,binding_version,receipt_binding,payload_digest,outcome FROM disclosure_receipts WHERE deployment_id=? AND person_subject_id=? AND idempotency_key=?").bind::<Text,_>(&self.deployment_id).bind::<Text,_>(s).bind::<Text,_>(k).get_result::<ReceiptRow>(&mut c).optional().map_err(sqlerr)?.map(|row| receipt(&self.deployment_id, row)))
     }
     pub async fn seed_migration_fixture(&self, p: &str, n: &str) -> Result<()> {
         let (p, n, d) = (p.to_owned(), n.to_owned(), self.deployment_id.clone());
