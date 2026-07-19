@@ -675,6 +675,8 @@ pub fn run() {
             commands::providers_settings::update_market_data_provider_settings,
             commands::providers_settings::list_provider_connections,
             commands::providers_settings::start_provider_connection,
+            commands::providers_settings::list_discovered_provider_accounts,
+            commands::providers_settings::admit_provider_account,
             commands::providers_settings::complete_plaid_connection,
             // AI provider commands
             commands::ai_providers::get_ai_providers,

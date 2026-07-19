@@ -40,6 +40,37 @@ pub struct ProviderConnectionStatus {
     pub message: String,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DiscoveredProviderAsset {
+    pub provider_asset_id: String,
+    pub symbol: String,
+    pub name: String,
+    pub currency: String,
+    pub instrument_type: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DiscoveredProviderAccount {
+    pub connection_id: String,
+    pub provider_account_id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub account_type: String,
+    pub currency: String,
+    pub mask: Option<String>,
+    pub provider_generation: i64,
+    pub assets: Vec<DiscoveredProviderAsset>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProviderAssetMapping {
+    pub provider_asset_id: String,
+    pub wealthfolio_asset_id: String,
+}
+
 const STATUS_NOT_CONFIGURED: &str =
     "Direct provider linking is not yet available. Connect manually via CSV import or add an account.";
 
@@ -75,6 +106,28 @@ pub async fn list_provider_connections() -> Result<Vec<ProviderConnectionStatus>
 pub async fn start_provider_connection(provider: String) -> Result<(), String> {
     Err(format!(
         "Direct {provider} linking is not available in this runtime. Use the authenticated Wealthfolio web application."
+    ))
+}
+
+/// Provider account discovery is web-only; desktop keeps the shared adapter
+/// contract registered while exposing no accounts.
+#[tauri::command]
+pub async fn list_discovered_provider_accounts(
+    _provider: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    Ok(Vec::new())
+}
+
+/// Provider account admission requires the authenticated web runtime.
+#[tauri::command]
+pub async fn admit_provider_account(
+    provider: String,
+    _connection_id: String,
+    _provider_account_id: String,
+    _name: String,
+) -> Result<(), String> {
+    Err(format!(
+        "Direct {provider} account admission is not available in this runtime. Use the authenticated Wealthfolio web application."
     ))
 }
 

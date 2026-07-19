@@ -40,6 +40,7 @@ pub mod custom_provider;
 pub mod fx;
 pub mod goals;
 pub mod health;
+pub mod historical_import;
 pub mod limits;
 pub mod lots;
 pub mod market_data;

@@ -1,0 +1,19 @@
+{
+  "provider": "plaid",
+  "request": {
+    "connectionId": "connection-1",
+    "providerAccountId": "account-1",
+    "wealthfolioAccountId": "wf-1",
+    "authenticatedSubject": "wealthfolio#owner-a",
+    "databaseStateDigest": "sha256:81507dda0ae63fae76dde8b7096e39092a072cdd876949c290e239448ef0cd60",
+    "providerGeneration": 7,
+    "receiverAccessGeneration": 1,
+    "baselineKind": "empty",
+    "assetMappings": []
+  },
+  "response": {
+    "provider": "plaid",
+    "status": "configured",
+    "message": "Provider account was added."
+  }
+}

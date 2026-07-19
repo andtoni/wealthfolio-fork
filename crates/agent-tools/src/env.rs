@@ -26,6 +26,7 @@ use wealthfolio_core::{
     taxonomies::TaxonomyServiceTrait,
 };
 use wealthfolio_spending::cash_activities::CashActivityServiceTrait;
+use wealthfolio_spending::categorization_evidence::CategorizationEvidenceService;
 use wealthfolio_spending::categorization_rules::CategorizationRulesServiceTrait;
 
 /// Data-service surface available to agent tools.
@@ -86,4 +87,7 @@ pub trait AgentEnvironment: Send + Sync {
 
     /// Get the categorization-rules service for the rules-first pass in category proposals.
     fn categorization_rules_service(&self) -> Arc<dyn CategorizationRulesServiceTrait>;
+
+    /// Get the read-only historical categorization-evidence service.
+    fn categorization_evidence_service(&self) -> Arc<CategorizationEvidenceService>;
 }

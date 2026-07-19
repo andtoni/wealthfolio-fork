@@ -61,6 +61,7 @@ use wealthfolio_storage_sqlite::{
     fx::FxRepository,
     goals::GoalRepository,
     health::HealthDismissalRepository,
+    historical_import::HistoricalImportRepository,
     limits::ContributionLimitRepository,
     market_data::{MarketDataRepository, QuoteSyncStateRepository},
     portfolio::{snapshot::SnapshotRepository, valuation::ValuationRepository},
@@ -108,6 +109,7 @@ pub struct AppState {
     pub ai_chat_service: Arc<ChatService<ServerAiEnvironment>>,
     pub data_root: String,
     pub db_path: String,
+    pub deployment_id: String,
     pub instance_id: String,
     pub secret_store: Arc<dyn SecretStore>,
     pub event_bus: EventBus,
@@ -149,6 +151,7 @@ pub struct AppState {
     /// Bridge policy store for household commit/grant/revoke (None when household disabled).
     pub bridge_store: Option<wealthfolio_storage_sqlite::bridge_policy::BridgePolicyStore>,
     pub aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
+    pub historical_import_repository: Arc<HistoricalImportRepository>,
     /// Onboarding service for household credential-bound account onboarding (None when household disabled).
     pub onboarding_state: Option<crate::onboarding::OnboardingState>,
 }
@@ -643,6 +646,22 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         ),
     );
 
+    // Spending: versioned, advisory categorization evidence.
+    let categorization_evidence_repo: Arc<
+        dyn wealthfolio_spending::categorization_evidence::CategorizationEvidenceRepositoryTrait,
+    > = Arc::new(
+        wealthfolio_storage_sqlite::spending::categorization_evidence::CategorizationEvidenceRepository::new(
+            pool.clone(),
+            writer.clone(),
+        ),
+    );
+    let categorization_evidence_service = Arc::new(
+        wealthfolio_spending::categorization_evidence::CategorizationEvidenceService::new(
+            categorization_evidence_repo,
+        ),
+    );
+    let historical_import_repository = Arc::new(HistoricalImportRepository::new(writer.clone()));
+
     // Spending: budget
     let budget_repo: Arc<dyn wealthfolio_spending::budget::BudgetRepositoryTrait> = Arc::new(
         wealthfolio_storage_sqlite::spending::budget::BudgetRepository::new(
@@ -786,6 +805,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         cash_activity_service.clone(),
         activity_taxonomy_assignment_service.clone(),
         categorization_rules_service.clone(),
+        categorization_evidence_service.clone(),
     ));
     let agent_environment: Arc<dyn wealthfolio_agent_tools::AgentEnvironment> =
         ai_environment.clone();
@@ -939,6 +959,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         ai_chat_service,
         data_root,
         db_path,
+        deployment_id: config.deployment_id.clone(),
         instance_id: settings.instance_id,
         secret_store,
         event_bus,
@@ -970,6 +991,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         bridge_store,
         onboarding_state,
         aggregate_eligibility_service,
+        historical_import_repository,
     });
 
     #[cfg(feature = "device-sync")]

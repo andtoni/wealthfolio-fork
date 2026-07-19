@@ -7,6 +7,48 @@ use wealthfolio_storage_sqlite::{bridge_policy::*, db};
 const D1: &str = "deployment-1";
 const D2: &str = "deployment-2";
 
+fn current_state_operation(
+    key: &str,
+    generation: i64,
+    cash: &str,
+    liability: &str,
+) -> DisclosureOperation {
+    current_state_operation_for_account(key, generation, "a1", cash, liability)
+}
+
+fn current_state_operation_for_account(
+    key: &str,
+    generation: i64,
+    account_id: &str,
+    cash: &str,
+    liability: &str,
+) -> DisclosureOperation {
+    let state = CurrentStatePayload {
+        account_id: account_id.into(),
+        provider_connection_id: "deployment-1".into(),
+        provider_incarnation_id: "incarnation".into(),
+        provider_generation: 1,
+        observed_at: "2026-07-18T12:00:00Z".into(),
+        revision: 1,
+        as_of_date: "2026-07-18".into(),
+        currency: "USD".into(),
+        cash_balance: cash.into(),
+        liability_balance: liability.into(),
+        positions: vec![],
+    };
+    let semantic_hash = current_state_semantic_hash(&state);
+    let mut operation = DisclosureOperation::new(
+        key,
+        "alice",
+        generation,
+        DisclosureKind::CurrentStateUpsert,
+        format!("deployment-1:incarnation:current-state:{account_id}"),
+    );
+    operation.semantic_hash = Some(semantic_hash);
+    operation.current_state = Some(state);
+    operation
+}
+
 async fn store(deployment: &str) -> (TempDir, String, BridgePolicyStore) {
     let dir = tempfile::tempdir().unwrap();
     let path = db::init(dir.path().to_str().unwrap()).unwrap();
@@ -223,6 +265,184 @@ async fn same_subject_and_key_do_not_collide_across_deployments() {
 }
 
 #[tokio::test]
+async fn current_state_cash_and_positive_liability_are_atomic_and_retry_bound() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let operation = current_state_operation("current-state", generation, "125", "25");
+
+    let first = store.commit(operation.clone()).await.unwrap();
+    let retry = store.commit(operation.clone()).await.unwrap();
+    assert_eq!(first.receipt_binding, retry.receipt_binding);
+
+    let connection = Connection::open(&path).unwrap();
+    let persisted: (String, String, String, String, i64) = connection
+        .query_row(
+            "SELECT cash_total_account_currency, liability_balance, position_market_values, source, (SELECT count(*) FROM provenance_records WHERE entity_type='snapshot' AND entity_id=holdings_snapshots.id AND role='live_canonical') FROM holdings_snapshots WHERE account_id='a1' AND snapshot_date='2026-07-18'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        persisted,
+        (
+            "125".into(),
+            "25".into(),
+            "{}".into(),
+            "BROKER_IMPORTED".into(),
+            1
+        )
+    );
+
+    let mut relink = current_state_operation("current-state-relink", generation, "130", "25");
+    let relink_state = relink.current_state.as_mut().unwrap();
+    relink_state.provider_generation = 2;
+    relink_state.observed_at = "2026-07-18T13:00:00Z".into();
+    relink_state.revision = 1;
+    relink.semantic_hash = Some(current_state_semantic_hash(relink_state));
+    store.commit(relink).await.unwrap();
+    let provider_generation: i64 = connection
+        .query_row(
+            "SELECT json_extract(source_record_id,'$.providerGeneration') FROM provenance_records WHERE entity_type='snapshot' AND entity_id=(SELECT id FROM holdings_snapshots WHERE account_id='a1' AND snapshot_date='2026-07-18') AND role='live_canonical'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(provider_generation, 2);
+
+    let mut stale_provider =
+        current_state_operation("current-state-stale-provider", generation, "140", "25");
+    let stale_state = stale_provider.current_state.as_mut().unwrap();
+    stale_state.provider_generation = 1;
+    stale_state.observed_at = "2026-07-18T14:00:00Z".into();
+    stale_state.revision = 2;
+    stale_provider.semantic_hash = Some(current_state_semantic_hash(stale_state));
+    assert!(store.commit(stale_provider).await.is_err());
+
+    let altered = current_state_operation("current-state", generation, "126", "25");
+    assert!(matches!(
+        store.commit(altered).await,
+        Err(BridgePolicyError::IdempotencyConflict)
+    ));
+
+    let mut mismatched = current_state_operation("semantic-mismatch", generation, "125", "25");
+    mismatched.semantic_hash = Some("not-the-payload-hash".into());
+    assert!(matches!(
+        store.commit(mismatched).await,
+        Err(BridgePolicyError::SemanticHashMismatch)
+    ));
+}
+
+#[tokio::test]
+async fn current_state_preserves_canonical_liability_and_market_value_precision() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let connection = Connection::open(&path).unwrap();
+    connection.execute("INSERT INTO assets(id,kind,name,is_active,quote_mode,quote_ccy,instrument_type,instrument_symbol,provider_config) VALUES('provider-vti','INVESTMENT','VTI',1,'MARKET','USD','EQUITY','VTI',?)", [serde_json::json!({"providerConnectionId":"deployment-1","providerIncarnationId":"incarnation","providerSymbol":"VTI","providerCurrency":"USD"}).to_string()]).unwrap();
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let mut operation = current_state_operation(
+        "precise-current-state",
+        generation,
+        "0.0000000000000000000000000001",
+        "123.4567890123456789012345678",
+    );
+    let state = operation.current_state.as_mut().unwrap();
+    state.positions.push(CurrentStatePosition {
+        symbol: "VTI".into(),
+        quantity: "0.1234567890123456789012345678".into(),
+        price: "1.0000000000000000000000000001".into(),
+        market_value: "0.1234567890123456789012345679".into(),
+        currency: "USD".into(),
+        cost_basis: Some("0.1000000000000000000000000001".into()),
+    });
+    operation.semantic_hash = Some(current_state_semantic_hash(state));
+    store.commit(operation).await.unwrap();
+    let (liability, market_values): (String, String) = connection
+        .query_row(
+            "SELECT liability_balance,position_market_values FROM holdings_snapshots WHERE account_id='a1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(liability, "123.4567890123456789012345678");
+    assert_eq!(
+        market_values,
+        "{\"provider-vti\":\"0.1234567890123456789012345679\"}"
+    );
+    let decoded: std::collections::HashMap<String, rust_decimal::Decimal> =
+        serde_json::from_str(&market_values).unwrap();
+    assert_eq!(
+        decoded["provider-vti"].to_string(),
+        "0.1234567890123456789012345679"
+    );
+}
+
+#[tokio::test]
+async fn current_state_rejects_stale_generation_and_unauthorized_account_without_writes() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let generation = store.grant("alice", "a1").await.unwrap();
+
+    assert!(matches!(
+        store
+            .commit(current_state_operation(
+                "current-state-stale",
+                generation + 1,
+                "50",
+                "10"
+            ))
+            .await,
+        Err(BridgePolicyError::StaleGeneration { .. })
+    ));
+    assert!(matches!(
+        store
+            .commit(current_state_operation_for_account(
+                "current-state-unauthorized",
+                generation,
+                "a2",
+                "50",
+                "10"
+            ))
+            .await,
+        Err(BridgePolicyError::AccessDenied)
+    ));
+    let connection = Connection::open(path).unwrap();
+    let count: i64 = connection
+        .query_row("SELECT count(*) FROM holdings_snapshots", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[tokio::test]
+async fn current_state_fault_rolls_back_snapshot_provenance_and_receipt() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let error = store
+        .commit_with_fault(
+            current_state_operation("current-state-fault", generation, "50", "10"),
+            CommitFault::AfterSidecar,
+        )
+        .await;
+    assert!(error.is_err());
+    let connection = Connection::open(path).unwrap();
+    for table in [
+        "holdings_snapshots",
+        "provenance_records",
+        "disclosure_receipts",
+    ] {
+        let count: i64 = connection
+            .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 0, "{table} must roll back");
+    }
+}
+
+#[tokio::test]
 async fn resource_owned_by_wrong_account_is_rejected() {
     let (_dir, path, store) = store(D1).await;
     seed(&path, &[D1], &["alice"]);
@@ -295,6 +515,7 @@ async fn existing_activity_payload_account_mismatch_is_rejected_without_mutation
         notes: Some("must not write".into()),
         activity_type_override: None,
         needs_review: Some(true),
+        merchant_context: None,
     };
     let error = store
         .commit(
@@ -351,6 +572,7 @@ async fn repeated_provider_upsert_preserves_user_owned_overlays() {
                 notes: Some("provider note".into()),
                 activity_type_override: Some("PROVIDER_OVERRIDE".into()),
                 needs_review: Some(false),
+                merchant_context: None,
             }),
         )
         .await
@@ -398,6 +620,7 @@ async fn provider_cannot_seed_user_owned_overlays() {
                 notes: Some("provider note".into()),
                 activity_type_override: Some("PROVIDER_OVERRIDE".into()),
                 needs_review: Some(true),
+                merchant_context: None,
             }),
         )
         .await
@@ -408,6 +631,84 @@ async fn provider_cannot_seed_user_owned_overlays() {
         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     ).unwrap();
     assert_eq!(overlays, (None, None, 0));
+}
+
+#[tokio::test]
+async fn merchant_context_is_provider_owned_preserves_user_state_and_binds_retries() {
+    use wealthfolio_storage_sqlite::bridge_policy::MerchantContextV1;
+
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let c = Connection::open(&path).unwrap();
+    c.execute(
+        "UPDATE activities SET metadata='{\"user\":{\"memo\":\"keep\"},\"providerOwned\":{\"other\":true}}',notes='user note',activity_type_override='FEE',is_user_modified=1,needs_review=1 WHERE id='x1'",
+        [],
+    )
+    .unwrap();
+
+    let op = DisclosureOperation::new(
+        "merchant-context",
+        "alice",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "x1",
+    )
+    .with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "WITHDRAWAL".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-02-01T00:00:00Z".into(),
+        amount: "25".into(),
+        currency: "USD".into(),
+        notes: None,
+        activity_type_override: None,
+        needs_review: None,
+        merchant_context: Some(MerchantContextV1 {
+            merchant_key: "merchant:coffee".into(),
+            merchant_key_version: 1,
+            normalization_version: 1,
+        }),
+    });
+    let first = store.commit(op.clone()).await.unwrap();
+    assert_eq!(store.commit(op.clone()).await.unwrap(), first);
+
+    let (metadata, notes, override_type, modified, review): (String, String, String, i64, i64) = c
+        .query_row(
+            "SELECT metadata,notes,activity_type_override,is_user_modified,needs_review FROM activities WHERE id='x1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+        )
+        .unwrap();
+    let metadata: serde_json::Value = serde_json::from_str(&metadata).unwrap();
+    assert_eq!(metadata["user"]["memo"], "keep");
+    assert_eq!(metadata["providerOwned"]["other"], true);
+    assert_eq!(
+        metadata["providerOwned"]["merchantContext"],
+        serde_json::json!({
+            "merchantKey": "merchant:coffee",
+            "merchantKeyVersion": 1,
+            "normalizationVersion": 1
+        })
+    );
+    assert_eq!(
+        (notes, override_type, modified, review),
+        ("user note".into(), "FEE".into(), 1, 1)
+    );
+
+    let mut altered = op;
+    altered
+        .activity
+        .as_mut()
+        .unwrap()
+        .merchant_context
+        .as_mut()
+        .unwrap()
+        .merchant_key = "merchant:tea".into();
+    assert!(matches!(
+        store.commit(altered).await,
+        Err(BridgePolicyError::IdempotencyConflict)
+    ));
 }
 
 #[tokio::test]
@@ -582,9 +883,18 @@ async fn commit_lifecycle_path_migrates_only_projected_candidate() {
     oracle_c
         .execute("DELETE FROM activities WHERE id='pending-commit'", [])
         .unwrap();
-    let binding = "v2;12:deployment-15:alice9:lifecycle1:115:activity_upsert14:pending-commit2:a11:113:posted-commit8:accepted";
-    let payload_digest = "9a3ad975dda9967db19e4821c3a0b4ff3e1bc48548c0d7ffa2e69b651131ca24";
-    oracle_c.execute("INSERT INTO disclosure_receipts(deployment_id,person_subject_id,idempotency_key,account_id,access_generation,operation,resource_id,lifecycle_successor_id,binding_version,receipt_binding,payload_digest,outcome) VALUES('deployment-1','alice','lifecycle','a1',1,'activity_upsert','pending-commit','posted-commit',2,?,?,'accepted')", params![binding, payload_digest]).unwrap();
+    let binding = "v3;12:deployment-15:alice9:lifecycle1:115:activity_upsert14:pending-commit2:a11:113:posted-commit8:accepted1:00:";
+    let payload_digest = disclosure_payload_digest(
+        &DisclosureOperation::new(
+            "lifecycle",
+            "alice",
+            generation,
+            DisclosureKind::ActivityUpsert,
+            "pending-commit",
+        )
+        .with_lifecycle("posted-commit"),
+    );
+    oracle_c.execute("INSERT INTO disclosure_receipts(deployment_id,person_subject_id,idempotency_key,account_id,access_generation,operation,resource_id,lifecycle_successor_id,binding_version,receipt_binding,payload_digest,outcome) VALUES('deployment-1','alice','lifecycle','a1',1,'activity_upsert','pending-commit','posted-commit',3,?,?,'accepted')", params![binding, payload_digest]).unwrap();
     let actual = canonical_snapshot_for_lifecycle_oracle(&c);
     let expected = canonical_snapshot_for_lifecycle_oracle(&oracle_c);
     assert_eq!(actual.len(), expected.len());
@@ -717,6 +1027,7 @@ async fn lifecycle_replay_rejects_different_successor_and_account() {
         notes: None,
         activity_type_override: None,
         needs_review: None,
+        merchant_context: None,
     });
     store.commit(first.clone()).await.unwrap();
     assert!(matches!(
@@ -735,6 +1046,7 @@ async fn lifecycle_replay_rejects_different_successor_and_account() {
         notes: None,
         activity_type_override: None,
         needs_review: None,
+        merchant_context: None,
     });
     assert!(matches!(
         store.commit(changed_payload).await,
@@ -750,6 +1062,7 @@ async fn lifecycle_replay_rejects_different_successor_and_account() {
         notes: None,
         activity_type_override: None,
         needs_review: None,
+        merchant_context: None,
     });
     assert!(matches!(
         store.commit(wrong_account).await,
@@ -950,6 +1263,7 @@ async fn replay_rejects_changed_provider_payload() {
         notes: None,
         activity_type_override: None,
         needs_review: None,
+        merchant_context: None,
     });
     store.commit(operation.clone()).await.unwrap();
     let mut changed = operation;

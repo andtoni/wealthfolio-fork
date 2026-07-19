@@ -414,6 +414,8 @@ export const COMMANDS: CommandMap = {
   list_provider_connections: { method: "GET", path: "/provider-connections" },
   start_provider_connection: { method: "POST", path: "/provider-connections/{provider}/start" },
   complete_plaid_connection: { method: "POST", path: "/provider-connections/plaid/complete" },
+  list_discovered_provider_accounts: { method: "GET", path: "/provider-connections/{provider}/accounts" },
+  admit_provider_account: { method: "POST", path: "/provider-connections/{provider}/admit" },
 };
 
 /**
@@ -500,6 +502,19 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
     case "start_provider_connection": {
       const { provider } = payload as { provider: string };
       url = `${API_PREFIX}/provider-connections/${encodeURIComponent(provider)}/start`;
+      break;
+    }
+    case "list_discovered_provider_accounts":
+    case "admit_provider_account": {
+      const { provider } = payload as { provider: string };
+      const action = command === "admit_provider_account" ? "admit" : "accounts";
+      url = `${API_PREFIX}/provider-connections/${encodeURIComponent(provider)}/${action}`;
+      if (command === "admit_provider_account") {
+        const { connectionId, providerAccountId, name } = payload as {
+          connectionId: string; providerAccountId: string; name: string;
+        };
+        body = JSON.stringify({ connectionId, providerAccountId, name });
+      }
       break;
     }
     case "complete_plaid_connection": {

@@ -12,6 +12,7 @@ pub enum DisclosureKind {
     ActivityUpsert,
     ActivityDelete,
     ProjectionFence,
+    CurrentStateUpsert,
 }
 impl DisclosureKind {
     fn as_str(self) -> &'static str {
@@ -19,8 +20,20 @@ impl DisclosureKind {
             Self::ActivityUpsert => "activity_upsert",
             Self::ActivityDelete => "activity_delete",
             Self::ProjectionFence => "projection_fence",
+            Self::CurrentStateUpsert => "current_state_upsert",
         }
     }
+}
+
+/// Strict Finance merchant identity context. This is advisory provider data only;
+/// category, rule, confidence, and other classification fields are deliberately
+/// not representable on this boundary.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MerchantContextV1 {
+    pub merchant_key: String,
+    pub merchant_key_version: i32,
+    pub normalization_version: i32,
 }
 
 /// Payload for creating or updating an activity row via the bridge.
@@ -35,6 +48,36 @@ pub struct ActivityPayload {
     pub notes: Option<String>,
     pub activity_type_override: Option<String>,
     pub needs_review: Option<bool>,
+    #[serde(default)]
+    pub merchant_context: Option<MerchantContextV1>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CurrentStatePosition {
+    pub symbol: String,
+    pub quantity: String,
+    pub price: String,
+    pub market_value: String,
+    pub currency: String,
+    pub cost_basis: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CurrentStatePayload {
+    pub account_id: String,
+    pub provider_connection_id: String,
+    pub provider_incarnation_id: String,
+    pub provider_generation: i64,
+    pub observed_at: String,
+    pub revision: i64,
+    pub as_of_date: String,
+    pub currency: String,
+    pub cash_balance: String,
+    /// Positive debt magnitude.
+    pub liability_balance: String,
+    pub positions: Vec<CurrentStatePosition>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,6 +92,10 @@ pub struct DisclosureOperation {
     /// When present, signals a pending->posted lifecycle migration from
     /// resource_id (pending) to lifecycle_successor_id (posted).
     pub lifecycle_successor_id: Option<String>,
+    #[serde(default)]
+    pub semantic_hash: Option<String>,
+    #[serde(default)]
+    pub current_state: Option<CurrentStatePayload>,
 }
 impl DisclosureOperation {
     pub fn new(
@@ -66,6 +113,8 @@ impl DisclosureOperation {
             resource_id: r.into(),
             activity: None,
             lifecycle_successor_id: None,
+            semantic_hash: None,
+            current_state: None,
         }
     }
 
@@ -97,6 +146,8 @@ pub struct DisclosureReceipt {
     pub outcome: ReceiptOutcome,
     pub binding_version: i64,
     pub receipt_binding: String,
+    /// Finance semantic hash for CurrentStateUpsert receipts.
+    pub semantic_hash: Option<String>,
 }
 #[derive(Debug, thiserror::Error)]
 pub enum BridgePolicyError {
@@ -110,6 +161,12 @@ pub enum BridgePolicyError {
     IdempotencyConflict,
     #[error("activity account does not match the authorized resource")]
     ActivityAccountMismatch,
+    #[error("current state payload is invalid: {0}")]
+    InvalidCurrentState(String),
+    #[error("current state semantic hash does not match payload")]
+    SemanticHashMismatch,
+    #[error("provider symbol and currency resolve ambiguously")]
+    AmbiguousAsset,
     #[error("storage: {0}")]
     Storage(String),
 }
@@ -177,6 +234,9 @@ struct ReceiptRow {
     outcome: String,
 }
 fn receipt(deployment_id: &str, r: ReceiptRow) -> DisclosureReceipt {
+    let semantic_hash = (r.operation == "current_state_upsert")
+        .then_some(r.payload_digest.clone())
+        .flatten();
     DisclosureReceipt {
         deployment_id: deployment_id.to_owned(),
         account_id: r.account_id,
@@ -193,10 +253,11 @@ fn receipt(deployment_id: &str, r: ReceiptRow) -> DisclosureReceipt {
         },
         binding_version: r.binding_version,
         receipt_binding: r.receipt_binding.unwrap_or_default(),
+        semantic_hash,
     }
 }
 
-const RECEIPT_BINDING_VERSION: i64 = 2;
+const RECEIPT_BINDING_VERSION: i64 = 3;
 
 // The binding is deliberately explicit so every receipt identity field is visible at call sites.
 // V2 encodes successor presence separately so None cannot collide with a literal sentinel value.
@@ -211,9 +272,11 @@ fn canonical_receipt_binding(
     account: &str,
     successor: Option<&str>,
     outcome: &str,
+    semantic_hash: Option<&str>,
 ) -> String {
     let generation = generation.to_string();
     let successor_present = if successor.is_some() { "1" } else { "0" };
+    let semantic_hash_present = if semantic_hash.is_some() { "1" } else { "0" };
     let fields = [
         deployment,
         subject,
@@ -225,8 +288,10 @@ fn canonical_receipt_binding(
         successor_present,
         successor.unwrap_or(""),
         outcome,
+        semantic_hash_present,
+        semantic_hash.unwrap_or(""),
     ];
-    let mut out = String::from("v2;");
+    let mut out = String::from("v3;");
     for field in fields {
         out.push_str(&field.len().to_string());
         out.push(':');
@@ -236,11 +301,11 @@ fn canonical_receipt_binding(
 }
 
 fn is_canonical_receipt_binding(binding: &str, expected: &str) -> bool {
-    if binding != expected || !binding.starts_with("v2;") {
+    if binding != expected || !binding.starts_with("v3;") {
         return false;
     }
     let mut rest = &binding.as_bytes()[3..];
-    for _ in 0..10 {
+    for _ in 0..12 {
         let Some(colon) = rest.iter().position(|b| *b == b':') else {
             return false;
         };
@@ -291,7 +356,14 @@ struct State {
 }
 
 // ── SQL helpers that return diesel errors for the transaction closure to convert ──
-fn disclosure_payload_digest(op: &DisclosureOperation) -> String {
+pub fn disclosure_payload_digest(op: &DisclosureOperation) -> String {
+    if matches!(op.kind, DisclosureKind::CurrentStateUpsert) {
+        if let (Some(state), Some(semantic_hash)) = (&op.current_state, &op.semantic_hash) {
+            if semantic_hash == &current_state_semantic_hash(state) {
+                return semantic_hash.clone();
+            }
+        }
+    }
     fn field(hasher: &mut Sha256, value: &str) {
         hasher.update(value.len().to_string().as_bytes());
         hasher.update(b":");
@@ -321,8 +393,204 @@ fn disclosure_payload_digest(op: &DisclosureOperation) -> String {
             .needs_review
             .map(|value| if value { "true" } else { "false" });
         optional_field(&mut hasher, needs_review);
+        field(
+            &mut hasher,
+            if activity.merchant_context.is_some() {
+                "1"
+            } else {
+                "0"
+            },
+        );
+        if let Some(context) = &activity.merchant_context {
+            field(&mut hasher, &context.merchant_key);
+            field(&mut hasher, &context.merchant_key_version.to_string());
+            field(&mut hasher, &context.normalization_version.to_string());
+        }
+    }
+    optional_field(&mut hasher, op.semantic_hash.as_deref());
+    field(
+        &mut hasher,
+        if op.current_state.is_some() { "1" } else { "0" },
+    );
+    if let Some(state) = &op.current_state {
+        field(&mut hasher, &state.account_id);
+        field(&mut hasher, &state.provider_connection_id);
+        field(&mut hasher, &state.provider_incarnation_id);
+        field(&mut hasher, &state.provider_generation.to_string());
+        field(&mut hasher, &state.observed_at);
+        field(&mut hasher, &state.revision.to_string());
+        field(&mut hasher, &state.as_of_date);
+        field(&mut hasher, &state.currency);
+        field(&mut hasher, &state.cash_balance);
+        field(&mut hasher, &state.liability_balance);
+        field(&mut hasher, &state.positions.len().to_string());
+        for position in &state.positions {
+            field(&mut hasher, &position.symbol);
+            field(&mut hasher, &position.quantity);
+            field(&mut hasher, &position.price);
+            field(&mut hasher, &position.market_value);
+            field(&mut hasher, &position.currency);
+            optional_field(&mut hasher, position.cost_basis.as_deref());
+        }
     }
     format!("{:x}", hasher.finalize())
+}
+
+fn canonical_json(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => "null".into(),
+        serde_json::Value::Bool(value) => value.to_string(),
+        serde_json::Value::Number(value) => value.to_string(),
+        serde_json::Value::String(value) => {
+            serde_json::to_string(value).expect("string serialization")
+        }
+        serde_json::Value::Array(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(canonical_json)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        serde_json::Value::Object(values) => {
+            let mut keys = values.keys().collect::<Vec<_>>();
+            keys.sort();
+            format!(
+                "{{{}}}",
+                keys.into_iter()
+                    .map(|key| format!(
+                        "{}:{}",
+                        serde_json::to_string(key).expect("key serialization"),
+                        canonical_json(&values[key])
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        }
+    }
+}
+
+pub fn current_state_semantic_hash(state: &CurrentStatePayload) -> String {
+    let positions = state
+        .positions
+        .iter()
+        .map(|position| {
+            let mut value = serde_json::json!({
+                "symbol": position.symbol,
+                "quantity": position.quantity,
+                "price": position.price,
+                "marketValue": position.market_value,
+                "currency": position.currency,
+            });
+            if let Some(cost_basis) = &position.cost_basis {
+                value.as_object_mut().expect("position object").insert(
+                    "costBasis".into(),
+                    serde_json::Value::String(cost_basis.clone()),
+                );
+            }
+            value
+        })
+        .collect::<Vec<_>>();
+    let value = serde_json::json!({
+        "accountId": state.account_id,
+        "providerConnectionId": state.provider_connection_id,
+        "providerIncarnationId": state.provider_incarnation_id,
+        "providerGeneration": state.provider_generation,
+        "observedAt": state.observed_at,
+        "revision": state.revision,
+        "asOfDate": state.as_of_date,
+        "currency": state.currency,
+        "cashBalance": state.cash_balance,
+        "liabilityBalance": state.liability_balance,
+        "positions": positions,
+    });
+    format!("{:x}", Sha256::digest(canonical_json(&value).as_bytes()))
+}
+
+fn validate_current_state_operation(op: &DisclosureOperation) -> Result<()> {
+    use chrono::NaiveDate;
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    match op.kind {
+        DisclosureKind::CurrentStateUpsert => {
+            let state = op.current_state.as_ref().ok_or_else(|| {
+                BridgePolicyError::InvalidCurrentState("current_state is required".into())
+            })?;
+            let expected_suffix = format!(":current-state:{}", state.account_id);
+            if op.activity.is_some()
+                || op.lifecycle_successor_id.is_some()
+                || !op.resource_id.ends_with(&expected_suffix)
+            {
+                return Err(BridgePolicyError::InvalidCurrentState(
+                    "operation fields do not match current state account".into(),
+                ));
+            }
+            if state.provider_connection_id.trim().is_empty()
+                || state.provider_incarnation_id.trim().is_empty()
+                || state.provider_generation < 0
+                || state.revision < 0
+                || chrono::DateTime::parse_from_rfc3339(&state.observed_at).is_err()
+                || state.currency.len() != 3
+                || state.currency != state.currency.to_uppercase()
+                || NaiveDate::parse_from_str(&state.as_of_date, "%Y-%m-%d").is_err()
+            {
+                return Err(BridgePolicyError::InvalidCurrentState(
+                    "invalid date or account currency".into(),
+                ));
+            }
+            Decimal::from_str(&state.cash_balance).map_err(|_| {
+                BridgePolicyError::InvalidCurrentState("invalid cash balance".into())
+            })?;
+            let liability = Decimal::from_str(&state.liability_balance).map_err(|_| {
+                BridgePolicyError::InvalidCurrentState("invalid liability balance".into())
+            })?;
+            if liability.is_sign_negative() {
+                return Err(BridgePolicyError::InvalidCurrentState(
+                    "liability must be a positive debt magnitude".into(),
+                ));
+            }
+            let mut identities = std::collections::HashSet::new();
+            for position in &state.positions {
+                if position.symbol.trim().is_empty()
+                    || position.currency.len() != 3
+                    || position.currency != position.currency.to_uppercase()
+                    || !identities.insert((
+                        position.symbol.trim().to_uppercase(),
+                        position.currency.clone(),
+                    ))
+                {
+                    return Err(BridgePolicyError::InvalidCurrentState(
+                        "invalid or duplicate position identity".into(),
+                    ));
+                }
+                for value in [&position.quantity, &position.price, &position.market_value] {
+                    Decimal::from_str(value).map_err(|_| {
+                        BridgePolicyError::InvalidCurrentState("invalid position decimal".into())
+                    })?;
+                }
+                if let Some(value) = &position.cost_basis {
+                    Decimal::from_str(value).map_err(|_| {
+                        BridgePolicyError::InvalidCurrentState("invalid cost basis".into())
+                    })?;
+                }
+            }
+            let supplied = op
+                .semantic_hash
+                .as_deref()
+                .ok_or(BridgePolicyError::SemanticHashMismatch)?;
+            if supplied != current_state_semantic_hash(state) {
+                return Err(BridgePolicyError::SemanticHashMismatch);
+            }
+        }
+        _ if op.current_state.is_some() || op.semantic_hash.is_some() => {
+            return Err(BridgePolicyError::InvalidCurrentState(
+                "current state fields are only valid for CurrentStateUpsert".into(),
+            ))
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn upsert_activity_row(
@@ -330,17 +598,56 @@ fn upsert_activity_row(
     resource_id: &str,
     act: &ActivityPayload,
 ) -> std::result::Result<(), diesel::result::Error> {
-    if let Some(existing) = sql_query("SELECT account_id FROM activities WHERE id=?")
-        .bind::<Text, _>(resource_id)
-        .get_result::<Account>(c)
-        .optional()?
-    {
-        if existing.account_id != act.account_id {
-            return Err(diesel::result::Error::RollbackTransaction);
-        }
+    #[derive(QueryableByName)]
+    struct ExistingActivity {
+        #[diesel(sql_type = Text)]
+        account_id: String,
+        #[diesel(sql_type = Nullable<Text>)]
+        metadata: Option<String>,
     }
+
+    let existing = sql_query("SELECT account_id, metadata FROM activities WHERE id=?")
+        .bind::<Text, _>(resource_id)
+        .get_result::<ExistingActivity>(c)
+        .optional()?;
+    if existing
+        .as_ref()
+        .is_some_and(|row| row.account_id != act.account_id)
+    {
+        return Err(diesel::result::Error::RollbackTransaction);
+    }
+
+    let metadata = if let Some(context) = &act.merchant_context {
+        let mut metadata = existing
+            .and_then(|row| row.metadata)
+            .and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
+            .filter(serde_json::Value::is_object)
+            .unwrap_or_else(|| serde_json::json!({}));
+        let root = metadata.as_object_mut().expect("metadata object");
+        let provider_owned = root
+            .entry("providerOwned")
+            .or_insert_with(|| serde_json::json!({}));
+        if !provider_owned.is_object() {
+            *provider_owned = serde_json::json!({});
+        }
+        provider_owned
+            .as_object_mut()
+            .expect("provider-owned object")
+            .insert(
+                "merchantContext".into(),
+                serde_json::json!({
+                    "merchantKey": context.merchant_key,
+                    "merchantKeyVersion": context.merchant_key_version,
+                    "normalizationVersion": context.normalization_version,
+                }),
+            );
+        Some(metadata.to_string())
+    } else {
+        None
+    };
+
     sql_query(
-        "INSERT INTO activities(id,account_id,activity_type,status,activity_date,amount,currency,notes,activity_type_override,is_user_modified,needs_review,created_at,updated_at) VALUES(?,?,?,?,?,?,?,NULL,NULL,0,0,'now','now') ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,activity_type=excluded.activity_type,status=excluded.status,activity_date=excluded.activity_date,amount=excluded.amount,currency=excluded.currency,updated_at='now'"
+        "INSERT INTO activities(id,account_id,activity_type,status,activity_date,amount,currency,notes,activity_type_override,metadata,is_user_modified,needs_review,created_at,updated_at) VALUES(?,?,?,?,?,?,?,NULL,NULL,?,0,0,'now','now') ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,activity_type=excluded.activity_type,status=excluded.status,activity_date=excluded.activity_date,amount=excluded.amount,currency=excluded.currency,metadata=coalesce(excluded.metadata,activities.metadata),updated_at='now'"
     )
         .bind::<Text,_>(resource_id)
         .bind::<Text,_>(&act.account_id)
@@ -349,6 +656,7 @@ fn upsert_activity_row(
         .bind::<Text,_>(&act.activity_date)
         .bind::<Text,_>(&act.amount)
         .bind::<Text,_>(&act.currency)
+        .bind::<Nullable<Text>,_>(metadata)
         .execute(c)?;
     Ok(())
 }
@@ -424,6 +732,186 @@ fn do_delete_activity(
     Ok(())
 }
 
+#[derive(QueryableByName)]
+struct AssetIdRow {
+    #[diesel(sql_type = Text)]
+    id: String,
+}
+
+fn resolve_current_state_assets(
+    c: &mut SqliteConnection,
+    state: &CurrentStatePayload,
+) -> Result<Vec<(CurrentStatePosition, String)>> {
+    let mut resolved = Vec::with_capacity(state.positions.len());
+    for position in &state.positions {
+        let symbol = position.symbol.trim().to_uppercase();
+        // Provider positions may only resolve through an immutable, provider-owned
+        // mapping. Never co-opt a user's generic symbol/currency asset and never
+        // manufacture a MANUAL asset in this ingestion transaction.
+        let rows = sql_query("SELECT id FROM assets WHERE is_active=1 AND json_extract(provider_config,'$.providerConnectionId')=? AND json_extract(provider_config,'$.providerIncarnationId')=? AND json_extract(provider_config,'$.providerSymbol')=? AND json_extract(provider_config,'$.providerCurrency')=? ORDER BY id")
+            .bind::<Text, _>(&state.provider_connection_id)
+            .bind::<Text, _>(&state.provider_incarnation_id)
+            .bind::<Text, _>(&symbol)
+            .bind::<Text, _>(&position.currency)
+            .load::<AssetIdRow>(c)
+            .map_err(sqlerr)?;
+        if rows.len() != 1 {
+            return Err(BridgePolicyError::AmbiguousAsset);
+        }
+        resolved.push((position.clone(), rows[0].id.clone()));
+    }
+    Ok(resolved)
+}
+
+fn persist_current_state(
+    c: &mut SqliteConnection,
+    op: &DisclosureOperation,
+    resolved: &[(CurrentStatePosition, String)],
+) -> std::result::Result<(), diesel::result::Error> {
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    let state = op.current_state.as_ref().expect("validated current state");
+    let snapshot_id = wealthfolio_core::portfolio::snapshot::AccountStateSnapshot::stable_id(
+        &state.account_id,
+        chrono::NaiveDate::parse_from_str(&state.as_of_date, "%Y-%m-%d").expect("validated date"),
+    );
+    let now = chrono::Utc::now();
+
+    #[derive(QueryableByName)]
+    struct ExistingSnapshot {
+        #[diesel(sql_type = Text)]
+        source: String,
+        #[diesel(sql_type = Nullable<Text>)]
+        source_record_id: Option<String>,
+    }
+    if let Some(existing) = sql_query("SELECT snapshot.source, provenance.source_record_id FROM holdings_snapshots snapshot LEFT JOIN provenance_records provenance ON provenance.entity_type='snapshot' AND provenance.entity_id=snapshot.id WHERE snapshot.id=?")
+        .bind::<Text, _>(&snapshot_id)
+        .get_result::<ExistingSnapshot>(c)
+        .optional()?
+    {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct SnapshotProvenance {
+            provider_connection_id: String,
+            provider_incarnation_id: String,
+            provider_generation: i64,
+            observed_at: String,
+            revision: i64,
+        }
+        let prior = existing
+            .source_record_id
+            .as_deref()
+            .and_then(|value| serde_json::from_str::<SnapshotProvenance>(value).ok());
+        let incoming_observed = chrono::DateTime::parse_from_rfc3339(&state.observed_at)
+            .expect("validated observation");
+        let replaceable = existing.source == "BROKER_IMPORTED"
+            && prior.as_ref().is_some_and(|prior| {
+                prior.provider_connection_id == state.provider_connection_id
+                    && prior.provider_incarnation_id == state.provider_incarnation_id
+                    && state.provider_generation >= prior.provider_generation
+                    && chrono::DateTime::parse_from_rfc3339(&prior.observed_at)
+                        .is_ok_and(|observed| {
+                            (incoming_observed, state.revision) > (observed, prior.revision)
+                        })
+            });
+        if !replaceable {
+            return Err(diesel::result::Error::RollbackTransaction);
+        }
+    }
+
+    let mut positions = serde_json::Map::new();
+    let mut market_values = serde_json::Map::new();
+    let mut total_cost_basis = Decimal::ZERO;
+
+    sql_query("INSERT INTO holdings_snapshots(id,account_id,snapshot_date,currency,source) VALUES(?,?,?,?,'BROKER_IMPORTED') ON CONFLICT(id) DO NOTHING")
+        .bind::<Text, _>(&snapshot_id)
+        .bind::<Text, _>(&state.account_id)
+        .bind::<Text, _>(&state.as_of_date)
+        .bind::<Text, _>(&state.currency)
+        .execute(c)?;
+    sql_query("DELETE FROM snapshot_positions WHERE snapshot_id=?")
+        .bind::<Text, _>(&snapshot_id)
+        .execute(c)?;
+
+    for (position, asset_id) in resolved {
+        let quantity = Decimal::from_str(&position.quantity).expect("validated quantity");
+        let price = Decimal::from_str(&position.price).expect("validated price");
+        let cost_basis = position
+            .cost_basis
+            .as_deref()
+            .map(|v| Decimal::from_str(v).expect("validated cost basis"))
+            .unwrap_or(Decimal::ZERO);
+        total_cost_basis += cost_basis;
+        let position_json = serde_json::json!({
+            "id": format!("POS-{asset_id}-{}", state.account_id),
+            "accountId": state.account_id,
+            "assetId": asset_id,
+            "quantity": quantity,
+            "averageCost": if quantity.is_zero() { Decimal::ZERO } else { cost_basis / quantity },
+            "totalCostBasis": cost_basis,
+            "currency": position.currency,
+            "inceptionDate": now,
+            "lots": [],
+            "createdAt": now,
+            "lastUpdated": now,
+            "isAlternative": false,
+            "contractMultiplier": Decimal::ONE,
+        });
+        positions.insert(asset_id.clone(), position_json);
+        // Keep canonical provider precision. Serializing Decimal as a JSON
+        // number passes through serde_json's f64 representation and truncates
+        // significant digits; snapshot readers accept decimal strings.
+        market_values.insert(
+            asset_id.clone(),
+            serde_json::Value::String(position.market_value.clone()),
+        );
+
+        sql_query("INSERT INTO snapshot_positions(snapshot_id,asset_id,quantity,average_cost,total_cost_basis,currency,inception_date,is_alternative,contract_multiplier,created_at,last_updated) VALUES(?,?,?,?,?,?,?,0,'1',?,?)")
+            .bind::<Text, _>(&snapshot_id)
+            .bind::<Text, _>(asset_id)
+            .bind::<Text, _>(&position.quantity)
+            .bind::<Text, _>(price.to_string())
+            .bind::<Text, _>(cost_basis.to_string())
+            .bind::<Text, _>(&position.currency)
+            .bind::<Text, _>(now.to_rfc3339())
+            .bind::<Text, _>(now.to_rfc3339())
+            .bind::<Text, _>(now.to_rfc3339())
+            .execute(c)?;
+    }
+    let cash = Decimal::from_str(&state.cash_balance).expect("validated cash");
+    let cash_json = serde_json::json!({ state.currency.clone(): cash }).to_string();
+    sql_query("INSERT INTO holdings_snapshots(id,account_id,snapshot_date,currency,positions,cash_balances,cost_basis,net_contribution,calculated_at,net_contribution_base,cash_total_account_currency,cash_total_base_currency,position_market_values,liability_balance,source) VALUES(?,?,?,?,?,?,?,'0',?,'0',?,?,?,?,'BROKER_IMPORTED') ON CONFLICT(id) DO UPDATE SET currency=excluded.currency,positions=excluded.positions,cash_balances=excluded.cash_balances,cost_basis=excluded.cost_basis,calculated_at=excluded.calculated_at,cash_total_account_currency=excluded.cash_total_account_currency,cash_total_base_currency=excluded.cash_total_base_currency,position_market_values=excluded.position_market_values,liability_balance=excluded.liability_balance,source=excluded.source")
+        .bind::<Text, _>(&snapshot_id)
+        .bind::<Text, _>(&state.account_id)
+        .bind::<Text, _>(&state.as_of_date)
+        .bind::<Text, _>(&state.currency)
+        .bind::<Text, _>(serde_json::Value::Object(positions).to_string())
+        .bind::<Text, _>(&cash_json)
+        .bind::<Text, _>(total_cost_basis.to_string())
+        .bind::<Text, _>(now.naive_utc().format("%Y-%m-%dT%H:%M:%S%.fZ").to_string())
+        .bind::<Text, _>(cash.to_string())
+        .bind::<Text, _>(cash.to_string())
+        .bind::<Text, _>(serde_json::Value::Object(market_values).to_string())
+        .bind::<Text, _>(&state.liability_balance)
+        .execute(c)?;
+    let provenance = serde_json::json!({
+        "providerConnectionId": state.provider_connection_id,
+        "providerIncarnationId": state.provider_incarnation_id,
+        "providerGeneration": state.provider_generation,
+        "observedAt": state.observed_at,
+        "revision": state.revision,
+        "semanticHash": op.semantic_hash.as_deref().expect("validated semantic hash"),
+    })
+    .to_string();
+    sql_query("INSERT INTO provenance_records(entity_type,entity_id,role,source_system,source_record_id,actor_id) VALUES('snapshot',?,'live_canonical','finance',?,?) ON CONFLICT(entity_type,entity_id) DO UPDATE SET role='live_canonical',source_system='finance',source_record_id=excluded.source_record_id,actor_id=excluded.actor_id,updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')")
+        .bind::<Text, _>(&snapshot_id)
+        .bind::<Text, _>(provenance)
+        .bind::<Text, _>(&op.subject)
+        .execute(c)?;
+    Ok(())
+}
+
 #[derive(Clone)]
 pub struct BridgePolicyStore {
     deployment_id: String,
@@ -473,6 +961,7 @@ impl BridgePolicyStore {
         op: DisclosureOperation,
         fault: CommitFault,
     ) -> Result<DisclosureReceipt> {
+        validate_current_state_operation(&op)?;
         let d = self.deployment_id.clone();
         let result: std::result::Result<DisclosureReceipt, BridgePolicyError> = self.writer.exec(move |c| {
             let inner: std::result::Result<DisclosureReceipt, BridgePolicyError> = c.transaction::<_, crate::StorageError, _>(|c| {
@@ -487,7 +976,7 @@ impl BridgePolicyStore {
                     .get_result::<ReceiptRow>(c)
                     .optional()?
                 {
-                    let expected_binding = canonical_receipt_binding(&d, &existing.subject, &existing.idempotency_key, existing.access_generation, &existing.operation, &existing.resource_id, &existing.account_id, existing.lifecycle_successor_id.as_deref(), &existing.outcome);
+                    let expected_binding = canonical_receipt_binding(&d, &existing.subject, &existing.idempotency_key, existing.access_generation, &existing.operation, &existing.resource_id, &existing.account_id, existing.lifecycle_successor_id.as_deref(), &existing.outcome, (existing.operation == "current_state_upsert").then_some(existing.payload_digest.as_deref()).flatten());
                     let payload_matches = existing.payload_digest.as_deref() == Some(payload_digest.as_str());
                     if existing.binding_version != RECEIPT_BINDING_VERSION
                         || existing.outcome != "accepted"
@@ -521,6 +1010,9 @@ impl BridgePolicyStore {
                 // 2. Resolve account
                 let account = match op.kind {
                     DisclosureKind::ProjectionFence => Account { account_id: op.resource_id.clone() },
+                    DisclosureKind::CurrentStateUpsert => Account {
+                        account_id: op.current_state.as_ref().expect("validated current state").account_id.clone(),
+                    },
                     _ => {
                         match sql_query("SELECT account_id FROM activities WHERE id=?")
                             .bind::<Text,_>(&op.resource_id)
@@ -555,6 +1047,15 @@ impl BridgePolicyStore {
                 if !allowed {
                     return Ok(Err(BridgePolicyError::AccessDenied));
                 }
+
+                let resolved_current_state_assets = if let Some(state) = op.current_state.as_ref() {
+                    match resolve_current_state_assets(c, state) {
+                        Ok(value) => value,
+                        Err(error) => return Ok(Err(error)),
+                    }
+                } else {
+                    Vec::new()
+                };
 
                 // 4. Handle lifecycle migration (pending->posted) atomically
                 if let Some(ref successor) = op.lifecycle_successor_id {
@@ -632,6 +1133,9 @@ impl BridgePolicyStore {
                         do_delete_activity(c, &op, &d)?;
                     }
                     DisclosureKind::ProjectionFence => {}
+                    DisclosureKind::CurrentStateUpsert => {
+                        persist_current_state(c, &op, &resolved_current_state_assets)?;
+                    }
                 }
 
                 if fault == CommitFault::AfterSidecar {
@@ -639,8 +1143,8 @@ impl BridgePolicyStore {
                 }
 
                 // 7. Write receipt
-                let binding = canonical_receipt_binding(&d, &op.subject, &op.idempotency_key, actual, op.kind.as_str(), &op.resource_id, &account.account_id, op.lifecycle_successor_id.as_deref(), "accepted");
-                sql_query("INSERT INTO disclosure_receipts(deployment_id,person_subject_id,idempotency_key,account_id,access_generation,operation,resource_id,lifecycle_successor_id,binding_version,receipt_binding,payload_digest,outcome) VALUES(?,?,?,?,?,?,?,?,2,?,?,'accepted')")
+                let binding = canonical_receipt_binding(&d, &op.subject, &op.idempotency_key, actual, op.kind.as_str(), &op.resource_id, &account.account_id, op.lifecycle_successor_id.as_deref(), "accepted", op.semantic_hash.as_deref());
+                sql_query("INSERT INTO disclosure_receipts(deployment_id,person_subject_id,idempotency_key,account_id,access_generation,operation,resource_id,lifecycle_successor_id,binding_version,receipt_binding,payload_digest,outcome) VALUES(?,?,?,?,?,?,?,?,3,?,?,'accepted')")
                     .bind::<Text,_>(&d)
                     .bind::<Text,_>(&op.subject)
                     .bind::<Text,_>(&op.idempotency_key)
@@ -665,6 +1169,7 @@ impl BridgePolicyStore {
                     outcome: ReceiptOutcome::Accepted,
                     binding_version: RECEIPT_BINDING_VERSION,
                     receipt_binding: binding,
+                    semantic_hash: op.semantic_hash,
                 }))
             }).map_err(|e: crate::StorageError| wealthfolio_core::Error::from(e))?;
             Ok(inner)
@@ -697,7 +1202,7 @@ impl BridgePolicyStore {
                     .get_result::<ReceiptRow>(c)
                     .optional()?
                 {
-                    let expected_binding = canonical_receipt_binding(&d, &s, &k, existing.access_generation, "projection_fence", &a, &a, None, "revoked");
+                    let expected_binding = canonical_receipt_binding(&d, &s, &k, existing.access_generation, "projection_fence", &a, &a, None, "revoked", None);
                     if existing.binding_version != RECEIPT_BINDING_VERSION || existing.operation != "projection_fence" || existing.outcome != "revoked" || existing.resource_id != a || existing.account_id != a || existing.receipt_binding.as_deref().is_none_or(|b| !is_canonical_receipt_binding(b, &expected_binding)) {
                         return Ok(Err(BridgePolicyError::IdempotencyConflict));
                     }
@@ -725,8 +1230,8 @@ impl BridgePolicyStore {
                 if fault == RevokeFault::BeforeReceipt {
                     return Err(crate::StorageError::from(diesel::result::Error::RollbackTransaction));
                 }
-                let binding = canonical_receipt_binding(&d, &s, &k, g, "projection_fence", &a, &a, None, "revoked");
-                sql_query("INSERT INTO disclosure_receipts(deployment_id,person_subject_id,idempotency_key,account_id,access_generation,operation,resource_id,lifecycle_successor_id,binding_version,receipt_binding,outcome) VALUES(?,?,?,?,?,'projection_fence',?,NULL,2,?,'revoked')")
+                let binding = canonical_receipt_binding(&d, &s, &k, g, "projection_fence", &a, &a, None, "revoked", None);
+                sql_query("INSERT INTO disclosure_receipts(deployment_id,person_subject_id,idempotency_key,account_id,access_generation,operation,resource_id,lifecycle_successor_id,binding_version,receipt_binding,outcome) VALUES(?,?,?,?,?,'projection_fence',?,NULL,3,?,'revoked')")
                     .bind::<Text,_>(&d)
                     .bind::<Text,_>(&s)
                     .bind::<Text,_>(&k)
@@ -747,6 +1252,7 @@ impl BridgePolicyStore {
                     outcome: ReceiptOutcome::Revoked,
                     binding_version: RECEIPT_BINDING_VERSION,
                     receipt_binding: binding,
+                    semantic_hash: None,
                 }))
             }).map_err(|e: crate::StorageError| wealthfolio_core::Error::from(e))?;
             Ok(inner)
@@ -846,4 +1352,47 @@ fn err(e: wealthfolio_core::Error) -> BridgePolicyError {
 }
 fn sqlerr(e: diesel::result::Error) -> BridgePolicyError {
     BridgePolicyError::Storage(e.to_string())
+}
+
+#[cfg(test)]
+mod contract_fixture_tests {
+    use super::*;
+
+    #[test]
+    fn finance_current_state_and_v3_receipt_fixture_match_receiver_authority() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/bridge-v3-current-state.json"
+        ))
+        .unwrap();
+        let operation: DisclosureOperation =
+            serde_json::from_value(fixture["operation"].clone()).unwrap();
+        let state = operation.current_state.as_ref().unwrap();
+        let semantic_hash = current_state_semantic_hash(state);
+        assert_eq!(
+            operation.semantic_hash.as_deref(),
+            Some(semantic_hash.as_str())
+        );
+        let binding = canonical_receipt_binding(
+            fixture["receipt"]["deploymentId"].as_str().unwrap(),
+            &operation.subject,
+            &operation.idempotency_key,
+            operation.access_generation,
+            operation.kind.as_str(),
+            &operation.resource_id,
+            &state.account_id,
+            operation.lifecycle_successor_id.as_deref(),
+            "accepted",
+            Some(&semantic_hash),
+        );
+        assert_eq!(
+            fixture["receipt"]["bindingVersion"],
+            RECEIPT_BINDING_VERSION
+        );
+        assert_eq!(fixture["receipt"]["receiptBinding"], binding);
+        assert_eq!(fixture["receipt"]["semanticHash"], semantic_hash);
+        assert_eq!(
+            fixture["receiptBindingFields"].as_array().unwrap().len(),
+            12
+        );
+    }
 }

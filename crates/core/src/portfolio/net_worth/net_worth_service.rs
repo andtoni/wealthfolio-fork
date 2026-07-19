@@ -21,7 +21,7 @@ use crate::constants::DECIMAL_PRECISION;
 use crate::errors::Result;
 use crate::fx::currency::normalize_amount;
 use crate::fx::FxServiceTrait;
-use crate::portfolio::snapshot::SnapshotRepositoryTrait;
+use crate::portfolio::snapshot::{SnapshotRepositoryTrait, SnapshotSource};
 use crate::portfolio::valuation::{DailyAccountValuation, ValuationRepositoryTrait};
 use crate::quotes::QuoteServiceTrait;
 
@@ -450,11 +450,12 @@ impl NetWorthServiceTrait for NetWorthService {
 
             let account_category = Self::categorize_by_account_type(&account.account_type);
             let is_liability_account = is_liability_account_type(&account.account_type);
-            let stored_account_valuation = if is_liability_account {
-                None
-            } else {
-                stored_valuations_by_account.get(account_id)
-            };
+            let stored_account_valuation =
+                if is_liability_account || snapshot.source == SnapshotSource::BrokerImported {
+                    None
+                } else {
+                    stored_valuations_by_account.get(account_id)
+                };
 
             if let Some(account_valuation) = stored_account_valuation {
                 if !account_valuation.investment_market_value_base.is_zero() {
@@ -525,6 +526,30 @@ impl NetWorthServiceTrait for NetWorthService {
                         account_category
                     };
 
+                    // Broker current-state market values are authoritative for
+                    // this snapshot and must not be recomputed from activities.
+                    if let Some(market_value) = snapshot.position_market_values.get(asset_id) {
+                        let market_value_base = self
+                            .calculate_market_value(
+                                Decimal::ONE,
+                                *market_value,
+                                Decimal::ONE,
+                                &position.currency,
+                                &base_currency,
+                                date,
+                            )
+                            .unwrap_or(*market_value);
+                        valuations.push(ValuationInfo {
+                            asset_id: asset_id.clone(),
+                            name: asset_name,
+                            market_value_base,
+                            valuation_date: snapshot.snapshot_date,
+                            category,
+                            is_cash_like: false,
+                        });
+                        continue;
+                    }
+
                     // Get the latest quote for this asset as of the date
                     let (price, quote_currency, valuation_date) = match self
                         .get_latest_quote_as_of(asset_id, date)
@@ -584,6 +609,23 @@ impl NetWorthServiceTrait for NetWorthService {
                 }
             }
 
+            if snapshot.liability_balance > Decimal::ZERO {
+                let liability_base = self.convert_cash_balance_to_base(
+                    snapshot.liability_balance,
+                    &snapshot.currency,
+                    &base_currency,
+                    date,
+                );
+                valuations.push(ValuationInfo {
+                    asset_id: format!("LIABILITY:{}", account.id),
+                    name: Some(account.name.clone()),
+                    market_value_base: liability_base.abs().round_dp(DECIMAL_PRECISION),
+                    valuation_date: snapshot.snapshot_date,
+                    category: AssetCategory::Liability,
+                    is_cash_like: false,
+                });
+            }
+
             if is_liability_account {
                 let cash_base_total = snapshot.cash_balances.iter().fold(
                     Decimal::ZERO,
@@ -601,7 +643,7 @@ impl NetWorthServiceTrait for NetWorthService {
                     },
                 );
 
-                if cash_base_total < Decimal::ZERO {
+                if cash_base_total < Decimal::ZERO && snapshot.liability_balance.is_zero() {
                     valuations.push(ValuationInfo {
                         asset_id: format!("CREDIT_CARD:{}", account.id),
                         name: Some(account.name.clone()),

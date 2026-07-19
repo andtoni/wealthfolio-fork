@@ -295,6 +295,8 @@ diesel::table! {
         net_contribution_base -> Text,
         cash_total_account_currency -> Text,
         cash_total_base_currency -> Text,
+        position_market_values -> Text,
+        liability_balance -> Text,
         source -> Text,
     }
 }
@@ -629,6 +631,29 @@ diesel::table! {
 }
 
 diesel::table! {
+    spending_categorization_evidence (id) {
+        id -> Text,
+        identity_key -> Text,
+        merchant_key -> Text,
+        merchant_key_version -> Integer,
+        normalization_version -> Integer,
+        taxonomy_id -> Text,
+        category_id -> Text,
+        direction -> Text,
+        activity_type -> Text,
+        provider_context -> Nullable<Text>,
+        account_context -> Nullable<Text>,
+        label_count -> Integer,
+        agreement_state -> Text,
+        first_label_date -> Text,
+        last_label_date -> Text,
+        provenance -> Text,
+        import_run_id -> Text,
+        created_at -> Text,
+    }
+}
+
+diesel::table! {
     spending_categorization_rules (id) {
         id -> Text,
         name -> Text,
@@ -934,6 +959,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     spending_activity_splits,
     spending_event_types,
     spending_events,
+    spending_categorization_evidence,
     spending_categorization_rules,
     spending_preset_rule_deletions,
     budget_groups,

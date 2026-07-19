@@ -177,6 +177,12 @@ mod tests {
         {
             unimplemented!("PanicEnv")
         }
+        fn categorization_evidence_service(
+            &self,
+        ) -> Arc<wealthfolio_spending::categorization_evidence::CategorizationEvidenceService>
+        {
+            unimplemented!("test environment")
+        }
     }
 
     #[tokio::test]

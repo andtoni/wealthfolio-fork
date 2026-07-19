@@ -17,6 +17,7 @@ use wealthfolio_core::{
 };
 use wealthfolio_spending::activity_assignments::ActivityTaxonomyAssignmentService;
 use wealthfolio_spending::cash_activities::{CashActivityService, CashActivityServiceTrait};
+use wealthfolio_spending::categorization_evidence::CategorizationEvidenceService;
 use wealthfolio_spending::categorization_rules::{
     CategorizationRulesService, CategorizationRulesServiceTrait,
 };
@@ -48,6 +49,7 @@ pub struct ServerAiEnvironment {
     cash_activity_service: Arc<CashActivityService>,
     activity_taxonomy_assignment_service: Arc<ActivityTaxonomyAssignmentService>,
     categorization_rules_service: Arc<CategorizationRulesService>,
+    categorization_evidence_service: Arc<CategorizationEvidenceService>,
 }
 
 impl ServerAiEnvironment {
@@ -76,6 +78,7 @@ impl ServerAiEnvironment {
         cash_activity_service: Arc<CashActivityService>,
         activity_taxonomy_assignment_service: Arc<ActivityTaxonomyAssignmentService>,
         categorization_rules_service: Arc<CategorizationRulesService>,
+        categorization_evidence_service: Arc<CategorizationEvidenceService>,
     ) -> Self {
         Self {
             base_currency,
@@ -100,6 +103,7 @@ impl ServerAiEnvironment {
             cash_activity_service,
             activity_taxonomy_assignment_service,
             categorization_rules_service,
+            categorization_evidence_service,
         }
     }
 }
@@ -179,6 +183,10 @@ impl AgentEnvironment for ServerAiEnvironment {
 
     fn categorization_rules_service(&self) -> Arc<dyn CategorizationRulesServiceTrait> {
         self.categorization_rules_service.clone()
+    }
+
+    fn categorization_evidence_service(&self) -> Arc<CategorizationEvidenceService> {
+        self.categorization_evidence_service.clone()
     }
 }
 

@@ -52,6 +52,7 @@ pub(crate) mod device_sync_engine;
 mod exchange_rates;
 mod goals;
 mod health;
+mod historical_import;
 mod holdings;
 mod limits;
 mod market_data;
@@ -167,7 +168,11 @@ pub fn app_router(state: Arc<AppState>, config: &Config) -> Router {
         .merge(spending::router())
         .merge(allocation_targets::router())
         .merge(agent_access::router())
-        .merge(provider_connections::router());
+        .merge(provider_connections::router())
+        .route(
+            "/internal/history",
+            axum::routing::post(historical_import::handle),
+        );
 
     #[cfg(feature = "device-sync")]
     {

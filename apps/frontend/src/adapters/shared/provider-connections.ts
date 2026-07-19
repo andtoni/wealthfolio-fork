@@ -30,6 +30,25 @@ export interface ProviderConnectionStartResponse extends ProviderConnectionStatu
 
 export interface ProviderConnectionCompleteResponse extends ProviderConnectionStatus {}
 
+export interface DiscoveredProviderAsset {
+  providerAssetId: string;
+  symbol: string;
+  name: string;
+  currency: string;
+  instrumentType: string;
+}
+
+export interface DiscoveredProviderAccount {
+  connectionId: string;
+  providerAccountId: string;
+  name: string;
+  type: string;
+  currency: string;
+  mask?: string;
+  providerGeneration: number;
+  assets: DiscoveredProviderAsset[];
+}
+
 export async function listProviderConnections(): Promise<ProviderConnectionStatus[]> {
   return invoke<ProviderConnectionStatus[]>("list_provider_connections");
 }
@@ -38,6 +57,19 @@ export async function startProviderConnection(
   provider: ProviderKind,
 ): Promise<ProviderConnectionStartResponse> {
   return invoke<ProviderConnectionStartResponse>("start_provider_connection", { provider });
+}
+
+export async function listDiscoveredProviderAccounts(
+  provider: ProviderKind,
+): Promise<DiscoveredProviderAccount[]> {
+  return invoke<DiscoveredProviderAccount[]>("list_discovered_provider_accounts", { provider });
+}
+
+export async function admitProviderAccount(
+  provider: ProviderKind,
+  input: Pick<DiscoveredProviderAccount, "connectionId" | "providerAccountId" | "name">,
+): Promise<{ accountId: string }> {
+  return invoke<{ accountId: string }>("admit_provider_account", { provider, ...input });
 }
 
 export async function completePlaidConnection(

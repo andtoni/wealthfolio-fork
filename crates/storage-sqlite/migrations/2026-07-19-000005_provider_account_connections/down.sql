@@ -1,0 +1,3 @@
+DROP TRIGGER IF EXISTS provider_account_connections_generation_monotonic;
+DROP TRIGGER IF EXISTS provider_account_connections_identity_immutable;
+DROP TABLE IF EXISTS provider_account_connections;

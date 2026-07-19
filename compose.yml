@@ -8,7 +8,7 @@
 
 services:
   wealthfolio:
-    image: git.example.com/andtoni/wealthfolio@sha256:576ac85dff557bbe9641baab2432e414a14436a7490da6b1a5e8010b5718db06
+    image: git.example.com/andtoni/wealthfolio@${WEALTHFOLIO_IMAGE_DIGEST:?set the admitted sha256 Wealthfolio image digest}
     container_name: wealthfolio
     restart: unless-stopped
     ports:
@@ -17,6 +17,7 @@ services:
       - wealthfolio-data:/data
     secrets:
       - finance_sync_control_token
+      - historical_importer_token
     environment:
       WF_LISTEN_ADDR: "0.0.0.0:8088"
       WF_DB_PATH: "/data/wealthfolio.db"
@@ -74,6 +75,7 @@ services:
       # mounted from an Infisical-rendered ephemeral file and is never sent to browsers.
       FINANCE_SYNC_CONTROL_URL: "${FINANCE_SYNC_CONTROL_URL:?Set the internal Finance Sync control URL}"
       FINANCE_SYNC_CONTROL_TOKEN_FILE: "/run/secrets/finance_sync_control_token"
+      WF_HISTORICAL_IMPORTER_TOKEN_FILE: "/run/secrets/historical_importer_token"
     healthcheck:
       test:
         ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8088/api/v1/healthz"]
@@ -96,6 +98,8 @@ services:
 secrets:
   finance_sync_control_token:
     file: ${FINANCE_SYNC_CONTROL_TOKEN_FILE_SOURCE:?provide an Infisical-rendered ephemeral control token file}
+  historical_importer_token:
+    file: ${WF_HISTORICAL_IMPORTER_TOKEN_FILE_SOURCE:?provide an Infisical-rendered ephemeral historical importer token file}
 
 volumes:
   wealthfolio-data:

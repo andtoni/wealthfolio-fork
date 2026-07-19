@@ -1165,6 +1165,8 @@ impl SnapshotService {
             net_contribution_base: Decimal::ZERO,
             cash_total_account_currency: Decimal::ZERO,
             cash_total_base_currency: Decimal::ZERO,
+            position_market_values: HashMap::new(),
+            liability_balance: Decimal::ZERO,
             calculated_at: Utc::now().naive_utc(),
             source: SnapshotSource::Calculated,
         }

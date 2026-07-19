@@ -1,10 +1,15 @@
 import appLogo from "@/assets/logo-rounded.png";
 import { Page, PageContent, PageHeader } from "@/components/page";
 import { ProviderConnectionsSection } from "@/features/account-ingestion/components/provider-connections-section";
-import { Avatar, AvatarFallback, AvatarImage } from "@wealthfolio/ui/components/ui/avatar";
-import { Button } from "@wealthfolio/ui/components/ui/button";
-import { Card, CardContent } from "@wealthfolio/ui/components/ui/card";
-import { Icons } from "@wealthfolio/ui/components/ui/icons";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+  Button,
+  Card,
+  CardContent,
+  Icons,
+} from "@wealthfolio/ui";
 import { useAuth } from "@/context/auth-context";
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
@@ -65,7 +70,7 @@ export function IngestionHubContent() {
           </div>
           <div className="flex flex-wrap justify-center gap-3">
             <Button asChild size="lg">
-              <Link to="/settings/accounts">
+              <Link to="/settings/accounts" state={{ newAccount: true }}>
                 <Icons.Plus className="mr-2 h-4 w-4" />
                 {t("connect:connect.addAccount", "Add Account")}
               </Link>

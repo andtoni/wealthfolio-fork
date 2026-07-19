@@ -42,6 +42,10 @@ pub struct AccountStateSnapshotDB {
     #[diesel(sql_type = Text)]
     pub cash_total_base_currency: String,
     #[diesel(sql_type = Text)]
+    pub position_market_values: String,
+    #[diesel(sql_type = Text)]
+    pub liability_balance: String,
+    #[diesel(sql_type = Text)]
     pub source: String,
 }
 
@@ -63,6 +67,9 @@ impl From<AccountStateSnapshotDB> for AccountStateSnapshot {
                 .unwrap_or_default(),
             cash_total_base_currency: Decimal::from_str(&db.cash_total_base_currency)
                 .unwrap_or_default(),
+            position_market_values: serde_json::from_str(&db.position_market_values)
+                .unwrap_or_default(),
+            liability_balance: Decimal::from_str(&db.liability_balance).unwrap_or_default(),
             calculated_at: NaiveDateTime::parse_from_str(
                 &db.calculated_at,
                 "%Y-%m-%dT%H:%M:%S%.fZ",
@@ -108,6 +115,12 @@ impl From<AccountStateSnapshot> for AccountStateSnapshotDB {
                 .to_string(),
             cash_total_base_currency: domain
                 .cash_total_base_currency
+                .round_dp(DECIMAL_PRECISION)
+                .to_string(),
+            position_market_values: serde_json::to_string(&domain.position_market_values)
+                .unwrap_or_else(|_| "{}".to_string()),
+            liability_balance: domain
+                .liability_balance
                 .round_dp(DECIMAL_PRECISION)
                 .to_string(),
             calculated_at: domain

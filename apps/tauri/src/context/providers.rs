@@ -306,6 +306,21 @@ pub async fn initialize_context(
         ),
     );
 
+    // Spending: versioned, advisory categorization evidence.
+    let categorization_evidence_repo: Arc<
+        dyn wealthfolio_spending::categorization_evidence::CategorizationEvidenceRepositoryTrait,
+    > = Arc::new(
+        wealthfolio_storage_sqlite::spending::categorization_evidence::CategorizationEvidenceRepository::new(
+            pool.clone(),
+            writer.clone(),
+        ),
+    );
+    let categorization_evidence_service = Arc::new(
+        wealthfolio_spending::categorization_evidence::CategorizationEvidenceService::new(
+            categorization_evidence_repo,
+        ),
+    );
+
     // Spending: budget
     let budget_repo: Arc<dyn wealthfolio_spending::budget::BudgetRepositoryTrait> = Arc::new(
         wealthfolio_storage_sqlite::spending::budget::BudgetRepository::new(
@@ -578,6 +593,7 @@ pub async fn initialize_context(
         cash_activity_service.clone(),
         activity_taxonomy_assignment_service.clone(),
         categorization_rules_service.clone(),
+        categorization_evidence_service.clone(),
     ));
     let agent_environment: Arc<dyn wealthfolio_agent_tools::AgentEnvironment> =
         ai_environment.clone();

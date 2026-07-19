@@ -110,6 +110,8 @@ fn snapshot(
         net_contribution_base: Decimal::ZERO,
         cash_total_account_currency: Decimal::ZERO,
         cash_total_base_currency: Decimal::ZERO,
+        position_market_values: HashMap::new(),
+        liability_balance: Decimal::ZERO,
         calculated_at: DateTime::<Utc>::from_timestamp(1_776_476_400, 0)
             .unwrap()
             .naive_utc(),

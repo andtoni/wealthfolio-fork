@@ -34,6 +34,7 @@ pub mod analytics;
 pub mod budget;
 pub mod cash_activities;
 pub mod categories_seed;
+pub mod categorization_evidence;
 pub mod categorization_rules;
 pub mod error;
 pub mod events;

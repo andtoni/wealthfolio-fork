@@ -1,11 +1,12 @@
 import {
+  admitProviderAccount,
   completePlaidConnection,
+  listDiscoveredProviderAccounts,
   listProviderConnections,
   startProviderConnection,
   type ProviderConnectionStatus,
 } from "@/adapters";
-import { Card, CardContent } from "@wealthfolio/ui/components/ui/card";
-import { Icons } from "@wealthfolio/ui/components/ui/icons";
+import { Card, CardContent, Icons } from "@wealthfolio/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -118,15 +119,18 @@ function ProviderCard({ status }: { status: ProviderConnectionStatus }) {
   const icon = PROVIDER_ICONS[status.provider] ?? <Icons.Link className="h-5 w-5" />;
   const queryClient = useQueryClient();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const supportsBrowserConnect = status.provider === "plaid" || status.provider === "snaptrade";
-  const canConnect =
-    supportsBrowserConnect &&
-    (status.status === "available" || status.status === "configured");
+  const supportsConnect = true;
+  const { data: discovered = [] } = useQuery({
+    queryKey: ["provider-accounts", status.provider],
+    queryFn: () => listDiscoveredProviderAccounts(status.provider),
+    staleTime: 15_000,
+  });
+  const canConnect = status.status === "available" || status.status === "configured";
 
   const startMutation = useMutation({
     mutationFn: async () => {
       const result = await startProviderConnection(status.provider);
-      if (status.provider === "snaptrade") {
+      if (status.provider === "snaptrade" && result.status === "link_ready") {
         if (!result.redirectUrl) throw new Error("SnapTrade did not return a redirect.");
         window.location.assign(validatedHttpsRedirect(result.redirectUrl));
         return;
@@ -137,10 +141,22 @@ function ProviderCard({ status }: { status: ProviderConnectionStatus }) {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["provider-connections"] });
+      void queryClient.invalidateQueries({ queryKey: ["provider-accounts", status.provider] });
     },
     onError: (error: Error) => {
       setErrorMsg(error.message || "Provider connection could not be started.");
     },
+  });
+
+  const admitMutation = useMutation({
+    mutationFn: (account: (typeof discovered)[number]) =>
+      admitProviderAccount(status.provider, account),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["provider-accounts", status.provider] });
+      void queryClient.invalidateQueries({ queryKey: ["provider-connections"] });
+      void queryClient.invalidateQueries({ queryKey: ["accounts"] });
+    },
+    onError: (error: Error) => setErrorMsg(error.message || "Account could not be added."),
   });
 
   const stateLabel = status.status === "configured" ? "Configured" : status.status.replaceAll("_", " ");
@@ -162,7 +178,7 @@ function ProviderCard({ status }: { status: ProviderConnectionStatus }) {
             <span className="bg-muted text-muted-foreground inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider">
               {stateLabel}
             </span>
-            {supportsBrowserConnect && (
+            {supportsConnect && (
               <button
                 type="button"
                 disabled={!canConnect || startMutation.isPending}
@@ -177,6 +193,34 @@ function ProviderCard({ status }: { status: ProviderConnectionStatus }) {
             )}
           </div>
         </div>
+        {discovered.length > 0 && (
+          <div className="space-y-2 border-t pt-3">
+            <p className="text-muted-foreground text-xs font-medium">Choose accounts to add</p>
+            {discovered.map((account) => (
+              <div key={`${account.connectionId}:${account.providerAccountId}`} className="flex items-center gap-2 rounded-md border px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium">{account.name}</p>
+                  <p className="text-muted-foreground text-[11px]">
+                    {account.type} · {account.currency}{account.mask ? ` · •••• ${account.mask}` : ""}
+                    {status.provider === "snaptrade"
+                      ? account.assets.length === 0
+                        ? " · Cash only"
+                        : ` · ${account.assets.length} asset${account.assets.length === 1 ? "" : "s"}`
+                      : ""}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={admitMutation.isPending}
+                  onClick={() => { setErrorMsg(null); admitMutation.mutate(account); }}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-8 items-center rounded-md px-3 text-xs font-medium disabled:opacity-50"
+                >
+                  {admitMutation.isPending ? "Adding..." : "Add"}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         {errorMsg && (
           <div className="bg-destructive/10 text-destructive rounded-md px-3 py-2 text-xs">
             {errorMsg}

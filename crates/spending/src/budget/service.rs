@@ -531,9 +531,9 @@ impl BudgetService {
                     .count(),
         };
         let fx_as_of = if is_month_view {
-            month_end(&period_key)
+            budget_period_end_date(&period_key)
                 .ok()
-                .map(|date| date.date_naive().to_string())
+                .map(|date| date.to_string())
         } else {
             None
         };
@@ -870,13 +870,10 @@ impl BudgetService {
         ))
     }
 
-    /// `currency` is the FX target — every counted activity is converted to
-    /// it at `end_period`'s month-end (snapshot-date convention, matches
-    /// insight + monthly_report so per-month actuals reconcile with the
-    /// broader dashboard numbers).
-    /// `timezone` (IANA name, may be empty) drives per-month bucketing so a
-    /// midnight-local activity on the first/last day of a month lands in the
-    /// month the user perceives, not the UTC month.
+    /// `currency` is the FX target — every counted activity is converted at
+    /// `end_period`'s cycle end (the 24th of its ending month).
+    /// `timezone` (IANA name, may be empty) drives cycle bucketing. A period
+    /// key denotes its ending month: `2026-05` spans local Apr 25 through May 24.
     async fn actuals_by_month(
         &self,
         start_period: &str,
@@ -890,18 +887,18 @@ impl BudgetService {
         if !settings.enabled || settings.account_ids.is_empty() {
             return Ok(HashMap::new());
         }
-        let (_, end) = local_month_bounds_utc(end_period, timezone)?;
+        let (_, end) = local_budget_period_bounds_utc(end_period, timezone)?;
         let eligible_accounts = resolve_eligible_spending_accounts(
             self.account_repo.as_ref(),
             self.aggregate_eligibility_service.as_ref(),
             &settings.account_ids,
-            end.date_naive(),
+            budget_period_end_date(end_period)?,
         )
         .await?;
         if eligible_accounts.ids.is_empty() {
             return Ok(HashMap::new());
         }
-        let (start, _) = local_month_bounds_utc(start_period, timezone)?;
+        let (start, _) = local_budget_period_bounds_utc(start_period, timezone)?;
         let activities = self
             .activity_repo
             .get_activities_by_account_ids_in_date_range(&eligible_accounts.ids, start, end)
@@ -924,10 +921,8 @@ impl BudgetService {
         let splits_by_activity =
             group_splits(self.split_repo.list_for_activities(&activity_ids).await?);
 
-        // FX: one as_of date for the entire window (end of the latest month
-        // covered). Mirrors net_worth / insight snapshot convention so all
-        // months in this window get the same rate per pair.
-        let fx_as_of = local_month_end_date(end_period, timezone)?;
+        // FX: one as_of date for the entire window (the latest cycle's end).
+        let fx_as_of = budget_period_end_date(end_period)?;
         let fx = self.fx_service.as_ref();
         let mut actuals: HashMap<String, MonthActuals> = HashMap::new();
         for activity in activities {
@@ -941,9 +936,6 @@ impl BudgetService {
             if spending_native == Decimal::ZERO && income_native == Decimal::ZERO {
                 continue;
             }
-            // Bucket by user-local month so a midnight-local activity on
-            // month boundaries lands in the month the user perceives,
-            // mirroring insight::compute_by_month.
             let month = period_key_for_date_in_tz(activity.activity_date, timezone);
             let month_actuals = actuals.entry(month).or_default();
             add_allocated_actuals(
@@ -1271,8 +1263,12 @@ fn normalize_period_key(period_key: Option<String>, timezone: &str) -> Result<St
             validate_month_key(&key)?;
             Ok(key)
         }
-        None => Ok(period_key_for_date_in_tz(Utc::now(), timezone)),
+        None => Ok(current_period_key(Utc::now(), timezone)),
     }
+}
+
+fn current_period_key(now: DateTime<Utc>, timezone: &str) -> String {
+    period_key_for_date_in_tz(now, timezone)
 }
 
 fn validate_period_key(period_key: &str) -> Result<()> {
@@ -1371,7 +1367,12 @@ fn validate_month_key(period_key: &str) -> Result<()> {
 
 fn period_key_for_date_in_tz(date: DateTime<Utc>, timezone: &str) -> String {
     let d = wealthfolio_core::utils::time_utils::activity_date_in_user_timezone(date, timezone);
-    format!("{:04}-{:02}", d.year(), d.month())
+    let (year, month) = if d.day() >= 25 {
+        next_month(d.year(), d.month())
+    } else {
+        (d.year(), d.month())
+    };
+    format!("{year:04}-{month:02}")
 }
 
 /// Convert a native amount to the budget's target currency at `as_of`.
@@ -1405,47 +1406,46 @@ fn fx_to_target(
     }
 }
 
-fn month_end(period_key: &str) -> Result<DateTime<Utc>> {
-    let (year, month) = parse_month(period_key)?;
-    let (next_year, next_month) = if month == 12 {
+fn next_month(year: i32, month: u32) -> (i32, u32) {
+    if month == 12 {
         (year + 1, 1)
     } else {
         (year, month + 1)
-    };
-    Ok(Utc
-        .with_ymd_and_hms(next_year, next_month, 1, 0, 0, 0)
-        .single()
-        .ok_or_else(|| invalid_budget_input("Invalid budget period key"))?
-        - chrono::Duration::milliseconds(1))
+    }
 }
 
-fn local_month_bounds_utc(
+fn previous_month(year: i32, month: u32) -> (i32, u32) {
+    if month == 1 {
+        (year - 1, 12)
+    } else {
+        (year, month - 1)
+    }
+}
+
+fn budget_period_end_date(period_key: &str) -> Result<NaiveDate> {
+    let (year, month) = parse_month(period_key)?;
+    NaiveDate::from_ymd_opt(year, month, 24)
+        .ok_or_else(|| invalid_budget_input("Invalid budget period key"))
+}
+
+fn local_budget_period_bounds_utc(
     period_key: &str,
     timezone: &str,
 ) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
-    let (year, month) = parse_month(period_key)?;
-    let (next_year, next_month) = if month == 12 {
-        (year + 1, 1)
-    } else {
-        (year, month + 1)
-    };
+    let (end_year, end_month) = parse_month(period_key)?;
+    let (start_year, start_month) = previous_month(end_year, end_month);
     let tz = wealthfolio_core::utils::time_utils::parse_user_timezone_or_default(timezone);
     let start = tz
-        .with_ymd_and_hms(year, month, 1, 0, 0, 0)
+        .with_ymd_and_hms(start_year, start_month, 25, 0, 0, 0)
         .earliest()
         .ok_or_else(|| invalid_budget_input("Invalid budget period key"))?
         .with_timezone(&Utc);
     let next_start = tz
-        .with_ymd_and_hms(next_year, next_month, 1, 0, 0, 0)
+        .with_ymd_and_hms(end_year, end_month, 25, 0, 0, 0)
         .earliest()
         .ok_or_else(|| invalid_budget_input("Invalid budget period key"))?
         .with_timezone(&Utc);
     Ok((start, next_start - chrono::Duration::nanoseconds(1)))
-}
-
-fn local_month_end_date(period_key: &str, timezone: &str) -> Result<NaiveDate> {
-    let (_, end) = local_month_bounds_utc(period_key, timezone)?;
-    Ok(wealthfolio_core::utils::time_utils::activity_date_in_user_timezone(end, timezone))
 }
 
 fn month_keys_between(start: &str, end: &str) -> Vec<String> {
@@ -2767,7 +2767,7 @@ mod tests {
             fixture.eligibility.account_calls.lock().unwrap().as_slice(),
             &[(
                 vec!["eligible-card".to_string(), "denied-card".to_string()],
-                NaiveDate::from_ymd_opt(2026, 5, 31).unwrap()
+                NaiveDate::from_ymd_opt(2026, 5, 24).unwrap()
             )]
         );
         assert_eq!(
@@ -2801,6 +2801,47 @@ mod tests {
                     .get(&(SPENDING_TAXONOMY.to_string(), "cat_groceries".to_string()))),
             Some(&Decimal::new(40, 0))
         );
+    }
+
+    #[tokio::test]
+    async fn budget_actuals_fetch_and_bucket_local_day_25_boundaries() {
+        let row_ids = ["before", "start", "day-24", "day-25"];
+        let mut activities = row_ids
+            .iter()
+            .map(|id| activity(id, "eligible-card", "WITHDRAWAL", 10))
+            .collect::<Vec<_>>();
+        activities[0].activity_date = Utc.with_ymd_and_hms(2026, 4, 25, 3, 59, 59).unwrap();
+        activities[1].activity_date = Utc.with_ymd_and_hms(2026, 4, 25, 4, 0, 0).unwrap();
+        activities[2].activity_date = Utc.with_ymd_and_hms(2026, 5, 25, 3, 59, 59).unwrap();
+        activities[3].activity_date = Utc.with_ymd_and_hms(2026, 5, 25, 4, 0, 0).unwrap();
+        let fixture = budget_fixture(
+            activities,
+            row_ids
+                .iter()
+                .map(|id| assignment(id, "cat_groceries"))
+                .collect(),
+            Vec::new(),
+            &["eligible-card"],
+            &row_ids,
+        );
+        let spending_meta = category_meta(&[category(SPENDING_TAXONOMY, "cat_groceries", None)]);
+
+        let actuals = fixture
+            .service
+            .actuals_by_month(
+                "2026-05",
+                "2026-06",
+                &spending_meta,
+                &HashMap::new(),
+                "USD",
+                "America/Toronto",
+            )
+            .await
+            .unwrap();
+
+        let key = (SPENDING_TAXONOMY.to_string(), "cat_groceries".to_string());
+        assert_eq!(actuals["2026-05"][&key], Decimal::new(20, 0));
+        assert_eq!(actuals["2026-06"][&key], Decimal::new(10, 0));
     }
 
     #[tokio::test]
@@ -3233,31 +3274,57 @@ mod tests {
     }
 
     #[test]
-    fn local_month_bounds_follow_user_timezone() {
-        let (start, end) = local_month_bounds_utc("2026-05", "America/Toronto").unwrap();
+    fn budget_period_bounds_use_local_day_25_and_handle_dst() {
+        let (start, end) = local_budget_period_bounds_utc("2026-03", "America/Toronto").unwrap();
 
-        assert_eq!(start.to_rfc3339(), "2026-05-01T04:00:00+00:00");
-        assert_eq!(end.to_rfc3339(), "2026-06-01T03:59:59.999999999+00:00");
+        assert_eq!(start.to_rfc3339(), "2026-02-25T05:00:00+00:00");
+        assert_eq!(end.to_rfc3339(), "2026-03-25T03:59:59.999999999+00:00");
         assert_eq!(
-            period_key_for_date_in_tz(start - chrono::Duration::milliseconds(1), "America/Toronto"),
-            "2026-04"
+            period_key_for_date_in_tz(start - chrono::Duration::nanoseconds(1), "America/Toronto"),
+            "2026-02"
         );
         assert_eq!(
             period_key_for_date_in_tz(start, "America/Toronto"),
-            "2026-05"
+            "2026-03"
         );
-        assert_eq!(period_key_for_date_in_tz(end, "America/Toronto"), "2026-05");
+        assert_eq!(period_key_for_date_in_tz(end, "America/Toronto"), "2026-03");
+        assert_eq!(
+            period_key_for_date_in_tz(end + chrono::Duration::nanoseconds(1), "America/Toronto"),
+            "2026-04"
+        );
     }
 
     #[test]
-    fn local_month_end_date_uses_user_calendar_date() {
+    fn budget_period_key_handles_day_24_day_25_and_year_boundary() {
         assert_eq!(
-            local_month_end_date("2026-05", "America/Toronto").unwrap(),
-            NaiveDate::from_ymd_opt(2026, 5, 31).unwrap()
+            period_key_for_date_in_tz(
+                Utc.with_ymd_and_hms(2026, 12, 24, 23, 59, 59).unwrap(),
+                "UTC"
+            ),
+            "2026-12"
         );
         assert_eq!(
-            local_month_end_date("2026-05", "Asia/Tokyo").unwrap(),
-            NaiveDate::from_ymd_opt(2026, 5, 31).unwrap()
+            period_key_for_date_in_tz(Utc.with_ymd_and_hms(2026, 12, 25, 0, 0, 0).unwrap(), "UTC"),
+            "2027-01"
+        );
+        assert_eq!(
+            current_period_key(
+                Utc.with_ymd_and_hms(2026, 12, 25, 9, 59, 59).unwrap(),
+                "Pacific/Kiritimati"
+            ),
+            "2027-01"
+        );
+    }
+
+    #[test]
+    fn budget_period_end_and_fx_as_of_are_day_24() {
+        assert_eq!(
+            budget_period_end_date("2026-05").unwrap(),
+            NaiveDate::from_ymd_opt(2026, 5, 24).unwrap()
+        );
+        assert_eq!(
+            budget_period_end_date("2027-01").unwrap(),
+            NaiveDate::from_ymd_opt(2027, 1, 24).unwrap()
         );
     }
 

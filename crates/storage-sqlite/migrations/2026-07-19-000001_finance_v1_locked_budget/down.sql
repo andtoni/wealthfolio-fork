@@ -1,0 +1,13 @@
+DROP TRIGGER IF EXISTS finance_v1_lock_policy_delete;
+DROP TRIGGER IF EXISTS finance_v1_lock_policy_update;
+DROP TRIGGER IF EXISTS finance_v1_lock_assignment_delete;
+DROP TRIGGER IF EXISTS finance_v1_lock_assignment_update;
+DROP TRIGGER IF EXISTS finance_v1_lock_category_delete;
+DROP TRIGGER IF EXISTS finance_v1_lock_category_update;
+DROP TRIGGER IF EXISTS finance_v1_lock_target_delete;
+DROP TRIGGER IF EXISTS finance_v1_lock_target_update;
+DROP TABLE IF EXISTS finance_v1_locked_budget_objects;
+DELETE FROM budget_targets WHERE id LIKE 'finance_v1_target_%';
+DELETE FROM budget_group_assignments WHERE id LIKE 'finance_v1_assign_%';
+DELETE FROM taxonomy_categories WHERE id LIKE 'finance_v1_cat_%';
+DROP TABLE IF EXISTS finance_v1_budget_policy;

@@ -13,8 +13,9 @@ import {
   ToggleGroupItem,
 } from "@wealthfolio/ui";
 import { Input } from "@wealthfolio/ui/components/ui/input";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { SettingsHeader } from "../settings-header";
 import { AccountEditModal } from "./components/account-edit-modal";
 import { AccountItem } from "./components/account-item";
@@ -25,6 +26,9 @@ type FilterType = "all" | "active" | "archived" | "hidden";
 const SettingsAccountsPage = () => {
   const { t } = useTranslation();
   const { accounts, isLoading } = useAccounts({ filterActive: false, includeArchived: true });
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const { data: platforms } = useQuery<Platform[], Error>({
     queryKey: [QueryKeys.PLATFORMS],
@@ -42,10 +46,20 @@ const SettingsAccountsPage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<FilterType>("all");
 
-  const handleAddAccount = () => {
-    setSelectedAccount(null);
-    setVisibleModal(true);
-  };
+  const handleAddAccount = () => navigate("/connect");
+
+  useEffect(() => {
+    const requestedByNavigation = (location.state as { newAccount?: boolean } | null)?.newAccount;
+    if (searchParams.get("new") === "1" || requestedByNavigation) {
+      setSelectedAccount(null);
+      setVisibleModal(true);
+      if (requestedByNavigation) {
+        navigate(location.pathname, { replace: true, state: null });
+      } else {
+        setSearchParams({}, { replace: true });
+      }
+    }
+  }, [location.pathname, location.state, navigate, searchParams, setSearchParams]);
 
   const { deleteAccountMutation, updateAccountMutation } = useAccountMutations({});
 

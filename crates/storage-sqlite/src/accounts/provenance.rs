@@ -65,6 +65,17 @@ impl ProvenanceRepositoryTrait for ProvenanceRepository {
         Ok(record)
     }
 
+    async fn delete_by_import_run_id(&self, import_run_id: &str) -> Result<usize> {
+        if import_run_id.trim().is_empty() {
+            return Err(to_core_err("import run id is required"));
+        }
+        let mut connection = self.pool.get().map_err(to_core_err)?;
+        sql_query("DELETE FROM provenance_records WHERE import_run_id = ?")
+            .bind::<Text, _>(import_run_id)
+            .execute(&mut connection)
+            .map_err(to_core_err)
+    }
+
     async fn eligible_entity_ids(&self, entity_type: &str, row_date: &str) -> Result<Vec<String>> {
         let mut connection = self.pool.get().map_err(to_core_err)?;
         let rows = sql_query(

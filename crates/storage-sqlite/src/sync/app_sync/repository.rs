@@ -193,15 +193,19 @@ impl SyncRowFilter {
             Self::UserTaxonomies => "is_system = 0",
             // Spending/income seed category IDs use the `cat_` prefix; user-created rows use UUIDs.
             Self::SyncableTaxonomyCategories => {
-                "taxonomy_id = 'custom_groups' \
-                 OR taxonomy_id IN (SELECT id FROM taxonomies WHERE is_system = 0) \
-                 OR (taxonomy_id IN ('spending_categories', 'income_sources', 'savings_categories') AND id NOT LIKE 'cat_%')"
+                "(taxonomy_id = 'custom_groups' \
+                  OR taxonomy_id IN (SELECT id FROM taxonomies WHERE is_system = 0) \
+                  OR (taxonomy_id IN ('spending_categories', 'income_sources', 'savings_categories') AND id NOT LIKE 'cat_%')) \
+                 AND id NOT IN (SELECT object_id FROM finance_v1_locked_budget_objects WHERE object_type = 'category')"
             }
-            Self::UserModifiedBudgetGroups | Self::UserModifiedBudgetGroupAssignments => {
-                "is_system = 0 OR updated_at != created_at"
+            Self::UserModifiedBudgetGroups => "is_system = 0 OR updated_at != created_at",
+            Self::UserModifiedBudgetGroupAssignments => {
+                "(is_system = 0 OR updated_at != created_at) \
+                 AND id NOT IN (SELECT object_id FROM finance_v1_locked_budget_objects WHERE object_type = 'assignment')"
             }
             Self::BudgetGroupAssignmentsWithExistingDependencies => {
                 "group_id IN (SELECT id FROM budget_groups) \
+                 AND id NOT IN (SELECT object_id FROM finance_v1_locked_budget_objects WHERE object_type = 'assignment') \
                  AND EXISTS (
                      SELECT 1 FROM taxonomy_categories AS tc
                      WHERE tc.taxonomy_id = budget_group_assignments.taxonomy_id
@@ -209,16 +213,17 @@ impl SyncRowFilter {
                  )"
             }
             Self::BudgetTargetsWithExistingDependencies => {
-                "(target_type = 'category' \
-                    AND taxonomy_id IS NOT NULL \
-                    AND category_id IS NOT NULL \
-                    AND EXISTS (
-                        SELECT 1 FROM taxonomy_categories AS tc
-                        WHERE tc.taxonomy_id = budget_targets.taxonomy_id
-                          AND tc.id = budget_targets.category_id
-                    )) \
-                 OR (target_type = 'group_buffer' \
-                    AND group_id IN (SELECT id FROM budget_groups))"
+                "((target_type = 'category' \
+                     AND taxonomy_id IS NOT NULL \
+                     AND category_id IS NOT NULL \
+                     AND EXISTS (
+                         SELECT 1 FROM taxonomy_categories AS tc
+                         WHERE tc.taxonomy_id = budget_targets.taxonomy_id
+                           AND tc.id = budget_targets.category_id
+                     )) \
+                   OR (target_type = 'group_buffer' \
+                       AND group_id IN (SELECT id FROM budget_groups))) \
+                 AND id NOT IN (SELECT object_id FROM finance_v1_locked_budget_objects WHERE object_type = 'target')"
             }
             Self::BudgetRolloverSettingsWithExistingDependencies => {
                 "(target_type = 'category' \
@@ -645,6 +650,10 @@ const SYNC_TABLE_SNAPSHOT_COPY_FILTERS: &[SyncTableFilterSpec] = &[
         filter: SyncRowFilter::SpendingSettings,
     },
     SyncTableFilterSpec {
+        table: "budget_groups",
+        filter: SyncRowFilter::UserModifiedBudgetGroups,
+    },
+    SyncTableFilterSpec {
         table: "budget_group_assignments",
         filter: SyncRowFilter::BudgetGroupAssignmentsWithExistingDependencies,
     },
@@ -704,6 +713,10 @@ const SYNC_TABLE_SNAPSHOT_CLEAR_FILTERS: &[SyncTableFilterSpec] = &[
     SyncTableFilterSpec {
         table: "app_settings",
         filter: SyncRowFilter::SpendingSettings,
+    },
+    SyncTableFilterSpec {
+        table: "budget_groups",
+        filter: SyncRowFilter::UserModifiedBudgetGroups,
     },
     SyncTableFilterSpec {
         table: "budget_group_assignments",
@@ -1699,7 +1712,8 @@ fn apply_custom_taxonomy_event(
             )?;
             let sql = if is_syncable_system_taxonomy_id(taxonomy_id) {
                 format!(
-                    "DELETE FROM \"taxonomy_categories\" WHERE \"taxonomy_id\" = '{}'",
+                    "DELETE FROM \"taxonomy_categories\" WHERE \"taxonomy_id\" = '{}' \
+                     AND \"id\" NOT IN (SELECT object_id FROM finance_v1_locked_budget_objects WHERE object_type = 'category')",
                     escape_sqlite_str(taxonomy_id)
                 )
             } else {
@@ -1779,7 +1793,8 @@ fn apply_custom_taxonomy_event(
                     seq,
                 )?;
                 let sql = format!(
-                    "DELETE FROM \"taxonomy_categories\" WHERE \"taxonomy_id\" = '{}'",
+                    "DELETE FROM \"taxonomy_categories\" WHERE \"taxonomy_id\" = '{}' \
+                     AND \"id\" NOT IN (SELECT object_id FROM finance_v1_locked_budget_objects WHERE object_type = 'category')",
                     escape_sqlite_str(taxonomy_id)
                 );
                 diesel::sql_query(sql)
@@ -1797,7 +1812,8 @@ fn apply_custom_taxonomy_event(
                     seq,
                 )?;
                 let sql = format!(
-                    "DELETE FROM \"taxonomy_categories\" WHERE \"taxonomy_id\" = '{}' AND \"id\" NOT IN ({})",
+                    "DELETE FROM \"taxonomy_categories\" WHERE \"taxonomy_id\" = '{}' AND \"id\" NOT IN ({}) \
+                     AND \"id\" NOT IN (SELECT object_id FROM finance_v1_locked_budget_objects WHERE object_type = 'category')",
                     escape_sqlite_str(taxonomy_id),
                     placeholders
                 );

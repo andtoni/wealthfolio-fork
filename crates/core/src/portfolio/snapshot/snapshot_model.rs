@@ -119,6 +119,16 @@ pub struct AccountStateSnapshot {
     #[serde(default)]
     pub cash_total_base_currency: Decimal,
 
+    /// Provider-supplied position market values, keyed by asset id and denominated
+    /// in the corresponding position currency. Empty for legacy/calculated snapshots.
+    #[serde(default)]
+    pub position_market_values: HashMap<String, Decimal>,
+
+    /// Positive debt magnitude reported by a provider. Aggregate consumers must
+    /// subtract this exactly once; legacy snapshots default to zero.
+    #[serde(default)]
+    pub liability_balance: Decimal,
+
     pub calculated_at: NaiveDateTime, // When this snapshot was generated
 
     /// Source of this snapshot (how it was created)
@@ -140,6 +150,8 @@ impl Default for AccountStateSnapshot {
             net_contribution_base: Decimal::ZERO,
             cash_total_account_currency: Decimal::ZERO,
             cash_total_base_currency: Decimal::ZERO,
+            position_market_values: HashMap::new(),
+            liability_balance: Decimal::ZERO,
             calculated_at: Utc::now().naive_utc(),
             source: SnapshotSource::default(),
         }

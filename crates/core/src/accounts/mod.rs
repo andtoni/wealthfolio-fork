@@ -39,6 +39,12 @@ pub trait ProvenanceRepositoryTrait: Send + Sync {
         entity_id: &str,
     ) -> crate::errors::Result<Option<ProvenanceRecord>>;
     async fn upsert(&self, record: ProvenanceRecord) -> crate::errors::Result<ProvenanceRecord>;
+    /// Delete only provenance rows created by one reversible import run.
+    async fn delete_by_import_run_id(&self, _import_run_id: &str) -> crate::errors::Result<usize> {
+        Err(crate::errors::Error::Unexpected(
+            "provenance import rollback is not supported".into(),
+        ))
+    }
     async fn eligible_entity_ids(
         &self,
         entity_type: &str,

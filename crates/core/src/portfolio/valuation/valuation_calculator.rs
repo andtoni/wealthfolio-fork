@@ -459,6 +459,8 @@ mod tests {
             net_contribution_base: Decimal::ZERO,
             cash_total_account_currency: cash,
             cash_total_base_currency: cash,
+            position_market_values: HashMap::new(),
+            liability_balance: Decimal::ZERO,
             calculated_at: Utc::now().naive_utc(),
             source: SnapshotSource::Calculated,
         }
@@ -603,6 +605,8 @@ mod tests {
             net_contribution_base: dec!(0),
             cash_total_account_currency: dec!(0),
             cash_total_base_currency: dec!(0),
+            position_market_values: HashMap::new(),
+            liability_balance: Decimal::ZERO,
             calculated_at: Utc::now().naive_utc(),
             source: SnapshotSource::Calculated,
         };
@@ -695,6 +699,8 @@ mod tests {
             net_contribution_base: dec!(250),
             cash_total_account_currency: dec!(10),
             cash_total_base_currency: dec!(10),
+            position_market_values: HashMap::new(),
+            liability_balance: Decimal::ZERO,
             calculated_at: now.naive_utc(),
             source: SnapshotSource::Calculated,
         };
@@ -751,6 +757,8 @@ mod tests {
             net_contribution_base: Decimal::ZERO,
             cash_total_account_currency: dec!(4377.98972459),
             cash_total_base_currency: dec!(4377.98972459),
+            position_market_values: HashMap::new(),
+            liability_balance: Decimal::ZERO,
             calculated_at: now.naive_utc(),
             source: SnapshotSource::Calculated,
         };
@@ -805,6 +813,8 @@ mod tests {
             net_contribution_base: Decimal::ZERO,
             cash_total_account_currency: Decimal::ZERO,
             cash_total_base_currency: Decimal::ZERO,
+            position_market_values: HashMap::new(),
+            liability_balance: Decimal::ZERO,
             calculated_at: now.naive_utc(),
             source: SnapshotSource::ManualEntry,
         };
@@ -905,6 +915,8 @@ mod tests {
             net_contribution_base: dec!(150),
             cash_total_account_currency: Decimal::ZERO,
             cash_total_base_currency: Decimal::ZERO,
+            position_market_values: HashMap::new(),
+            liability_balance: Decimal::ZERO,
             calculated_at: Utc::now().naive_utc(),
             source: SnapshotSource::Calculated,
         };
@@ -1006,6 +1018,8 @@ mod tests {
             net_contribution_base: dec!(135.86),
             cash_total_account_currency: Decimal::ZERO,
             cash_total_base_currency: Decimal::ZERO,
+            position_market_values: HashMap::new(),
+            liability_balance: Decimal::ZERO,
             calculated_at: Utc::now().naive_utc(),
             source: SnapshotSource::Calculated,
         };

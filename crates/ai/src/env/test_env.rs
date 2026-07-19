@@ -65,6 +65,10 @@ use wealthfolio_core::{
     Error as CoreError, Result as CoreResult,
 };
 use wealthfolio_spending::cash_activities::CashActivityServiceTrait;
+use wealthfolio_spending::categorization_evidence::{
+    CategorizationEvidence, CategorizationEvidenceImport, CategorizationEvidenceImportResult,
+    CategorizationEvidenceRepositoryTrait, CategorizationEvidenceService,
+};
 use wealthfolio_spending::categorization_rules::CategorizationRulesServiceTrait;
 
 /// Mock secret store for testing.
@@ -1530,6 +1534,7 @@ pub struct MockEnvironment {
     pub taxonomy_service: Arc<dyn TaxonomyServiceTrait>,
     pub cash_activity_service: Arc<dyn CashActivityServiceTrait>,
     pub categorization_rules_service: Arc<dyn CategorizationRulesServiceTrait>,
+    pub categorization_evidence_service: Arc<CategorizationEvidenceService>,
 }
 
 /// Mock cash-activity service for testing. Seed `items` to control both
@@ -1576,6 +1581,33 @@ impl CashActivityServiceTrait for MockCashActivityService {
     }
 }
 
+/// Empty historical-evidence repository for AI tests and evals.
+#[derive(Default)]
+pub struct MockCategorizationEvidenceRepository;
+
+#[async_trait]
+impl CategorizationEvidenceRepositoryTrait for MockCategorizationEvidenceRepository {
+    async fn import(
+        &self,
+        _request: CategorizationEvidenceImport,
+    ) -> anyhow::Result<CategorizationEvidenceImportResult> {
+        unimplemented!("evidence imports are not used in AI fixtures")
+    }
+
+    async fn rollback_import(&self, _import_run_id: &str) -> anyhow::Result<usize> {
+        unimplemented!("evidence rollback is not used in AI fixtures")
+    }
+
+    async fn list_for_merchant(
+        &self,
+        _merchant_key: &str,
+        _merchant_key_version: i32,
+        _normalization_version: i32,
+    ) -> anyhow::Result<Vec<CategorizationEvidence>> {
+        Ok(Vec::new())
+    }
+}
+
 /// Mock categorization-rules service for testing.
 #[derive(Default)]
 pub struct MockCategorizationRulesService {
@@ -1618,6 +1650,9 @@ impl MockEnvironment {
             taxonomy_service: Arc::new(MockTaxonomyService::default()),
             cash_activity_service: Arc::new(MockCashActivityService::default()),
             categorization_rules_service: Arc::new(MockCategorizationRulesService::default()),
+            categorization_evidence_service: Arc::new(CategorizationEvidenceService::new(
+                Arc::new(MockCategorizationEvidenceRepository),
+            )),
         }
     }
 
@@ -1706,6 +1741,10 @@ impl AgentEnvironment for MockEnvironment {
 
     fn categorization_rules_service(&self) -> Arc<dyn CategorizationRulesServiceTrait> {
         self.categorization_rules_service.clone()
+    }
+
+    fn categorization_evidence_service(&self) -> Arc<CategorizationEvidenceService> {
+        self.categorization_evidence_service.clone()
     }
 }
 

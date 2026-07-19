@@ -319,7 +319,9 @@ export {
 
 // Provider Connections Commands
 export {
+  admitProviderAccount,
   completePlaidConnection,
+  listDiscoveredProviderAccounts,
   listProviderConnections,
   startProviderConnection,
 } from "../shared/provider-connections";

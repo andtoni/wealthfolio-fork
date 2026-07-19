@@ -21,6 +21,7 @@ use wealthfolio_core::accounts::account_types;
 use wealthfolio_spending::cash_activities::{
     CashActivity, CashActivitySearchRequest, CashActivityStatusFilter,
 };
+use wealthfolio_spending::categorization_evidence::{CategorizationEvidence, AGREEMENT, CONFLICT};
 
 const DEFAULT_LIMIT: usize = 100;
 /// Max rows per categorization call; also caps explicit `activityIds`.
@@ -28,6 +29,8 @@ pub const MAX_LIMIT: usize = 100;
 const HISTORY_FETCH_LIMIT: usize = 400;
 const EXAMPLES_PER_CATEGORY: usize = 3;
 const MAX_TOTAL_EXAMPLES: usize = 80;
+const EVIDENCE_NORMALIZATION_VERSION: i32 = 1;
+const MIN_EVIDENCE_LABEL_COUNT: i32 = 3;
 /// Max characters of a transaction's notes surfaced to the model.
 pub const MAX_NOTES_LEN: usize = 100;
 
@@ -99,7 +102,7 @@ pub struct Proposal {
     pub category_id: String,
     pub category_path: String,
     pub confidence: f32,
-    /// "rule" | "history" | "ai"
+    /// "rule" | "evidence" | "history" | "ai"
     pub source: String,
     pub explanation: String,
 }
@@ -196,6 +199,22 @@ pub async fn compute_categorization_state(
             key_lookup: HashMap::new(),
         });
     }
+    let accounts = env
+        .account_service()
+        .get_accounts_by_ids(
+            &targets
+                .iter()
+                .map(|target| target.activity.account_id.clone())
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>(),
+        )
+        .map_err(|e| AgentToolError::ExecutionFailed(e.to_string()))?;
+    let account_context: HashMap<String, Option<String>> = accounts
+        .into_iter()
+        .map(|account| (account.id.clone(), account.provider))
+        .collect();
+
     let history_account_ids = filters.account_ids.clone().or_else(|| {
         filters.activity_ids.as_ref().map(|_| {
             let mut ids = targets
@@ -321,6 +340,7 @@ pub async fn compute_categorization_state(
     }
 
     let rules_service = env.categorization_rules_service();
+    let evidence_service = env.categorization_evidence_service();
     let all_rules = rules_service
         .list()
         .await
@@ -333,6 +353,11 @@ pub async fn compute_categorization_state(
     let mut unproposed = Vec::new();
     for target in &targets {
         let act = &target.activity;
+        // Existing assignments are authoritative. In particular, `status: all`
+        // must never turn a manual category into a replacement proposal.
+        if has_authoritative_assignment(target) {
+            continue;
+        }
         let amount = act.amount.and_then(|d| d.to_f64()).unwrap_or(0.0);
         let date = act.activity_date.format("%Y-%m-%d").to_string();
         let notes_trimmed = act.notes.as_deref().map(truncate_notes);
@@ -366,6 +391,44 @@ pub async fn compute_categorization_state(
                     });
                     continue;
                 }
+            }
+        }
+
+        if let Some((merchant_key, merchant_key_version)) = merchant_context(act) {
+            let evidence = evidence_service
+                .list_for_merchant(
+                    &merchant_key,
+                    merchant_key_version,
+                    EVIDENCE_NORMALIZATION_VERSION,
+                )
+                .await
+                .map_err(|e| AgentToolError::ExecutionFailed(e.to_string()))?;
+            let provider = account_context
+                .get(&act.account_id)
+                .and_then(|provider| provider.as_deref());
+            if let Some(candidate) =
+                select_evidence(&evidence, act, provider, &act.account_id, &category_lookup)
+            {
+                let record = &candidate.evidence;
+                let (_, _, _, path, _) = &category_lookup[&record.category_id];
+                proposals.push(Proposal {
+                    activity_id: act.id.clone(),
+                    activity_date: date.clone(),
+                    amount,
+                    currency: act.currency.clone(),
+                    notes: notes_trimmed.clone(),
+                    taxonomy_id: record.taxonomy_id.clone(),
+                    category_id: record.category_id.clone(),
+                    category_path: path.clone(),
+                    confidence: 0.94,
+                    source: "evidence".to_string(),
+                    explanation: format!(
+                        "Matched {} trusted historical labels for this merchant ({} context).",
+                        record.label_count,
+                        evidence_context_name(record)
+                    ),
+                });
+                continue;
             }
         }
 
@@ -418,7 +481,8 @@ pub async fn compute_categorization_state(
             amount,
             currency: act.currency.clone(),
             notes: notes_trimmed,
-            reason: "No rule or history match — needs AI or manual judgement.".to_string(),
+            reason: "No rule, trusted evidence, or history match — needs AI or manual judgement."
+                .to_string(),
         });
     }
 
@@ -430,6 +494,139 @@ pub async fn compute_categorization_state(
         taxonomies: taxonomy_summaries,
         examples,
         key_lookup,
+    })
+}
+
+fn has_authoritative_assignment(activity: &CashActivity) -> bool {
+    !activity.assignments.is_empty()
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MerchantContext {
+    merchant_key: String,
+    merchant_key_version: i32,
+    normalization_version: i32,
+}
+
+fn merchant_context(activity: &wealthfolio_core::activities::Activity) -> Option<(String, i32)> {
+    let value = activity
+        .metadata
+        .as_ref()?
+        .get("providerOwned")?
+        .get("merchantContext")?;
+    let context: MerchantContext = serde_json::from_value(value.clone()).ok()?;
+    (context.normalization_version == EVIDENCE_NORMALIZATION_VERSION
+        && context.merchant_key_version > 0
+        && !context.merchant_key.trim().is_empty())
+    .then_some((context.merchant_key, context.merchant_key_version))
+}
+
+fn evidence_context_rank(
+    evidence: &wealthfolio_spending::categorization_evidence::NewCategorizationEvidence,
+    provider: Option<&str>,
+    account_id: &str,
+) -> Option<u8> {
+    let account_matches = evidence
+        .account_context
+        .as_deref()
+        .is_none_or(|value| value == account_id);
+    let provider_matches = evidence
+        .provider_context
+        .as_deref()
+        .is_none_or(|value| Some(value) == provider);
+    if !account_matches || !provider_matches {
+        return None;
+    }
+    Some(
+        match (
+            evidence.account_context.is_some(),
+            evidence.provider_context.is_some(),
+        ) {
+            (true, true) => 3,
+            (true, false) => 2,
+            (false, true) => 1,
+            (false, false) => 0,
+        },
+    )
+}
+
+fn evidence_context_name(
+    evidence: &wealthfolio_spending::categorization_evidence::NewCategorizationEvidence,
+) -> &'static str {
+    match (
+        evidence.account_context.is_some(),
+        evidence.provider_context.is_some(),
+    ) {
+        (true, true) => "account and provider",
+        (true, false) => "account",
+        (false, true) => "provider",
+        (false, false) => "global",
+    }
+}
+
+fn evidence_direction(activity: &wealthfolio_core::activities::Activity) -> &'static str {
+    match activity.effective_type() {
+        "WITHDRAWAL" | "FEE" | "TRANSFER_OUT" | "BUY" => "outflow",
+        "DEPOSIT" | "CREDIT" | "TRANSFER_IN" | "SELL" | "DIVIDEND" | "INTEREST" => "inflow",
+        _ if activity
+            .amount
+            .is_some_and(|amount| amount.is_sign_negative()) =>
+        {
+            "outflow"
+        }
+        _ => "inflow",
+    }
+}
+
+fn select_evidence<'a>(
+    evidence: &'a [CategorizationEvidence],
+    activity: &wealthfolio_core::activities::Activity,
+    provider: Option<&str>,
+    account_id: &str,
+    category_lookup: &HashMap<String, (String, String, String, String, String)>,
+) -> Option<&'a CategorizationEvidence> {
+    let mut eligible = evidence
+        .iter()
+        .filter_map(|row| {
+            let record = &row.evidence;
+            if record.activity_type != activity.effective_type()
+                || record.direction != evidence_direction(activity)
+            {
+                return None;
+            }
+            evidence_context_rank(record, provider, account_id).map(|rank| (rank, row))
+        })
+        .collect::<Vec<_>>();
+    let max_rank = eligible.iter().map(|(rank, _)| *rank).max()?;
+    eligible.retain(|(rank, _)| *rank == max_rank);
+    if eligible
+        .iter()
+        .any(|(_, row)| row.evidence.agreement_state == CONFLICT)
+    {
+        return None;
+    }
+    eligible.retain(|(_, row)| {
+        let record = &row.evidence;
+        record.agreement_state == AGREEMENT
+            && record.label_count >= MIN_EVIDENCE_LABEL_COUNT
+            && category_lookup
+                .get(&record.category_id)
+                .is_some_and(|(taxonomy_id, _, _, _, _)| taxonomy_id == &record.taxonomy_id)
+    });
+    let category_count = eligible
+        .iter()
+        .map(|(_, row)| (&row.evidence.taxonomy_id, &row.evidence.category_id))
+        .collect::<HashSet<_>>()
+        .len();
+    if category_count != 1 {
+        return None;
+    }
+    eligible.into_iter().map(|(_, row)| row).max_by(|a, b| {
+        a.evidence
+            .label_count
+            .cmp(&b.evidence.label_count)
+            .then_with(|| b.id.cmp(&a.id))
     })
 }
 
@@ -889,6 +1086,148 @@ mod tests {
             event_id: None,
             transfer_link_status: None,
         }
+    }
+
+    fn evidence(
+        category_id: &str,
+        state: &str,
+        labels: i32,
+        provider: Option<&str>,
+        account: Option<&str>,
+    ) -> CategorizationEvidence {
+        CategorizationEvidence {
+            id: format!("{category_id}-{state}-{labels}"),
+            import_run_id: "fixture".to_string(),
+            evidence: wealthfolio_spending::categorization_evidence::NewCategorizationEvidence {
+                merchant_key: "merchant:coffee".to_string(),
+                merchant_key_version: 1,
+                normalization_version: 1,
+                taxonomy_id: "tax1".to_string(),
+                category_id: category_id.to_string(),
+                direction: "outflow".to_string(),
+                activity_type: "WITHDRAWAL".to_string(),
+                provider_context: provider.map(str::to_string),
+                account_context: account.map(str::to_string),
+                label_count: labels,
+                agreement_state: state.to_string(),
+                first_label_date: "2026-01-01".to_string(),
+                last_label_date: "2026-06-01".to_string(),
+                provenance: "test".to_string(),
+            },
+            created_at: "2026-06-01T00:00:00Z".to_string(),
+        }
+    }
+
+    fn evidence_lookup() -> HashMap<String, (String, String, String, String, String)> {
+        ["food", "travel"]
+            .into_iter()
+            .map(|category| {
+                (
+                    category.to_string(),
+                    (
+                        "tax1".to_string(),
+                        "Spending".to_string(),
+                        category.to_string(),
+                        category.to_string(),
+                        "#000".to_string(),
+                    ),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn merchant_context_wire_shape_is_exact_and_category_fields_are_rejected() {
+        let mut target = make_cash_activity("target", "acct", "2024-06-15T00:00:00Z", false, false);
+        target.activity.metadata = Some(serde_json::json!({
+            "providerOwned": { "merchantContext": {
+                "merchantKey": "merchant:coffee",
+                "merchantKeyVersion": 1,
+                "normalizationVersion": 1
+            }},
+            "user": { "preserved": true }
+        }));
+        assert_eq!(
+            merchant_context(&target.activity),
+            Some(("merchant:coffee".to_string(), 1))
+        );
+
+        target.activity.metadata.as_mut().unwrap()["providerOwned"]["merchantContext"]
+            ["categoryId"] = serde_json::json!("food");
+        assert_eq!(merchant_context(&target.activity), None);
+        assert_eq!(target.activity.notes.as_deref(), Some("test"));
+        assert_eq!(
+            target.activity.metadata.as_ref().unwrap()["user"]["preserved"],
+            true
+        );
+    }
+
+    #[test]
+    fn evidence_context_precedence_conflict_and_unknown_category_are_fail_closed() {
+        let target = make_cash_activity("target", "acct", "2024-06-15T00:00:00Z", false, false);
+        let lookup = evidence_lookup();
+        let contextual = vec![
+            evidence("food", AGREEMENT, 8, None, None),
+            evidence("travel", AGREEMENT, 4, Some("plaid"), Some("acct")),
+        ];
+        assert_eq!(
+            select_evidence(
+                &contextual,
+                &target.activity,
+                Some("plaid"),
+                "acct",
+                &lookup
+            )
+            .unwrap()
+            .evidence
+            .category_id,
+            "travel"
+        );
+
+        let conflict = vec![
+            evidence("food", AGREEMENT, 8, None, None),
+            evidence("travel", CONFLICT, 4, Some("plaid"), Some("acct")),
+        ];
+        assert!(
+            select_evidence(&conflict, &target.activity, Some("plaid"), "acct", &lookup).is_none()
+        );
+        assert!(select_evidence(
+            &[evidence("retired-category", AGREEMENT, 8, None, None)],
+            &target.activity,
+            None,
+            "acct",
+            &lookup,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn evidence_requires_three_labels_exact_context_and_preserves_manual_assignments() {
+        let target = make_cash_activity("target", "acct", "2024-06-15T00:00:00Z", false, false);
+        let lookup = evidence_lookup();
+        assert!(select_evidence(
+            &[evidence("food", AGREEMENT, 2, None, None)],
+            &target.activity,
+            None,
+            "acct",
+            &lookup,
+        )
+        .is_none());
+        assert!(select_evidence(
+            &[evidence("food", AGREEMENT, 8, Some("plaid"), Some("acct"))],
+            &target.activity,
+            Some("snaptrade"),
+            "acct",
+            &lookup,
+        )
+        .is_none());
+        assert!(has_authoritative_assignment(&make_cash_activity(
+            "manual",
+            "acct",
+            "2024-06-15T00:00:00Z",
+            false,
+            true,
+        )));
     }
 
     #[test]

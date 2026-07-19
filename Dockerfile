@@ -41,11 +41,11 @@ WORKDIR /app
 # Install build tools for the HOST (to run cargo, build scripts)
 # clang/lld are needed for cross-linking
 # pkgconfig is required for openssl-sys to find the target libraries
-RUN apk add --no-cache clang lld build-base git file pkgconfig
+RUN apk add --no-cache clang21=21.1.2-r2 lld21=21.1.2-r1 git=2.52.0-r0 file=5.46-r2 pkgconf=2.5.1-r0
 
 # Install TARGET dependencies
 # xx-apk installs into /$(xx-info triple)/...
-RUN xx-apk add --no-cache musl-dev gcc openssl-dev openssl-libs-static sqlite-dev
+RUN xx-apk add --no-cache musl-dev=1.2.5-r23 gcc=15.2.0-r2 openssl-dev=3.5.7-r0 openssl-libs-static=3.5.7-r0 sqlite-dev=3.51.2-r0
 
 # Install rust target
 RUN rustup target add $(xx-cargo --print-target-triple)

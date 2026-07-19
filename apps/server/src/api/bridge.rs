@@ -51,6 +51,34 @@ mod tests {
     }
 
     #[test]
+    fn merchant_context_wire_shape_is_strict() {
+        let valid = serde_json::json!({
+            "idempotency_key": "key", "subject": "subject", "access_generation": 1,
+            "kind": "ActivityUpsert", "resource_id": "activity", "lifecycle_successor_id": null,
+            "activity": {
+                "account_id": "account", "activity_type": "WITHDRAWAL", "status": "POSTED",
+                "activity_date": "2026-01-01T00:00:00Z", "amount": "1", "currency": "USD",
+                "notes": null, "activity_type_override": null, "needs_review": null,
+                "merchant_context": {
+                    "merchant_key": "merchant:coffee", "merchant_key_version": 1,
+                    "normalization_version": 1
+                }
+            }
+        });
+        serde_json::from_value::<wealthfolio_storage_sqlite::bridge_policy::DisclosureOperation>(
+            valid.clone(),
+        )
+        .expect("strict v1 context");
+
+        let mut category_bearing = valid;
+        category_bearing["activity"]["merchant_context"]["category_id"] = serde_json::json!("food");
+        assert!(serde_json::from_value::<
+            wealthfolio_storage_sqlite::bridge_policy::DisclosureOperation,
+        >(category_bearing)
+        .is_err());
+    }
+
+    #[test]
     fn receipt_response_serializes_complete_binding_identity() {
         use wealthfolio_storage_sqlite::bridge_policy::{DisclosureReceipt, ReceiptOutcome};
         let value = serde_json::to_value(receipt(DisclosureReceipt {
@@ -63,8 +91,9 @@ mod tests {
             resource_id: "activity-1".into(),
             lifecycle_successor_id: Some("activity-2".into()),
             outcome: ReceiptOutcome::Accepted,
-            binding_version: 1,
-            receipt_binding: "v1;binding".into(),
+            binding_version: 3,
+            receipt_binding: "v3;binding".into(),
+            semantic_hash: None,
         }))
         .unwrap();
         assert_eq!(
@@ -79,8 +108,9 @@ mod tests {
                 "resourceId": "activity-1",
                 "lifecycleSuccessorId": "activity-2",
                 "outcome": "Accepted",
-                "bindingVersion": 1,
-                "receiptBinding": "v1;binding"
+                "bindingVersion": 3,
+                "receiptBinding": "v3;binding",
+                "semanticHash": null
             })
         );
     }
@@ -100,6 +130,7 @@ pub struct ReceiptResponse {
     outcome: String,
     binding_version: i64,
     receipt_binding: String,
+    semantic_hash: Option<String>,
 }
 
 fn receipt(r: wealthfolio_storage_sqlite::bridge_policy::DisclosureReceipt) -> ReceiptResponse {
@@ -115,6 +146,7 @@ fn receipt(r: wealthfolio_storage_sqlite::bridge_policy::DisclosureReceipt) -> R
         outcome: format!("{:?}", r.outcome),
         binding_version: r.binding_version,
         receipt_binding: r.receipt_binding,
+        semantic_hash: r.semantic_hash,
     }
 }
 

@@ -201,11 +201,11 @@ async fn bearer_bridge_commit_returns_accepted_receipt() {
     assert_eq!(receipt["resourceId"], "bridge-activity");
     assert!(receipt["lifecycleSuccessorId"].is_null());
     assert_eq!(receipt["outcome"], "Accepted");
-    assert_eq!(receipt["bindingVersion"], 2);
+    assert_eq!(receipt["bindingVersion"], 3);
     assert!(receipt["receiptBinding"]
         .as_str()
         .unwrap()
-        .starts_with("v2;"));
+        .starts_with("v3;"));
     let recovered = server
         .client
         .get(format!(
