@@ -184,6 +184,15 @@ struct FinanceSyncAdmissionStatus {
     asset_mapping_digest: String,
 }
 
+#[derive(Clone, Debug)]
+struct ProviderRelinkHandoff {
+    provider_generation: i64,
+    prior_provider_generation: i64,
+    receiver_access_generation: i64,
+    database_state_digest: String,
+    acknowledged: bool,
+}
+
 fn empty_asset_mapping_digest() -> String {
     format!("sha256:{:x}", Sha256::digest(b"[]"))
 }
@@ -329,7 +338,7 @@ fn provider_relink_state_attestation(
     let bound_mapping: i64 = connection
         .query_row(
             "SELECT count(*) FROM provider_account_connections WHERE account_id=?1 AND provider=?2 AND connection_id=?3 AND provider_account_id=?4 AND provider_generation=?5",
-            rusqlite::params![account_id, provider.to_string(), connection_id, provider_account_id, provider_generation],
+            rusqlite::params![account_id, provider.to_string(), connection_id, provider_account_id, prior_provider_generation],
             |row| row.get(0),
         )
         .map_err(|error| ApiError::Internal(error.to_string()))?;
@@ -744,6 +753,121 @@ fn mapped_provider_account_id(
         .map_err(|error| ApiError::Internal(error.to_string()))
 }
 
+fn provider_relink_handoff(
+    db_path: &str,
+    account_id: &str,
+    state: &str,
+    provider_generation: Option<i64>,
+) -> ApiResult<Option<ProviderRelinkHandoff>> {
+    use rusqlite::OptionalExtension;
+    let connection = rusqlite::Connection::open(db_path)
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    connection
+        .query_row(
+            "SELECT provider_generation,prior_provider_generation,receiver_access_generation,database_state_digest,state='acknowledged' FROM provider_account_relink_handoffs WHERE account_id=?1 AND state=?2 AND (?3 IS NULL OR provider_generation=?3) ORDER BY provider_generation DESC LIMIT 1",
+            rusqlite::params![account_id, state, provider_generation],
+            |row| {
+                Ok(ProviderRelinkHandoff {
+                    provider_generation: row.get(0)?,
+                    prior_provider_generation: row.get(1)?,
+                    receiver_access_generation: row.get(2)?,
+                    database_state_digest: row.get(3)?,
+                    acknowledged: row.get(4)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|error| ApiError::Internal(error.to_string()))
+}
+
+fn record_provider_relink_handoff(
+    db_path: &str,
+    account_id: &str,
+    handoff: &ProviderRelinkHandoff,
+) -> ApiResult<()> {
+    let connection = rusqlite::Connection::open(db_path)
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO provider_account_relink_handoffs(account_id,provider_generation,prior_provider_generation,receiver_access_generation,database_state_digest) SELECT ?1,?2,?3,?4,?5 WHERE EXISTS(SELECT 1 FROM provider_account_connections WHERE account_id=?1 AND provider_generation=?3)",
+            rusqlite::params![account_id, handoff.provider_generation, handoff.prior_provider_generation, handoff.receiver_access_generation, handoff.database_state_digest],
+        )
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let stored =
+        provider_relink_handoff(db_path, account_id, "pending", None)?.ok_or_else(|| {
+            ApiError::BadRequest("Provider relink generation changed during admission.".to_string())
+        })?;
+    if stored.provider_generation != handoff.provider_generation
+        || stored.prior_provider_generation != handoff.prior_provider_generation
+        || stored.receiver_access_generation != handoff.receiver_access_generation
+        || stored.database_state_digest != handoff.database_state_digest
+    {
+        return Err(ApiError::BadRequest(
+            "Provider relink generation changed during admission.".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn acknowledge_provider_relink_handoff(
+    db_path: &str,
+    account_id: &str,
+    handoff: &ProviderRelinkHandoff,
+) -> ApiResult<()> {
+    let mut connection = rusqlite::Connection::open(db_path)
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let transaction = connection
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let generation: i64 = transaction
+        .query_row(
+            "SELECT provider_generation FROM provider_account_connections WHERE account_id=?1",
+            [account_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    if generation == handoff.prior_provider_generation {
+        transaction
+            .execute(
+                "UPDATE provider_account_connections SET provider_generation=?1 WHERE account_id=?2 AND provider_generation=?3",
+                rusqlite::params![handoff.provider_generation, account_id, handoff.prior_provider_generation],
+            )
+            .map_err(|error| ApiError::Internal(error.to_string()))?;
+    } else if generation != handoff.provider_generation {
+        return Err(ApiError::BadRequest(
+            "Provider relink generation changed during admission.".to_string(),
+        ));
+    }
+    let updated = transaction
+        .execute(
+            "UPDATE provider_account_relink_handoffs SET state='acknowledged',acknowledged_at=CURRENT_TIMESTAMP WHERE account_id=?1 AND provider_generation=?2 AND prior_provider_generation=?3 AND receiver_access_generation=?4 AND database_state_digest=?5 AND state='pending'",
+            rusqlite::params![account_id, handoff.provider_generation, handoff.prior_provider_generation, handoff.receiver_access_generation, handoff.database_state_digest],
+        )
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    if updated != 1 && !handoff.acknowledged {
+        return Err(ApiError::BadRequest(
+            "Provider relink generation changed during admission.".to_string(),
+        ));
+    }
+    transaction
+        .commit()
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    Ok(())
+}
+
+fn admission_matches_handoff(
+    admitted: &FinanceSyncAdmissionStatus,
+    account_id: &str,
+    handoff: &ProviderRelinkHandoff,
+) -> bool {
+    admitted.wealthfolio_account_id == account_id
+        && admitted.provider_generation == handoff.provider_generation
+        && admitted.receiver_access_generation == handoff.receiver_access_generation
+        && admitted.baseline_status == "verified"
+        && admitted.baseline_digest.as_deref() == Some(handoff.database_state_digest.as_str())
+        && admitted.asset_mapping_digest == empty_asset_mapping_digest()
+}
+
 fn ensure_provider_account_access(
     db_path: &str,
     deployment_id: &str,
@@ -869,19 +993,6 @@ fn ensure_provider_account_access(
             "Provider account identity conflicts with an existing connection mapping.".to_string(),
         ));
     }
-    if bound.1 < provider_generation {
-        let updated = transaction
-            .execute(
-                "UPDATE provider_account_connections SET provider_generation=?1 WHERE account_id=?2 AND provider=?3 AND connection_id=?4 AND provider_account_id=?5 AND provider_generation=?6",
-                rusqlite::params![provider_generation, account_id, provider.to_string(), connection_id, provider_account_id, bound.1],
-            )
-            .map_err(|error| ApiError::Internal(error.to_string()))?;
-        if updated != 1 {
-            return Err(ApiError::BadRequest(
-                "Provider account generation changed during admission.".to_string(),
-            ));
-        }
-    }
     transaction
         .commit()
         .map_err(|error| ApiError::Internal(error.to_string()))?;
@@ -924,7 +1035,16 @@ async fn admit_provider_account(
     let prior_provider_generation = mapped_account_id
         .as_ref()
         .map(|(_, generation)| *generation);
-    let mut provider_generation = prior_provider_generation;
+    let mut relink_handoff = match mapped_account_id.as_ref() {
+        Some((account_id, _)) => {
+            provider_relink_handoff(&state.db_path, account_id, "pending", None)?
+        }
+        None => None,
+    };
+    let mut provider_generation = relink_handoff
+        .as_ref()
+        .map(|handoff| handoff.provider_generation)
+        .or(prior_provider_generation);
     let existing =
         if let Some(mapped_account_id) = mapped_account_id.as_ref().map(|(id, _)| id.as_str()) {
             Some(
@@ -957,7 +1077,7 @@ async fn admit_provider_account(
                 "Provider account identity conflicts with an existing account.".to_string(),
             ));
         }
-        {
+        if relink_handoff.is_none() {
             let discovered: Vec<DiscoveredProviderAccount> = FinanceSyncControl::from_env()?
                 .get(
                     &format!("/control/v1/provider-connections/{provider}/accounts"),
@@ -970,12 +1090,46 @@ async fn admit_provider_account(
                     && candidate.provider_account_id == request.provider_account_id
             });
             if let Some(source) = source {
+                if let Some(prior) = prior_provider_generation {
+                    if source.provider_generation < prior {
+                        return Err(ApiError::BadRequest(
+                            "Provider relink generation is stale.".to_string(),
+                        ));
+                    }
+                    if source.provider_generation == prior {
+                        relink_handoff = provider_relink_handoff(
+                            &state.db_path,
+                            &account.id,
+                            "acknowledged",
+                            Some(prior),
+                        )?;
+                        if relink_handoff.is_none() {
+                            return Err(ApiError::BadRequest(
+                                "Provider relink generation is not monotonic.".to_string(),
+                            ));
+                        }
+                    }
+                }
                 provider_generation = Some(source.provider_generation);
                 if provider == ProviderKind::SnapTrade {
                     snaptrade_asset_count = Some(source.assets.len());
                 }
-            } else if !account.is_active && mapped_account_id.is_some() {
-                reconcile_committed = true;
+            } else if let Some(prior) = prior_provider_generation {
+                relink_handoff = provider_relink_handoff(
+                    &state.db_path,
+                    &account.id,
+                    "acknowledged",
+                    Some(prior),
+                )?;
+                if relink_handoff.is_none() {
+                    if !account.is_active {
+                        reconcile_committed = true;
+                    } else {
+                        return Err(ApiError::BadRequest(
+                            "Provider account is no longer available.".to_string(),
+                        ));
+                    }
+                }
             } else {
                 return Err(ApiError::BadRequest(
                     "Provider account is no longer available.".to_string(),
@@ -1057,45 +1211,52 @@ async fn admit_provider_account(
     // attestation binds the authenticated subject, both provider identities, the
     // Wealthfolio account, and the current policy generation. Finance must accept
     // this exact completion contract; a caller-supplied prefix is never trusted.
-    let (attestation, baseline_kind, relink_prior_generation) = match prior_provider_generation {
-        Some(prior) if prior < provider_generation => (
-            provider_relink_state_attestation(
-                &state.db_path,
-                subject.as_str(),
-                provider,
-                &request.connection_id,
-                &request.provider_account_id,
-                &account.id,
-                &state.deployment_id,
-                prior,
-                provider_generation,
-            ),
-            "relink",
-            Some(prior),
-        ),
-        _ => (
-            empty_account_state_attestation(
-                &state.db_path,
-                subject.as_str(),
-                provider,
-                &request.connection_id,
-                &request.provider_account_id,
-                &account.id,
-                &state.deployment_id,
-            ),
-            "empty",
-            None,
-        ),
-    };
-    let (database_state_digest, receiver_access_generation) = match attestation {
-        Ok(attestation) => attestation,
-        Err(error) => {
-            if created_new {
-                state.account_service.delete_account(&account.id).await?;
+    let resumed_relink = relink_handoff.is_some();
+    let (database_state_digest, receiver_access_generation, baseline_kind, relink_prior_generation) =
+        if let Some(handoff) = relink_handoff.as_ref() {
+            (
+                handoff.database_state_digest.clone(),
+                handoff.receiver_access_generation,
+                "relink",
+                Some(handoff.prior_provider_generation),
+            )
+        } else {
+            match prior_provider_generation {
+                Some(prior) if prior < provider_generation => {
+                    let (digest, receiver_generation) = provider_relink_state_attestation(
+                        &state.db_path,
+                        subject.as_str(),
+                        provider,
+                        &request.connection_id,
+                        &request.provider_account_id,
+                        &account.id,
+                        &state.deployment_id,
+                        prior,
+                        provider_generation,
+                    )?;
+                    relink_handoff = Some(ProviderRelinkHandoff {
+                        provider_generation,
+                        prior_provider_generation: prior,
+                        receiver_access_generation: receiver_generation,
+                        database_state_digest: digest.clone(),
+                        acknowledged: false,
+                    });
+                    (digest, receiver_generation, "relink", Some(prior))
+                }
+                _ => {
+                    let (digest, receiver_generation) = empty_account_state_attestation(
+                        &state.db_path,
+                        subject.as_str(),
+                        provider,
+                        &request.connection_id,
+                        &request.provider_account_id,
+                        &account.id,
+                        &state.deployment_id,
+                    )?;
+                    (digest, receiver_generation, "empty", None)
+                }
             }
-            return Err(error);
-        }
-    };
+        };
     if let Some(asset_count) = snaptrade_asset_count.filter(|count| *count != 0) {
         if created_new {
             state.account_service.delete_account(&account.id).await?;
@@ -1104,8 +1265,14 @@ async fn admit_provider_account(
             "SnapTrade account is pending explicit provider-asset admission; {asset_count} discovered provider asset(s) require immutable asset mappings."
         )));
     }
-    if reconcile_committed {
-        let committed = FinanceSyncControl::from_env()?
+    if !resumed_relink {
+        if let Some(handoff) = relink_handoff.as_ref() {
+            record_provider_relink_handoff(&state.db_path, &account.id, handoff)?;
+        }
+    }
+    let mut remotely_acknowledged = false;
+    if reconcile_committed || resumed_relink {
+        if let Some(committed) = FinanceSyncControl::from_env()?
             .admission_status(
                 provider,
                 subject.as_str(),
@@ -1113,21 +1280,53 @@ async fn admit_provider_account(
                 &request.provider_account_id,
             )
             .await?
-            .ok_or_else(|| {
-                ApiError::BadRequest("Provider account is no longer available.".to_string())
-            })?;
-        if committed.wealthfolio_account_id != account.id
-            || committed.provider_generation != provider_generation
-            || committed.receiver_access_generation != receiver_access_generation
-            || committed.baseline_status != "verified"
-            || committed.baseline_digest.as_deref() != Some(database_state_digest.as_str())
-            || committed.asset_mapping_digest != empty_asset_mapping_digest()
+        {
+            let matches = if let Some(handoff) = relink_handoff.as_ref() {
+                admission_matches_handoff(&committed, &account.id, handoff)
+            } else {
+                committed.wealthfolio_account_id == account.id
+                    && committed.provider_generation == provider_generation
+                    && committed.receiver_access_generation == receiver_access_generation
+                    && committed.baseline_status == "verified"
+                    && committed.baseline_digest.as_deref() == Some(database_state_digest.as_str())
+                    && committed.asset_mapping_digest == empty_asset_mapping_digest()
+            };
+            if !matches {
+                return Err(ApiError::BadRequest(
+                    "Committed provider admission conflicts with the pending account.".to_string(),
+                ));
+            }
+            remotely_acknowledged = true;
+        } else if reconcile_committed
+            || relink_handoff
+                .as_ref()
+                .is_some_and(|handoff| handoff.acknowledged)
         {
             return Err(ApiError::BadRequest(
-                "Committed provider admission conflicts with the pending account.".to_string(),
+                "Provider account is no longer available.".to_string(),
             ));
+        } else {
+            let discovered: Vec<DiscoveredProviderAccount> = FinanceSyncControl::from_env()?
+                .get(
+                    &format!("/control/v1/provider-connections/{provider}/accounts"),
+                    subject.as_str(),
+                )
+                .await?;
+            validate_discovered_accounts(&discovered)?;
+            let source = discovered.iter().find(|candidate| {
+                candidate.connection_id == request.connection_id
+                    && candidate.provider_account_id == request.provider_account_id
+            });
+            if source.is_none_or(|source| {
+                source.provider_generation != provider_generation || !source.assets.is_empty()
+            }) {
+                return Err(ApiError::BadRequest(
+                    "Provider relink generation changed during admission.".to_string(),
+                ));
+            }
         }
-    } else {
+    }
+    if !remotely_acknowledged {
         let body = FinanceSyncAdmission {
             connection_id: &request.connection_id,
             provider_account_id: &request.provider_account_id,
@@ -1149,15 +1348,22 @@ async fn admit_provider_account(
                 Some(&body),
             )
             .await?;
-        if admitted.wealthfolio_account_id != account.id
-            || admitted.provider_generation != provider_generation
-            || admitted.receiver_access_generation != receiver_access_generation
-            || admitted.baseline_status != "verified"
-            || admitted.baseline_digest.as_deref() != Some(database_state_digest.as_str())
-            || admitted.asset_mapping_digest != empty_asset_mapping_digest()
-        {
+        let matches = if let Some(handoff) = relink_handoff.as_ref() {
+            admission_matches_handoff(&admitted, &account.id, handoff)
+        } else {
+            admitted.wealthfolio_account_id == account.id
+                && admitted.provider_generation == provider_generation
+                && admitted.receiver_access_generation == receiver_access_generation
+                && admitted.baseline_status == "verified"
+                && admitted.baseline_digest.as_deref() == Some(database_state_digest.as_str())
+                && admitted.asset_mapping_digest == empty_asset_mapping_digest()
+        };
+        if !matches {
             return Err(service_unavailable());
         }
+    }
+    if let Some(handoff) = relink_handoff.as_ref() {
+        acknowledge_provider_relink_handoff(&state.db_path, &account.id, handoff)?;
     }
     if !account.is_active {
         state
