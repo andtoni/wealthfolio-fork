@@ -135,6 +135,7 @@ async fn start_snaptrade_control_server(
     root: &TempDir,
     admissions: Arc<Mutex<Vec<Value>>>,
     simulate_lost_response: bool,
+    fail_first_admission: bool,
     provider_generation: i64,
 ) -> tokio::task::JoinHandle<()> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -143,10 +144,11 @@ async fn start_snaptrade_control_server(
     std::fs::write(&token_path, CONTROL_TOKEN).unwrap();
     std::env::set_var("FINANCE_SYNC_CONTROL_URL", format!("http://{address}"));
     std::env::set_var("FINANCE_SYNC_CONTROL_TOKEN_FILE", token_path);
+    let committed = Arc::new(Mutex::new(None::<Value>));
     let accounts = {
-        let admissions = Arc::clone(&admissions);
+        let committed = Arc::clone(&committed);
         move |headers: HeaderMap| {
-            let admissions = Arc::clone(&admissions);
+            let committed = Arc::clone(&committed);
             async move {
                 if !valid_control_headers(&headers) {
                     return (
@@ -154,7 +156,7 @@ async fn start_snaptrade_control_server(
                         Json(json!({"error":"unauthorized"})),
                     );
                 }
-                let rows = if admissions.lock().unwrap().is_empty() {
+                let rows = if committed.lock().unwrap().is_none() {
                     json!([{
                         "connectionId": "dummy-connection",
                         "providerAccountId": "dummy-cash-account",
@@ -174,8 +176,10 @@ async fn start_snaptrade_control_server(
     };
     let admit = {
         let admissions = Arc::clone(&admissions);
+        let committed = Arc::clone(&committed);
         move |headers: HeaderMap, Json(body): Json<Value>| {
             let admissions = Arc::clone(&admissions);
+            let committed = Arc::clone(&committed);
             async move {
                 if !valid_control_headers(&headers) {
                     return (
@@ -188,6 +192,13 @@ async fn start_snaptrade_control_server(
                     captured.push(body.clone());
                     captured.len()
                 };
+                if fail_first_admission && attempt == 1 {
+                    return (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        Json(json!({"error":"temporarily_unavailable"})),
+                    );
+                }
+                *committed.lock().unwrap() = Some(body.clone());
                 let mut response = json!({
                     "wealthfolioAccountId": body["wealthfolioAccountId"],
                     "providerGeneration": body["providerGeneration"],
@@ -207,9 +218,9 @@ async fn start_snaptrade_control_server(
         }
     };
     let status = {
-        let admissions = Arc::clone(&admissions);
+        let committed = Arc::clone(&committed);
         move |headers: HeaderMap| {
-            let admissions = Arc::clone(&admissions);
+            let committed = Arc::clone(&committed);
             async move {
                 if !valid_control_headers(&headers) {
                     return (
@@ -217,8 +228,8 @@ async fn start_snaptrade_control_server(
                         Json(json!({"error":"unauthorized"})),
                     );
                 }
-                let captured = admissions.lock().unwrap();
-                let Some(admission) = captured.first() else {
+                let captured = committed.lock().unwrap();
+                let Some(admission) = captured.as_ref() else {
                     return (StatusCode::NOT_FOUND, Json(json!({"error":"not_found"})));
                 };
                 (
@@ -388,7 +399,8 @@ async fn snaptrade_cash_only_admission_is_subject_bound_exact_and_retry_safe() {
     let _guard = TEST_DB_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let root = tempdir().unwrap();
     let admissions = Arc::new(Mutex::new(Vec::new()));
-    let control = start_snaptrade_control_server(&root, Arc::clone(&admissions), true, 7).await;
+    let control =
+        start_snaptrade_control_server(&root, Arc::clone(&admissions), true, false, 7).await;
     let (app, token) = authenticated_app(&root).await;
     let request = |name: &str| {
         Request::builder()
@@ -510,9 +522,30 @@ async fn snaptrade_cash_only_admission_is_subject_bound_exact_and_retry_safe() {
     // provider identity or replacing any Wealthfolio-owned overlays.
     let relink_admissions = Arc::new(Mutex::new(Vec::new()));
     let relink_control =
-        start_snaptrade_control_server(&root, Arc::clone(&relink_admissions), false, 8).await;
-    let relink = app
+        start_snaptrade_control_server(&root, Arc::clone(&relink_admissions), true, false, 8).await;
+    let lost_response = app
+        .clone()
         .oneshot(request("Relink overwrite attempt"))
+        .await
+        .unwrap();
+    assert_eq!(lost_response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let db = rusqlite::Connection::open(root.path().join("app.db")).unwrap();
+    let generation: i64 = db
+        .query_row(
+            "SELECT provider_generation FROM provider_account_connections WHERE account_id=?1",
+            [&account_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        generation, 7,
+        "a lost acknowledgement must not advance the local generation"
+    );
+    drop(db);
+
+    let relink = app
+        .clone()
+        .oneshot(request("Relink retry overwrite attempt"))
         .await
         .unwrap();
     let relink_status = relink.status();
@@ -520,7 +553,7 @@ async fn snaptrade_cash_only_admission_is_subject_bound_exact_and_retry_safe() {
     assert_eq!(
         relink_status,
         StatusCode::OK,
-        "unexpected relink response: {}",
+        "unexpected relink retry response: {}",
         String::from_utf8_lossy(&relink_body)
     );
     let db = rusqlite::Connection::open(root.path().join("app.db")).unwrap();
@@ -538,11 +571,81 @@ async fn snaptrade_cash_only_admission_is_subject_bound_exact_and_retry_safe() {
         "relink must preserve existing provider history"
     );
     let relink_captured = relink_admissions.lock().unwrap();
-    assert_eq!(relink_captured.len(), 1);
+    assert_eq!(
+        relink_captured.len(),
+        1,
+        "lost-response retry must reconcile status without duplicate admission"
+    );
     assert_eq!(relink_captured[0]["baselineKind"], "relink");
     assert_eq!(relink_captured[0]["priorProviderGeneration"], 7);
     drop(relink_captured);
     relink_control.abort();
+
+    let failed_admissions = Arc::new(Mutex::new(Vec::new()));
+    let failed_control =
+        start_snaptrade_control_server(&root, Arc::clone(&failed_admissions), false, true, 9).await;
+    let failed = app
+        .clone()
+        .oneshot(request("Failed relink overwrite attempt"))
+        .await
+        .unwrap();
+    assert_eq!(failed.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let db = rusqlite::Connection::open(root.path().join("app.db")).unwrap();
+    let generation: i64 = db
+        .query_row(
+            "SELECT provider_generation FROM provider_account_connections WHERE account_id=?1",
+            [&account_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        generation, 8,
+        "remote rejection must not advance the local generation"
+    );
+    drop(db);
+
+    let retried = app
+        .clone()
+        .oneshot(request("Failed relink retry overwrite attempt"))
+        .await
+        .unwrap();
+    assert_eq!(retried.status(), StatusCode::OK);
+    let db = rusqlite::Connection::open(root.path().join("app.db")).unwrap();
+    let (generation, name, snapshot_count): (i64, String, i64) = db
+        .query_row(
+            "SELECT provider_generation, accounts.name, (SELECT count(*) FROM holdings_snapshots WHERE account_id=accounts.id) FROM provider_account_connections JOIN accounts ON accounts.id=provider_account_connections.account_id WHERE provider_account_connections.account_id=?1",
+            [&account_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(generation, 9);
+    assert_eq!(name, "Locally renamed");
+    assert_eq!(snapshot_count, 1);
+    let failed_captured = failed_admissions.lock().unwrap();
+    assert_eq!(failed_captured.len(), 2);
+    assert_eq!(failed_captured[0], failed_captured[1]);
+    assert_eq!(failed_captured[1]["priorProviderGeneration"], 8);
+    drop(failed_captured);
+    failed_control.abort();
+
+    let stale_admissions = Arc::new(Mutex::new(Vec::new()));
+    let stale_control =
+        start_snaptrade_control_server(&root, stale_admissions, false, false, 8).await;
+    let stale = app
+        .oneshot(request("Stale relink overwrite attempt"))
+        .await
+        .unwrap();
+    assert_eq!(stale.status(), StatusCode::BAD_REQUEST);
+    let db = rusqlite::Connection::open(root.path().join("app.db")).unwrap();
+    let generation: i64 = db
+        .query_row(
+            "SELECT provider_generation FROM provider_account_connections WHERE account_id=?1",
+            [&account_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(generation, 9);
+    stale_control.abort();
 }
 
 #[tokio::test]
@@ -550,7 +653,7 @@ async fn conflicting_legacy_owner_cannot_poison_provider_connection_mapping() {
     let _guard = TEST_DB_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let root = tempdir().unwrap();
     let admissions = Arc::new(Mutex::new(Vec::new()));
-    let control = start_snaptrade_control_server(&root, admissions, false, 7).await;
+    let control = start_snaptrade_control_server(&root, admissions, false, false, 7).await;
     let (app, token) = authenticated_app(&root).await;
     let db = rusqlite::Connection::open(root.path().join("app.db")).unwrap();
     db.execute_batch("PRAGMA foreign_keys=ON").unwrap();
