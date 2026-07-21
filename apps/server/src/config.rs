@@ -1,5 +1,41 @@
 use std::{net::SocketAddr, time::Duration};
 
+/// Resolves a secret from either `NAME` or `NAME_FILE`, never both.
+///
+/// Empty environment values are treated as absent so optional secrets retain
+/// their existing unset semantics. A configured file must be readable and
+/// contain a non-whitespace value; one trailing LF or CRLF is removed.
+pub(crate) fn resolve_secret_env(name: &str) -> Option<String> {
+    let direct = std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let file_name = format!("{name}_FILE");
+    let file_path = std::env::var(&file_name)
+        .ok()
+        .filter(|path| !path.trim().is_empty());
+
+    match (direct, file_path) {
+        (Some(_), Some(_)) => panic!("{name} and {file_name} cannot both be set"),
+        (Some(value), None) => Some(value),
+        (None, Some(path)) => {
+            let value = std::fs::read_to_string(path)
+                .unwrap_or_else(|_| panic!("Failed to read {file_name}"));
+            let value = value
+                .strip_suffix("\r\n")
+                .or_else(|| value.strip_suffix('\n'))
+                .unwrap_or(&value)
+                .trim()
+                .to_string();
+            if value.is_empty() {
+                panic!("{file_name} must not point to an empty file");
+            }
+            Some(value)
+        }
+        (None, None) => None,
+    }
+}
+
 use crate::auth::{decode_secret_key, derive_keys, AuthConfig, CookieSecurePolicy};
 use crate::oidc::OidcConfig;
 
@@ -58,13 +94,8 @@ impl Config {
             .parse()
             .unwrap_or(300000);
         let static_dir = std::env::var("WF_STATIC_DIR").unwrap_or_else(|_| "dist".into());
-        let secret_key = std::env::var("WF_SECRET_KEY")
-            .unwrap_or_else(|_| panic!("WF_SECRET_KEY must be set and contain a 32-byte key"))
-            .trim()
-            .to_string();
-        if secret_key.is_empty() {
-            panic!("WF_SECRET_KEY must not be empty");
-        }
+        let secret_key = resolve_secret_env("WF_SECRET_KEY")
+            .unwrap_or_else(|| panic!("WF_SECRET_KEY must be set and contain a 32-byte key"));
         let raw_secret_key = decode_secret_key(&secret_key)
             .unwrap_or_else(|e| panic!("Failed to decode WF_SECRET_KEY: {e}"));
         let (jwt_key, secrets_encryption_key) = derive_keys(&raw_secret_key);
@@ -75,10 +106,7 @@ impl Config {
                 .to_string_lossy()
                 .into_owned()
         });
-        let password_hash = std::env::var("WF_AUTH_PASSWORD_HASH")
-            .ok()
-            .map(|hash| hash.trim().to_string())
-            .filter(|hash| !hash.is_empty());
+        let password_hash = resolve_secret_env("WF_AUTH_PASSWORD_HASH");
 
         let oidc = OidcConfig::from_env();
 
