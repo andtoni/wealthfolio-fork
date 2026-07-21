@@ -1,6 +1,7 @@
 # Wealthfolio - Production Docker Compose
 #
-# Usage: docker compose --env-file .env.docker up -d
+# Production usage: Coolify must invoke deploy/coolify-deploy.sh; direct
+# Compose invocation bypasses required OpenBao and signature admission gates.
 # Reverse proxy overlay: docker compose --env-file .env.docker -f compose.yml -f compose.proxy.yml up -d
 # Dev overlay: docker compose --env-file .env.docker -f compose.yml -f compose.dev.yml up
 #
@@ -8,21 +9,27 @@
 
 services:
   wealthfolio:
-    image: git.example.com/andtoni/wealthfolio@${WEALTHFOLIO_IMAGE_DIGEST:?set the admitted sha256 Wealthfolio image digest}
+    image: registry.example.com/andtoni/finance/wealthfolio@${WEALTHFOLIO_IMAGE_DIGEST:?set the admitted sha256 Wealthfolio image digest}
     container_name: wealthfolio
-    restart: unless-stopped
+    # Coolify/systemd owns restart ordering; a whole-stack restart must first
+    # obtain a fresh one-use OpenBao SecretID and render the tmpfs inputs.
+    restart: "no"
     ports:
       - "${WF_PORT:-8088}:8088"
     volumes:
       - wealthfolio-data:/data
     secrets:
+      - wf_secret_key
+      - wf_auth_password_hash
+      - wf_oidc_client_secret
       - finance_sync_control_token
       - historical_importer_token
     environment:
       WF_LISTEN_ADDR: "0.0.0.0:8088"
       WF_DB_PATH: "/data/wealthfolio.db"
-      # Required — generate with: openssl rand -base64 32
-      WF_SECRET_KEY: "${WF_SECRET_KEY:?Set WF_SECRET_KEY}"
+      # Production is file-only: systemd renders OpenBao values to host tmpfs,
+      # the preflight validates them, and Compose mounts only these files.
+      WF_SECRET_KEY_FILE: "/run/secrets/wf_secret_key"
 
       # ── Authentication ────────────────────────────────────────────────
       # Required when listening on 0.0.0.0 (the default for Docker).
@@ -38,7 +45,7 @@ services:
       #
       # If a reverse proxy handles auth instead, set WF_AUTH_REQUIRED: "false"
       # and leave WF_AUTH_PASSWORD_HASH empty.
-      WF_AUTH_PASSWORD_HASH: "${WF_AUTH_PASSWORD_HASH:-}"
+      WF_AUTH_PASSWORD_HASH_FILE: "/run/secrets/wf_auth_password_hash"
       WF_AUTH_TOKEN_TTL_MINUTES: "${WF_AUTH_TOKEN_TTL_MINUTES:-60}"
       # Set to "false" to skip the auth requirement (e.g. reverse proxy handles auth)
       # WF_AUTH_REQUIRED: "true"
@@ -49,7 +56,7 @@ services:
       # issuer URL and client id are set. Redirect URL must be registered in the IdP.
       WF_OIDC_ISSUER_URL: "${WF_OIDC_ISSUER_URL:-}"
       WF_OIDC_CLIENT_ID: "${WF_OIDC_CLIENT_ID:-}"
-      WF_OIDC_CLIENT_SECRET: "${WF_OIDC_CLIENT_SECRET:-}"
+      WF_OIDC_CLIENT_SECRET_FILE: "/run/secrets/wf_oidc_client_secret"
       WF_OIDC_REDIRECT_URL: "${WF_OIDC_REDIRECT_URL:-}"
       # Optional space-separated scopes (default: "openid email profile")
       WF_OIDC_SCOPES: "${WF_OIDC_SCOPES:-}"
@@ -72,7 +79,7 @@ services:
       WF_REQUEST_TIMEOUT_MS: "${WF_REQUEST_TIMEOUT_MS:-30000}"
 
       # Internal, subject-bound provider Connect proxy. The dedicated token is
-      # mounted from an Infisical-rendered ephemeral file and is never sent to browsers.
+      # mounted from an OpenBao Agent-rendered tmpfs file and is never sent to browsers.
       FINANCE_SYNC_CONTROL_URL: "${FINANCE_SYNC_CONTROL_URL:?Set the internal Finance Sync control URL}"
       FINANCE_SYNC_CONTROL_TOKEN_FILE: "/run/secrets/finance_sync_control_token"
       WF_HISTORICAL_IMPORTER_TOKEN_FILE: "/run/secrets/historical_importer_token"
@@ -96,10 +103,16 @@ services:
       - /tmp:size=64M
 
 secrets:
+  wf_secret_key:
+    file: ${WF_SECRET_KEY_FILE_SOURCE:?provide the OpenBao-rendered tmpfs master-key file}
+  wf_auth_password_hash:
+    file: ${WF_AUTH_PASSWORD_HASH_FILE_SOURCE:?provide the OpenBao-rendered tmpfs Argon2id hash file}
+  wf_oidc_client_secret:
+    file: ${WF_OIDC_CLIENT_SECRET_FILE_SOURCE:?provide the OpenBao-rendered tmpfs OIDC client-secret file}
   finance_sync_control_token:
-    file: ${FINANCE_SYNC_CONTROL_TOKEN_FILE_SOURCE:?provide an Infisical-rendered ephemeral control token file}
+    file: ${FINANCE_SYNC_CONTROL_TOKEN_FILE_SOURCE:?provide an OpenBao-rendered tmpfs control token file}
   historical_importer_token:
-    file: ${WF_HISTORICAL_IMPORTER_TOKEN_FILE_SOURCE:?provide an Infisical-rendered ephemeral historical importer token file}
+    file: ${WF_HISTORICAL_IMPORTER_TOKEN_FILE_SOURCE:?provide an OpenBao-rendered tmpfs historical importer token file}
 
 volumes:
   wealthfolio-data:

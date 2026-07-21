@@ -33,7 +33,7 @@ use openidconnect::{
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
-use crate::main_lib::AppState;
+use crate::{config::resolve_secret_env, main_lib::AppState};
 
 const TX_COOKIE_NAME: &str = "wf_oidc_tx";
 const TX_COOKIE_PATH: &str = "/api/v1/auth/oidc";
@@ -128,7 +128,7 @@ impl OidcConfig {
                 Some(Self {
                     issuer_url,
                     client_id,
-                    client_secret: env_nonempty("WF_OIDC_CLIENT_SECRET"),
+                    client_secret: resolve_secret_env("WF_OIDC_CLIENT_SECRET"),
                     redirect_url,
                     scopes,
                     allowed_emails,

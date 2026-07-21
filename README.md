@@ -266,8 +266,10 @@ All configuration is done via environment variables in `.env.web`.
 - `WF_SECRET_KEY` - **Required** 32-byte key used for secrets encryption and JWT
   signing
   - Generate with: `openssl rand -base64 32`
+- `WF_SECRET_KEY_FILE` - File-backed alternative to `WF_SECRET_KEY`
 - `WF_AUTH_PASSWORD_HASH` - Argon2id PHC string enabling password-only
   authentication for web mode
+- `WF_AUTH_PASSWORD_HASH_FILE` - File-backed alternative to `WF_AUTH_PASSWORD_HASH`
 - `WF_AUTH_TOKEN_TTL_MINUTES` - Optional JWT access token expiry in minutes
   (default `60`)
 - `WF_AUTH_REQUIRED` - Set to `false` to allow starting on non-loopback
@@ -280,6 +282,7 @@ All configuration is done via environment variables in `.env.web`.
     `<issuer>/.well-known/openid-configuration`)
   - `WF_OIDC_CLIENT_ID` - client id registered with the IdP
   - `WF_OIDC_CLIENT_SECRET` - **Optional** client secret (PKCE is always used)
+  - `WF_OIDC_CLIENT_SECRET_FILE` - File-backed alternative to `WF_OIDC_CLIENT_SECRET`
   - `WF_OIDC_REDIRECT_URL` - **Required** when OIDC is enabled; must be
     registered in the IdP, e.g. `https://your.host/api/v1/auth/oidc/callback`
   - `WF_OIDC_SCOPES` - **Optional** space-separated scopes (default
@@ -303,6 +306,10 @@ All configuration is done via environment variables in `.env.web`.
     page.
   - `WF_OIDC_RP_LOGOUT` - **Optional**, default `true`. Set to `false` to force
     local-only logout even when the IdP supports RP-Initiated Logout.
+For `WF_SECRET_KEY`, `WF_AUTH_PASSWORD_HASH`, and `WF_OIDC_CLIENT_SECRET`, set at most one direct variable or its `_FILE` alternative. `_FILE` values are read exactly (except for one final LF/CRLF); unreadable or whitespace-only files and dual sources stop startup without logging the secret. The production `compose.yml` is file-only and mounts these values from OpenBao-rendered host tmpfs sources.
+
+Before every Coolify deployment or restart, systemd must successfully render fresh root-owned mode `0400` files and consume and remove its one-use OpenBao SecretID. Coolify's custom deploy command is `deploy/coolify-deploy.sh`; it uses the repository-fixed Compose file and `/etc/finance-release/cosign.pub`, requires the active render service, rejects rendered files older than 15 minutes, runs the OpenBao preflight, verifies the signature and both attestations for the exact `registry.example.com/andtoni/finance/wealthfolio@sha256:...` candidate, validates Compose, and only then starts Wealthfolio. Docker restart remains `no`; failed render, preflight, signature, SBOM-attestation, or provenance-attestation verification leaves Wealthfolio stopped. Local development should use the existing development overlays rather than treating the production Compose file as an autonomously restarting stack.
+
 - `WF_COOKIE_SECURE` - Controls the `Secure` attribute on session cookies
   (default: `auto`)
   - `auto` - set `Secure` only when `X-Forwarded-Proto: https` is present
