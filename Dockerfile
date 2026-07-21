@@ -18,7 +18,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY . .
 ENV CI=1
 ENV BUILD_TARGET=web
-RUN npm install -g pnpm@10.33.4 && pnpm install --frozen-lockfile
+RUN corepack enable && pnpm install --frozen-lockfile
 # Build only the main app to avoid building workspace addons in this image
 RUN pnpm --filter frontend... build && mv dist /web-dist
 
@@ -76,6 +76,7 @@ FROM alpine:3.21@sha256:f27cad9117495d32d067133afff942cb2dc745dfe9163e949f6bfe8a
 ARG SOURCE_REVISION
 LABEL org.opencontainers.image.revision="${SOURCE_REVISION}" \
       org.opencontainers.image.source="https://git.example.com/andtoni/wealthfolio"
+RUN apk upgrade --no-cache
 WORKDIR /app
 # Copy from backend (which is now build platform, but binary is target platform)
 COPY --from=backend /wealthfolio-server /usr/local/bin/wealthfolio-server
