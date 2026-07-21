@@ -1,7 +1,7 @@
 # Wealthfolio - Production Docker Compose
 #
-# Production usage: OpenBao render -> deploy/preflight-openbao-files.sh ->
-# deploy/verify-release-admission.sh -> Coolify `docker compose up -d`.
+# Production usage: Coolify must invoke deploy/coolify-deploy.sh; direct
+# Compose invocation bypasses required OpenBao and signature admission gates.
 # Reverse proxy overlay: docker compose --env-file .env.docker -f compose.yml -f compose.proxy.yml up -d
 # Dev overlay: docker compose --env-file .env.docker -f compose.yml -f compose.dev.yml up
 #
