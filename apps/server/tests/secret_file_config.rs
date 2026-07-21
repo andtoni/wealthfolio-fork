@@ -36,7 +36,7 @@ fn secret_file_sources_allow_final_newlines_and_fail_closed() {
     let key = BASE64.encode([9u8; 32]);
     std::fs::write(&key_file, format!("{key}\n")).unwrap();
     std::fs::write(&password_file, "$argon2id$test\n").unwrap();
-    std::fs::write(&oidc_secret_file, "oidc-test-secret\r\n").unwrap();
+    std::fs::write(&oidc_secret_file, " oidc-test-secret \r\n").unwrap();
 
     clear_secret_vars();
     std::env::set_var("WF_LISTEN_ADDR", "127.0.0.1:8088");
@@ -57,7 +57,7 @@ fn secret_file_sources_allow_final_newlines_and_fail_closed() {
     );
     assert_eq!(
         config.oidc.unwrap().client_secret.as_deref(),
-        Some("oidc-test-secret")
+        Some(" oidc-test-secret ")
     );
 
     std::env::set_var("WF_SECRET_KEY", "direct-secret-must-not-leak");

@@ -8,8 +8,7 @@ use std::{net::SocketAddr, time::Duration};
 pub(crate) fn resolve_secret_env(name: &str) -> Option<String> {
     let direct = std::env::var(name)
         .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
+        .filter(|value| !value.trim().is_empty());
     let file_name = format!("{name}_FILE");
     let file_path = std::env::var(&file_name)
         .ok()
@@ -25,9 +24,8 @@ pub(crate) fn resolve_secret_env(name: &str) -> Option<String> {
                 .strip_suffix("\r\n")
                 .or_else(|| value.strip_suffix('\n'))
                 .unwrap_or(&value)
-                .trim()
                 .to_string();
-            if value.is_empty() {
+            if value.trim().is_empty() {
                 panic!("{file_name} must not point to an empty file");
             }
             Some(value)

@@ -306,7 +306,9 @@ All configuration is done via environment variables in `.env.web`.
     page.
   - `WF_OIDC_RP_LOGOUT` - **Optional**, default `true`. Set to `false` to force
     local-only logout even when the IdP supports RP-Initiated Logout.
-For `WF_SECRET_KEY`, `WF_AUTH_PASSWORD_HASH`, and `WF_OIDC_CLIENT_SECRET`, set at most one direct variable or its `_FILE` alternative. `_FILE` values are read at startup; a final newline is allowed, but unreadable or empty files and dual sources stop startup without logging the secret. The generic `compose.yml` passes these pairs through only; deployments using file paths must provide their own protected mounts (for example, the production OpenBao-agent tmpfs overlay).
+For `WF_SECRET_KEY`, `WF_AUTH_PASSWORD_HASH`, and `WF_OIDC_CLIENT_SECRET`, set at most one direct variable or its `_FILE` alternative. `_FILE` values are read exactly (except for one final LF/CRLF); unreadable or whitespace-only files and dual sources stop startup without logging the secret. The production `compose.yml` is file-only and mounts these values from OpenBao-rendered host tmpfs sources.
+
+Before every Coolify deployment or restart, systemd must successfully render fresh root-owned mode `0400` files, consume and remove its one-use OpenBao SecretID, and then run `deploy/preflight-openbao-files.sh`. Coolify must use the exact `registry.example.com/andtoni/finance/wealthfolio@sha256:...` candidate and run `deploy/verify-release-admission.sh` against the operator Cosign public key before starting it. Docker restart remains `no`; failed render, preflight, signature, SBOM-attestation, or provenance-attestation verification leaves Wealthfolio stopped. Local development should use the existing development overlays rather than treating the production Compose file as an autonomously restarting stack.
 
 - `WF_COOKIE_SECURE` - Controls the `Secure` attribute on session cookies
   (default: `auto`)
