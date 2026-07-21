@@ -36,7 +36,7 @@ SELECT CASE WHEN
         (id='finance_v1_cat_giving' AND name='Giving' AND key='finance_v1_giving') OR
         (id='finance_v1_cat_connectivity' AND name='Connectivity' AND key='finance_v1_connectivity') OR
         (id='finance_v1_cat_dining' AND name='Dining' AND key='finance_v1_dining') OR
-        (id='finance_v1_cat_miscellaneous' AND name='Miscellaneous' AND key='finance_v1_miscellaneous')
+        (id='finance_v1_cat_miscellaneous' AND name='Miscellaneous' AND key='finance_v1_miscellaneous') -- gitleaks:allow deterministic taxonomy key
       )
     )
   )
