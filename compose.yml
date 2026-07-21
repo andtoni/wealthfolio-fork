@@ -1,7 +1,7 @@
 # Wealthfolio - Production Docker Compose
 #
-# Production usage: Coolify must invoke deploy/coolify-deploy.sh; direct
-# Compose invocation bypasses required OpenBao and signature admission gates.
+# Production usage: the restricted deployment adapter selects an exact zot digest;
+# OpenBao continues to render runtime secrets outside the image.
 # Reverse proxy overlay: docker compose --env-file .env.docker -f compose.yml -f compose.proxy.yml up -d
 # Dev overlay: docker compose --env-file .env.docker -f compose.yml -f compose.dev.yml up
 #
@@ -9,9 +9,9 @@
 
 services:
   wealthfolio:
-    image: registry.example.com/andtoni/finance/wealthfolio@${WEALTHFOLIO_IMAGE_DIGEST:?set the admitted sha256 Wealthfolio image digest}
+    image: registry.example.com/andtoni/wealthfolio@${WEALTHFOLIO_IMAGE_DIGEST:?set the exact sha256 Wealthfolio image digest}
     container_name: wealthfolio
-    # Coolify/systemd owns restart ordering; a whole-stack restart must first
+    # systemd owns restart ordering; a whole-stack restart must first
     # obtain a fresh one-use OpenBao SecretID and render the tmpfs inputs.
     restart: "no"
     ports:
