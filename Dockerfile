@@ -1,10 +1,12 @@
 # Global build args
 ARG RUST_IMAGE=rust:1.91-alpine@sha256:45c1c35cd364b8055e9e86f8ecd3e8c874b2dcb658d8a4f94b5d111aa0d651a2
 ARG SOURCE_REVISION=unknown
+ARG CACHE_NAMESPACE=wealthfolio-v1
 
 # Stage 1: build frontend
 # Use --platform=$BUILDPLATFORM to run on the native runner (fast)
 FROM --platform=$BUILDPLATFORM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS frontend
+ARG CACHE_NAMESPACE
 
 # Wealthfolio Connect configuration (baked into JS bundle at build time)
 # Pass via --build-arg to enable; omit to build without Connect.
@@ -15,11 +17,16 @@ ENV CONNECT_AUTH_PUBLISHABLE_KEY=${CONNECT_AUTH_PUBLISHABLE_KEY}
 
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY . .
+COPY apps/frontend/package.json apps/frontend/package.json
+COPY packages/addon-dev-tools/package.json packages/addon-dev-tools/package.json
+COPY packages/addon-sdk/package.json packages/addon-sdk/package.json
+COPY packages/ui/package.json packages/ui/package.json
 ENV CI=1
 ENV BUILD_TARGET=web
-RUN corepack enable && pnpm install --frozen-lockfile
-# Build only the main app to avoid building workspace addons in this image
+RUN --mount=type=cache,id=${CACHE_NAMESPACE}-pnpm-store,target=/pnpm/store,sharing=locked \
+    corepack enable && pnpm config set store-dir /pnpm/store && pnpm install --frozen-lockfile
+COPY . .
+# Build only the main app to avoid building workspace addons in this image.
 RUN pnpm --filter frontend... build && mv dist /web-dist
 
 # Stage 2: build server with cross-compilation
@@ -29,6 +36,7 @@ FROM --platform=$BUILDPLATFORM ${RUST_IMAGE} AS backend
 # Copy xx scripts to handle cross-compilation
 COPY --from=xx / /
 ARG TARGETPLATFORM
+ARG CACHE_NAMESPACE
 
 # Wealthfolio Connect configuration (baked into server binary at build time)
 ARG CONNECT_AUTH_URL=
@@ -57,18 +65,24 @@ COPY apps/server ./apps/server
 # Stub out apps/tauri so the workspace resolves (not built in Docker)
 COPY apps/tauri/Cargo.toml apps/tauri/Cargo.toml
 RUN mkdir -p apps/tauri/src && echo "fn main(){}" > apps/tauri/src/main.rs && echo "" > apps/tauri/src/lib.rs
-RUN mkdir -p apps/server/src && \
-    echo "fn main(){}" > apps/server/src/main.rs && \
+RUN mkdir -p apps/server/src && echo "fn main(){}" > apps/server/src/main.rs
+RUN --mount=type=cache,id=${CACHE_NAMESPACE}-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=${CACHE_NAMESPACE}-cargo-git,target=/usr/local/cargo/git,sharing=locked \
     xx-cargo fetch --manifest-path apps/server/Cargo.toml
 
-# Now copy full sources
+# Now copy full sources. Persistent Cargo caches retain dependency artifacts;
+# source-only changes recompile only affected workspace crates.
 COPY crates ./crates
 COPY apps/server ./apps/server
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+ENV CARGO_BUILD_JOBS=1
+ENV CARGO_PROFILE_RELEASE_DEBUG=0
+ENV RUSTFLAGS="-C link-arg=-Wl,--no-keep-memory"
 ENV OPENSSL_STATIC=1
-# Build using xx-cargo which handles target flags
-RUN xx-cargo build --release --manifest-path apps/server/Cargo.toml && \
-    # Move the binary to a predictable location because the target dir changes with --target
+RUN --mount=type=cache,id=${CACHE_NAMESPACE}-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=${CACHE_NAMESPACE}-cargo-git,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=${CACHE_NAMESPACE}-cargo-target,target=/app/target,sharing=locked \
+    xx-cargo build --release --manifest-path apps/server/Cargo.toml && \
     cp target/$(xx-cargo --print-target-triple)/release/wealthfolio-server /wealthfolio-server
 
 # Final stage
