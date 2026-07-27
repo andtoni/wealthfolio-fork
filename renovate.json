@@ -1,0 +1,67 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "dependencyDashboard": true,
+  "labels": [
+    "dependencies",
+    "renovate"
+  ],
+  "rangeStrategy": "pin",
+  "rebaseWhen": "auto",
+  "platformAutomerge": true,
+  "automerge": false,
+  "timezone": "Europe/London",
+  "schedule": [
+    "after 20:00 on Saturday",
+    "before 06:00 on Sunday"
+  ],
+  "packageRules": [
+    {
+      "description": "Require explicit review for CI supply-chain updates",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Dashboard-gate major updates",
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "dependencyDashboardApproval": true,
+      "automerge": false
+    },
+    {
+      "description": "Preserve published peer compatibility ranges",
+      "matchDepTypes": [
+        "peerDependencies"
+      ],
+      "rangeStrategy": "widen"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^project\\.yaml$/"
+      ],
+      "matchStrings": [
+        "image:\\s+(?<depName>[^@\\s]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/workstream-standard\\.yml$/"
+      ],
+      "matchStrings": [
+        "version:\\s+\"?v(?<currentValue>\\d+\\.\\d+\\.\\d+)\"?"
+      ],
+      "depNameTemplate": "zizmorcore/zizmor",
+      "datasourceTemplate": "github-releases"
+    }
+  ]
+}
