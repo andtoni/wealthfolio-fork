@@ -19,6 +19,24 @@
   ],
   "packageRules": [
     {
+      "description": "Use GitHub native auto-merge for non-major dependency updates",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest"
+      ],
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "description": "Require explicit review for custom-managed CI supply-chain updates",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "automerge": false
+    },
+    {
       "description": "Require explicit review for CI supply-chain updates",
       "matchManagers": [
         "github-actions"
@@ -63,5 +81,6 @@
       "depNameTemplate": "zizmorcore/zizmor",
       "datasourceTemplate": "github-releases"
     }
-  ]
+  ],
+  "automergeType": "pr"
 }
