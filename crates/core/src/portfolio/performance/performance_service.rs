@@ -2183,6 +2183,17 @@ impl PerformanceService {
                 Decimal::ZERO,
                 activity.charge_amt_for(activity_type),
             ),
+            ActivityType::Credit | ActivityType::Deposit | ActivityType::Withdrawal => {
+                (Decimal::ZERO, Decimal::ZERO, activity.tax_amt())
+            }
+            // Cash transfers book tax to cash; asset transfers book only the fee.
+            // Attribute tax only when it was actually booked (empty asset_id = cash),
+            // so "attributed ⇔ booked" stays in sync and no phantom residual appears.
+            ActivityType::TransferIn | ActivityType::TransferOut
+                if activity.asset_id.as_deref().unwrap_or("").is_empty() =>
+            {
+                (Decimal::ZERO, Decimal::ZERO, activity.tax_amt())
+            }
             _ => (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO),
         }
     }
@@ -8944,6 +8955,53 @@ mod tests {
             PerformanceService::activity_attribution_components(&taxable_buy, &ActivityType::Buy),
             (Decimal::ZERO, dec!(1), dec!(3))
         );
+
+        // Cash activity types book tax to cash, so their tax is attributed.
+        for cash_type in [
+            ActivityType::Credit,
+            ActivityType::Deposit,
+            ActivityType::Withdrawal,
+        ] {
+            let mut cash = activity_fixture(cash_type.clone(), dec!(100), dec!(2));
+            cash.tax = Some(dec!(10));
+            assert_eq!(
+                PerformanceService::activity_attribution_components(&cash, &cash_type),
+                (Decimal::ZERO, Decimal::ZERO, dec!(10)),
+                "{} tax should be attributed",
+                cash_type.as_str()
+            );
+        }
+
+        // Cash transfers (no asset_id) book tax to cash, so tax is attributed.
+        for transfer_type in [ActivityType::TransferIn, ActivityType::TransferOut] {
+            let mut cash_transfer = activity_fixture(transfer_type.clone(), dec!(100), dec!(2));
+            cash_transfer.tax = Some(dec!(10));
+            assert_eq!(
+                cash_transfer.asset_id, None,
+                "fixture should default to a cash transfer"
+            );
+            assert_eq!(
+                PerformanceService::activity_attribution_components(&cash_transfer, &transfer_type),
+                (Decimal::ZERO, Decimal::ZERO, dec!(10)),
+                "cash {} tax should be attributed",
+                transfer_type.as_str()
+            );
+
+            // Asset transfers book only the fee to cash — tax must NOT be attributed,
+            // otherwise attribution reports a tax that never hit cash (phantom residual).
+            let mut asset_transfer = activity_fixture(transfer_type.clone(), dec!(100), dec!(2));
+            asset_transfer.asset_id = Some("AAPL".to_string());
+            asset_transfer.tax = Some(dec!(10));
+            assert_eq!(
+                PerformanceService::activity_attribution_components(
+                    &asset_transfer,
+                    &transfer_type
+                ),
+                (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO),
+                "asset {} tax must not be attributed",
+                transfer_type.as_str()
+            );
+        }
     }
 
     #[test]
