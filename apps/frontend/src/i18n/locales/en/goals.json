@@ -864,5 +864,59 @@
       "empty_description": "Run the five paths to see which sequence would put the plan under pressure first.",
       "unavailable_description": "This check needs a positive projected portfolio at retirement start."
     }
+  },
+  "planning_reference": {
+    "title": "Planning Reference",
+    "subtitle": "General educational context for major planning decisions.",
+    "disclaimer_title": "Educational reference only",
+    "disclaimer": "This page is general information, not personal financial, tax, legal, or lending advice. Rules and product terms vary by jurisdiction and change over time; confirm current details with qualified professionals and primary sources.",
+    "borrowing": {
+      "title": "Borrowing reference",
+      "description": "Concepts to understand before comparing a home or vehicle loan.",
+      "amortization": {
+        "title": "Amortization and total cost",
+        "text": "With an amortizing loan, each payment usually covers interest and principal. Early payments commonly contain more interest, so term length and rate both affect the total paid."
+      },
+      "housing_costs": {
+        "title": "PITI, LTV, and PMI",
+        "text": "PITI is principal, interest, taxes, and insurance. Loan-to-value (LTV) compares the loan with the asset value; a higher LTV can affect pricing or require mortgage insurance (PMI) in some markets."
+      },
+      "ratios": {
+        "title": "Debt-to-income and vehicle rules of thumb",
+        "text": "Debt-to-income (DTI) compares recurring debt payments with income. The US 28/36 guideline is a rule of thumb, not an approval standard: housing costs below 28% of gross income and total recurring debt below 36%. The 20/4/10 vehicle guideline suggests 20% down, four years or less, and total vehicle costs below 10% of gross income. Neither guideline is law or personal advice."
+      },
+      "stress": {
+        "title": "Rate stress",
+        "text": "Compare the payment and total cost at a higher interest rate or lower income. A stress case is a planning prompt, not a prediction or affordability decision."
+      }
+    },
+    "retirement": {
+      "title": "Retirement projections",
+      "description": "A projection is a range of assumptions, not a promise about a future balance.",
+      "purchasing_power": {
+        "title": "Real and nominal values",
+        "text": "Nominal values use future currency amounts. Real values express amounts in today’s purchasing power after inflation. Fees reduce returns and can materially change a long horizon."
+      },
+      "uncertainty": {
+        "title": "Volatility and sequence risk",
+        "text": "Investment returns vary. Poor returns near retirement or while withdrawing can have a larger effect because there is less time for a portfolio to recover."
+      },
+      "ranges": {
+        "title": "Success probabilities and percentile ranges",
+        "text": "A model can show how often a specific set of assumptions reaches an outcome and a range of simulated paths. These are model outputs, not probabilities of your personal future."
+      },
+      "cta": "Open the retirement guide"
+    },
+    "investment": {
+      "title": "United States investment order",
+      "description": "US-only educational framework. Eligibility, tax treatment, and account rules depend on current law and personal circumstances.",
+      "step_one": "Start with cash-flow stability, emergency reserves, and high-cost debt before optional investing.",
+      "step_two": "If available and appropriate, understand employer-plan matching before making additional contributions.",
+      "step_three": "If eligible, compare a health savings account with your medical-cash needs and confirm the current qualification rules.",
+      "step_four": "Check whether a direct or backdoor individual retirement account route is available, including income, tax, and pro-rata consequences.",
+      "step_five": "Then consider additional workplace-plan contributions and any separate 457(b) opportunity after confirming plan features and tax treatment.",
+      "step_six": "Treat mega-backdoor, self-employed-plan, and education-account routes as conditional branches that require current plan and eligibility evidence.",
+      "step_seven": "Use a diversified taxable account only after considering liquidity needs, taxes, risk tolerance, and every applicable earlier step."
+    }
   }
 }

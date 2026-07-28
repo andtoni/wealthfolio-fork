@@ -102,12 +102,17 @@ export default function GoalsDashboardPage() {
         heading={t("goals:goals")}
         text={t("goals:dashboard.subtitle")}
         actions={
-          <Link to="/goals/new">
-            <Button size="sm">
-              <Icons.Plus className="mr-1 h-4 w-4" />
-              {t("goals:dashboard.new_goal")}
+          <div className="flex gap-2">
+            <Button asChild size="sm" variant="outline">
+              <Link to="/goals/planning-reference">{t("goals:planning_reference.title")}</Link>
             </Button>
-          </Link>
+            <Link to="/goals/new">
+              <Button size="sm">
+                <Icons.Plus className="mr-1 h-4 w-4" />
+                {t("goals:dashboard.new_goal")}
+              </Button>
+            </Link>
+          </div>
         }
       />
       <PageContent>
