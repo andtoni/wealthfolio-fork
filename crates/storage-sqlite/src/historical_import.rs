@@ -751,6 +751,12 @@ fn validate_ledger_rows(
     Ok(existing_flags)
 }
 
+fn is_reviewed_evidence_eligible(row: &HistoricalEvidenceRow) -> bool {
+    row.authority == EvidenceAuthority::UserConfirmed
+        && row.agreement_state == "agreement"
+        && row.label_count >= 3
+}
+
 fn validate_evidence_rows(
     c: &mut SqliteConnection,
     batch: &HistoricalImportBatch,
@@ -779,8 +785,7 @@ fn validate_evidence_rows(
             })
             .cloned()
             .collect::<Vec<_>>();
-        if row.source != HistoricalSource::Tarn
-            || row.authority != EvidenceAuthority::UserConfirmed
+        if !is_reviewed_evidence_eligible(row)
             || manifest_evidence.source != row.source
             || manifest_evidence.account_id != row.account_id
             || manifest_evidence.authority != row.authority
@@ -800,7 +805,7 @@ fn validate_evidence_rows(
             || !matches!(row.agreement_state.as_str(), "agreement" | "conflict")
         {
             return Err(invalid(
-                "evidence is not reviewed-manifest-bound Tarn user-confirmed evidence",
+                "evidence is not reviewed-manifest-bound user-confirmed agreement with at least three labels",
             ));
         }
         let first = canonical_label_date(&row.first_label_date)?;
@@ -1408,4 +1413,60 @@ fn count_for_run(
     .get_result::<Count>(c)
     .map(|row| row.count as usize)
     .map_err(|error| HistoricalImportError::Storage(error.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lunch_money_evidence(labels: i32, agreement: &str) -> HistoricalEvidenceRow {
+        HistoricalEvidenceRow {
+            idempotency_key: "evidence-1".into(),
+            merchant_key: "merchant".into(),
+            merchant_key_version: 1,
+            normalization_version: 1,
+            taxonomy_id: "spending_categories".into(),
+            category_id: "cat_food".into(),
+            direction: "outflow".into(),
+            activity_type: "withdrawal".into(),
+            provider_context: None,
+            account_id: "account-1".into(),
+            source: HistoricalSource::LunchMoney,
+            source_category_ref: "manual-food".into(),
+            first_label_date: "2026-01-01".into(),
+            last_label_date: "2026-01-03".into(),
+            label_count: labels,
+            agreement_state: agreement.into(),
+            authority: EvidenceAuthority::UserConfirmed,
+            manifest_ledger_identity: "ledger-1".into(),
+            ledger_disposition: LedgerDisposition::Selected,
+            overlap_provenance: vec![],
+        }
+    }
+
+    #[test]
+    fn lunch_money_reviewed_agreement_requires_three_labels() {
+        assert!(!is_reviewed_evidence_eligible(&lunch_money_evidence(
+            1,
+            "agreement"
+        )));
+        assert!(!is_reviewed_evidence_eligible(&lunch_money_evidence(
+            2,
+            "agreement"
+        )));
+        assert!(is_reviewed_evidence_eligible(&lunch_money_evidence(
+            3,
+            "agreement"
+        )));
+    }
+
+    #[test]
+    fn conflicts_and_hints_never_become_learning_evidence() {
+        assert!(!is_reviewed_evidence_eligible(&lunch_money_evidence(
+            3, "conflict"
+        )));
+        let mut hint = lunch_money_evidence(3, "agreement");
+        hint.authority = EvidenceAuthority::HistoricalHint;
+        assert!(!is_reviewed_evidence_eligible(&hint));
+    }
 }

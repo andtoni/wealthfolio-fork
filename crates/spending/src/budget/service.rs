@@ -34,6 +34,8 @@ const INCOME_TAXONOMY: &str = "income_sources";
 const SAVINGS_TAXONOMY: &str = "savings_categories";
 const DEFAULT_PERIOD_KEY: &str = "default";
 const OTHER_GROUP_KEY: &str = "other";
+const FINANCE_V1_TARGET_SALARY_ID: &str = "finance_v1_target_salary";
+const FINANCE_V1_CURRENCY: &str = "ZAR";
 
 #[derive(Clone, Copy)]
 struct DefaultGroup {
@@ -240,7 +242,14 @@ impl BudgetService {
         }
 
         self.ensure_system_groups().await?;
-        let groups = self.repo.list_groups().await?;
+        let locked_profile = self.is_finance_v1_locked_profile().await?;
+        if locked_profile && currency != FINANCE_V1_CURRENCY {
+            return Err(invalid_budget_input("Finance v1 budget currency is ZAR"));
+        }
+        let mut groups = self.repo.list_groups().await?;
+        if locked_profile {
+            groups.retain(|group| matches!(group.key.as_str(), "needs" | "wants" | "other"));
+        }
         let assignments = self.repo.list_group_assignments().await?;
         let targets = self.repo.list_targets().await?;
         let rollover_settings = self.repo.list_rollover_settings().await?;
@@ -345,7 +354,7 @@ impl BudgetService {
                 .push(BudgetCategoryRow {
                     taxonomy_id: SPENDING_TAXONOMY.to_string(),
                     category_id: category.id.clone(),
-                    group_id: Some(group_id),
+                    group_id: Some(group_id.clone()),
                     parent_id: category.parent_id.clone(),
                     name: category.name.clone(),
                     color: Some(category.color.clone()),
@@ -355,7 +364,8 @@ impl BudgetService {
                     rollover_in: decimal_to_f64(rollover_in),
                     rollover_out: decimal_to_f64(rollover_out),
                     remaining: decimal_to_f64(remaining),
-                    overspent: remaining < Decimal::ZERO,
+                    overspent: remaining < Decimal::ZERO
+                        && !(group_id == other_group_id && target.is_zero()),
                     has_default_target: target_index
                         .has_default_category(SPENDING_TAXONOMY, &category.id),
                     has_month_override: target_index.has_month_category(
@@ -464,7 +474,8 @@ impl BudgetService {
                 rollover_in: decimal_to_f64(rollover_in),
                 rollover_out: decimal_to_f64(rollover_out),
                 remaining: decimal_to_f64(remaining),
-                overspent: remaining < Decimal::ZERO,
+                overspent: remaining < Decimal::ZERO
+                    && !(group.key == OTHER_GROUP_KEY && planned_total_decimal.is_zero()),
                 rollover_enabled: rollover.is_some(),
                 categories,
             });
@@ -564,6 +575,7 @@ impl BudgetService {
         currency: &str,
         timezone: &str,
     ) -> Result<BudgetSnapshot> {
+        self.reject_finance_v1_profile_changes().await?;
         self.repo
             .create_group(NewBudgetGroup {
                 id: input.id,
@@ -586,6 +598,7 @@ impl BudgetService {
         currency: &str,
         timezone: &str,
     ) -> Result<BudgetSnapshot> {
+        self.reject_finance_v1_profile_changes().await?;
         self.repo.update_group(id, patch).await?;
         self.get(period_key, currency, timezone).await
     }
@@ -598,6 +611,7 @@ impl BudgetService {
         currency: &str,
         timezone: &str,
     ) -> Result<BudgetSnapshot> {
+        self.reject_finance_v1_profile_changes().await?;
         let groups = self.repo.list_groups().await?;
         let group = groups
             .iter()
@@ -656,6 +670,7 @@ impl BudgetService {
         currency: &str,
         timezone: &str,
     ) -> Result<BudgetSnapshot> {
+        self.reject_finance_v1_profile_changes().await?;
         self.repo
             .upsert_group_assignment(NewBudgetGroupAssignment {
                 id: None,
@@ -673,6 +688,9 @@ impl BudgetService {
         currency: &str,
         timezone: &str,
     ) -> Result<BudgetSnapshot> {
+        if self.is_finance_v1_locked_profile().await? {
+            return self.get(period_key, currency, timezone).await;
+        }
         let groups = self
             .repo
             .upsert_system_groups(default_group_inputs())
@@ -692,6 +710,7 @@ impl BudgetService {
         currency: &str,
         timezone: &str,
     ) -> Result<BudgetSnapshot> {
+        self.reject_finance_v1_profile_changes().await?;
         validate_period_key(&target.period_key)?;
         validate_budget_target(&target)?;
         self.repo.upsert_target(target).await?;
@@ -705,6 +724,7 @@ impl BudgetService {
         currency: &str,
         timezone: &str,
     ) -> Result<BudgetSnapshot> {
+        self.reject_finance_v1_profile_changes().await?;
         self.repo.delete_target(id).await?;
         self.get(period_key, currency, timezone).await
     }
@@ -716,6 +736,7 @@ impl BudgetService {
         currency: &str,
         timezone: &str,
     ) -> Result<BudgetSnapshot> {
+        self.reject_finance_v1_profile_changes().await?;
         validate_month_key(&setting.start_month)?;
         validate_rollover_setting(&setting)?;
         match setting.target_type {
@@ -764,6 +785,7 @@ impl BudgetService {
         currency: &str,
         timezone: &str,
     ) -> Result<BudgetSnapshot> {
+        self.reject_finance_v1_profile_changes().await?;
         self.repo.delete_rollover_setting(id).await?;
         self.get(period_key, currency, timezone).await
     }
@@ -776,6 +798,7 @@ impl BudgetService {
         currency: &str,
         timezone: &str,
     ) -> Result<BudgetSnapshot> {
+        self.reject_finance_v1_profile_changes().await?;
         validate_period_key(source_period_key)?;
         validate_month_key(target_period_key)?;
         if source_period_key == target_period_key {
@@ -788,7 +811,24 @@ impl BudgetService {
             .await
     }
 
+    async fn is_finance_v1_locked_profile(&self) -> Result<bool> {
+        Ok(self
+            .repo
+            .list_targets()
+            .await?
+            .iter()
+            .any(|target| target.id == FINANCE_V1_TARGET_SALARY_ID))
+    }
+
+    async fn reject_finance_v1_profile_changes(&self) -> Result<()> {
+        if self.is_finance_v1_locked_profile().await? {
+            return Err(invalid_budget_input("Finance v1 budget profile is locked"));
+        }
+        Ok(())
+    }
+
     async fn ensure_system_groups(&self) -> Result<()> {
+        let locked_profile = self.is_finance_v1_locked_profile().await?;
         let existing_keys: HashSet<String> = self
             .repo
             .list_groups()
@@ -796,7 +836,15 @@ impl BudgetService {
             .into_iter()
             .map(|g| g.key)
             .collect();
-        let missing = default_group_inputs()
+        let system_groups = if locked_profile {
+            default_group_inputs()
+                .into_iter()
+                .filter(|group| matches!(group.key.as_deref(), Some("needs" | "wants" | "other")))
+                .collect()
+        } else {
+            default_group_inputs()
+        };
+        let missing = system_groups
             .into_iter()
             .filter(|g| {
                 g.key
@@ -3039,6 +3087,48 @@ mod tests {
         assert!(fixture.eligibility.row_calls.lock().unwrap().is_empty());
         assert!(fixture.assignment_repo.calls.lock().unwrap().is_empty());
         assert!(fixture.split_repo.calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn finance_v1_profile_requires_zar_and_rejects_profile_edits() {
+        let mut salary = target(
+            DEFAULT_PERIOD_KEY,
+            BudgetTargetType::Category,
+            Some(INCOME_TAXONOMY),
+            Some("cat_income_salary"),
+            None,
+            "60000",
+        );
+        salary.id = FINANCE_V1_TARGET_SALARY_ID.to_string();
+        let fixture = budget_fixture(Vec::new(), Vec::new(), vec![salary], &[], &[]);
+
+        assert!(fixture
+            .service
+            .get(Some(DEFAULT_PERIOD_KEY.to_string()), "USD", "UTC")
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("currency is ZAR"));
+        assert!(fixture
+            .service
+            .create_group(
+                NewBudgetGroup {
+                    id: None,
+                    name: "Unexpected".to_string(),
+                    key: None,
+                    color: None,
+                    icon: None,
+                    sort_order: None,
+                    is_system: false,
+                },
+                Some(DEFAULT_PERIOD_KEY.to_string()),
+                "ZAR",
+                "UTC",
+            )
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("profile is locked"));
     }
 
     fn target(

@@ -441,6 +441,90 @@ mod migration_tests {
         drop(conn);
         let _ = fs::remove_file(path);
     }
+
+    #[test]
+    fn finance_v1_correction_upgrades_colliding_assignments_to_the_exact_snapshot() {
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        migrate_until(&mut conn, "20260719000001");
+        conn.batch_execute(
+            "INSERT INTO budget_group_assignments(id,group_id,taxonomy_id,category_id,is_system) VALUES
+             ('legacy-subscriptions','6e25d097-0c73-4521-9407-d47e8dfb73e2','spending_categories','cat_bills_subscriptions',0),
+             ('legacy-food-delivery','6e25d097-0c73-4521-9407-d47e8dfb73e2','spending_categories','cat_food_delivery',0);",
+        )
+        .unwrap();
+
+        conn.run_pending_migrations(MIGRATIONS).unwrap();
+
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COALESCE(SUM(CAST(target.amount AS INTEGER)), 0) AS count
+                 FROM budget_targets target
+                 JOIN budget_group_assignments assignment
+                   ON assignment.taxonomy_id=target.taxonomy_id
+                  AND assignment.category_id=target.category_id
+                 JOIN budget_groups budget_group ON budget_group.id=assignment.group_id
+                 WHERE target.id LIKE 'finance_v1_target_%' AND budget_group.key='needs'",
+            ),
+            37000
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COALESCE(SUM(CAST(target.amount AS INTEGER)), 0) AS count
+                 FROM budget_targets target
+                 JOIN budget_group_assignments assignment
+                   ON assignment.taxonomy_id=target.taxonomy_id
+                  AND assignment.category_id=target.category_id
+                 JOIN budget_groups budget_group ON budget_group.id=assignment.group_id
+                 WHERE target.id LIKE 'finance_v1_target_%' AND budget_group.key='wants'",
+            ),
+            13000
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COALESCE(SUM(CAST(target.amount AS INTEGER)), 0) AS count
+                 FROM budget_targets target
+                 JOIN budget_group_assignments assignment
+                   ON assignment.taxonomy_id=target.taxonomy_id
+                  AND assignment.category_id=target.category_id
+                 JOIN budget_groups budget_group ON budget_group.id=assignment.group_id
+                 WHERE target.id LIKE 'finance_v1_target_%' AND budget_group.key='other'",
+            ),
+            0
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM budget_group_assignments
+                 WHERE category_id IN ('cat_bills_subscriptions','cat_food_delivery')
+                   AND group_id='a409e0d6-9152-49c8-a5b4-a147a8ac636e' AND is_system=1",
+            ),
+            2
+        );
+        let locked = conn
+            .batch_execute(
+                "UPDATE budget_group_assignments SET is_system=0 WHERE id='legacy-subscriptions';",
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(
+            locked.contains("Finance v1 budget assignment is locked"),
+            "{locked}"
+        );
+
+        let version = latest_version(&mut conn);
+        let reverted = conn
+            .revert_last_migration(MIGRATIONS)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            reverted.contains("Finance v1 locked budget correction is irreversible"),
+            "{reverted}"
+        );
+        assert_eq!(latest_version(&mut conn), version);
+    }
 }
 
 fn create_backup_filename(timestamp: chrono::DateTime<Local>) -> String {

@@ -332,3 +332,124 @@ async fn rollback_is_atomic_for_staged_and_active_runs_and_replays_exact_receipt
     assert_eq!(count(&path, "activities"), 0);
     assert_eq!(count(&path, "historical_import_staged_ledger"), 0);
 }
+
+#[tokio::test]
+async fn lunch_money_learning_requires_reviewed_agreement_and_three_labels() {
+    let (_dir, path, repository) = setup().await;
+    for (label_count, agreement_state) in [(2, "agreement"), (3, "conflict")] {
+        let mut evidence = evidence_row(&path);
+        evidence.source = HistoricalSource::LunchMoney;
+        evidence.label_count = label_count;
+        evidence.agreement_state = agreement_state.into();
+        let mut reviewed = manifest("a1", &["l1"], std::slice::from_ref(&evidence));
+        reviewed.ledger[0].source = HistoricalSource::LunchMoney;
+        assert!(matches!(
+            repository
+                .apply(batch(
+                    ALICE,
+                    &format!("lunch-money-{label_count}-{agreement_state}"),
+                    &format!("evidence-{label_count}-{agreement_state}"),
+                    Some(reviewed),
+                    HistoricalOperation::StageLearningEvidence {
+                        rows: vec![evidence]
+                    },
+                ))
+                .await,
+            Err(HistoricalImportError::Invalid(_))
+        ));
+    }
+    assert_eq!(count(&path, "historical_import_staged_evidence"), 0);
+}
+
+#[tokio::test]
+async fn lunch_money_import_preserves_historical_context_and_refuses_later_edits() {
+    let (_dir, path, repository) = setup().await;
+    let mut ledger = ledger_row("lunch-ledger", "a1");
+    ledger.source = HistoricalSource::LunchMoney;
+    let mut evidence = evidence_row(&path);
+    evidence.idempotency_key = "lunch-evidence".into();
+    evidence.manifest_ledger_identity = ledger.historical_identity.clone();
+    evidence.source = HistoricalSource::LunchMoney;
+    let mut reviewed = manifest(
+        "a1",
+        &[ledger.historical_identity.as_str()],
+        std::slice::from_ref(&evidence),
+    );
+    reviewed.ledger[0].source = HistoricalSource::LunchMoney;
+
+    repository
+        .apply(batch(
+            ALICE,
+            "lunch-run",
+            "lunch-stage-ledger",
+            Some(reviewed.clone()),
+            HistoricalOperation::StageLedger {
+                rows: vec![ledger.clone()],
+            },
+        ))
+        .await
+        .unwrap();
+    repository
+        .apply(batch(
+            ALICE,
+            "lunch-run",
+            "lunch-stage-evidence",
+            Some(reviewed.clone()),
+            HistoricalOperation::StageLearningEvidence {
+                rows: vec![evidence],
+            },
+        ))
+        .await
+        .unwrap();
+    repository
+        .apply(batch(
+            ALICE,
+            "lunch-run",
+            "lunch-finalize",
+            Some(reviewed.clone()),
+            HistoricalOperation::Finalize,
+        ))
+        .await
+        .unwrap();
+
+    let connection = Connection::open(&path).unwrap();
+    connection
+        .execute(
+            "UPDATE activities SET notes='later user edit', is_user_modified=1 WHERE id=?",
+            [&ledger.historical_identity],
+        )
+        .unwrap();
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT count(*) FROM provenance_records WHERE entity_type='activity' AND entity_id=? AND role='historical_context'",
+                [&ledger.historical_identity],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+        1
+    );
+
+    assert!(matches!(
+        repository
+            .apply(batch(
+                ALICE,
+                "lunch-rerun",
+                "lunch-rerun-stage",
+                Some(reviewed),
+                HistoricalOperation::StageLedger { rows: vec![ledger] },
+            ))
+            .await,
+        Err(HistoricalImportError::IdentityConflict)
+    ));
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT notes FROM activities WHERE id='lunch-ledger'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap(),
+        "later user edit"
+    );
+}
