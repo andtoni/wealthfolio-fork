@@ -1,70 +1,47 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended"
-  ],
+  "extends": ["config:recommended"],
   "dependencyDashboard": true,
-  "labels": [
-    "dependencies",
-    "renovate"
-  ],
+  "labels": ["dependencies", "renovate"],
   "rangeStrategy": "pin",
   "rebaseWhen": "auto",
   "platformAutomerge": true,
   "automerge": false,
   "timezone": "Europe/London",
-  "schedule": [
-    "after 20:00 on Saturday",
-    "before 06:00 on Sunday"
-  ],
+  "schedule": ["after 20:00 on Saturday", "before 06:00 on Sunday"],
   "packageRules": [
     {
       "description": "Use GitHub native auto-merge for non-major dependency updates",
-      "matchUpdateTypes": [
-        "minor",
-        "patch",
-        "pin",
-        "digest"
-      ],
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
       "automerge": true,
       "automergeType": "pr"
     },
     {
       "description": "Require explicit review for custom-managed CI supply-chain updates",
-      "matchManagers": [
-        "custom.regex"
-      ],
+      "matchManagers": ["custom.regex"],
       "automerge": false
     },
     {
       "description": "Require explicit review for CI supply-chain updates",
-      "matchManagers": [
-        "github-actions"
-      ],
+      "matchManagers": ["github-actions"],
       "automerge": false
     },
     {
       "description": "Dashboard-gate major updates",
-      "matchUpdateTypes": [
-        "major"
-      ],
+      "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true,
       "automerge": false
     },
     {
       "description": "Preserve published peer compatibility ranges",
-      "matchDepTypes": [
-        "peerDependencies"
-      ],
+      "matchDepTypes": ["peerDependencies"],
       "rangeStrategy": "widen"
     }
   ],
   "customManagers": [
     {
       "customType": "regex",
-      "managerFilePatterns": [
-        "/^project\\.yaml$/"
-      ],
+      "managerFilePatterns": ["/^project\\.yaml$/"],
       "matchStrings": [
         "image:\\s+(?<depName>[^@\\s]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
       ],
@@ -72,15 +49,14 @@
     },
     {
       "customType": "regex",
-      "managerFilePatterns": [
-        "/^\\.github/workflows/workstream-standard\\.yml$/"
-      ],
-      "matchStrings": [
-        "version:\\s+\"?v(?<currentValue>\\d+\\.\\d+\\.\\d+)\"?"
-      ],
+      "managerFilePatterns": ["/^\\.github/workflows/workstream-standard\\.yml$/"],
+      "matchStrings": ["version:\\s+\"?v(?<currentValue>\\d+\\.\\d+\\.\\d+)\"?"],
       "depNameTemplate": "zizmorcore/zizmor",
       "datasourceTemplate": "github-releases"
     }
   ],
-  "automergeType": "pr"
+  "automergeType": "pr",
+  "branchConcurrentLimit": 3,
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 2
 }

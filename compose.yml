@@ -9,7 +9,9 @@
 
 services:
   wealthfolio:
-    image: registry.example.com/andtoni/wealthfolio@${WEALTHFOLIO_IMAGE_DIGEST:?set the exact sha256 Wealthfolio image digest}
+    image:
+      registry.example.com/andtoni/wealthfolio@${WEALTHFOLIO_IMAGE_DIGEST:?set the exact
+      sha256 Wealthfolio image digest}
     container_name: wealthfolio
     # systemd owns restart ordering; a whole-stack restart must first
     # obtain a fresh one-use OpenBao SecretID and render the tmpfs inputs.
@@ -80,7 +82,8 @@ services:
 
       # Internal, subject-bound provider Connect proxy. The dedicated token is
       # mounted from an OpenBao Agent-rendered tmpfs file and is never sent to browsers.
-      FINANCE_SYNC_CONTROL_URL: "${FINANCE_SYNC_CONTROL_URL:?Set the internal Finance Sync control URL}"
+      FINANCE_SYNC_CONTROL_URL:
+        "${FINANCE_SYNC_CONTROL_URL:?Set the internal Finance Sync control URL}"
       FINANCE_SYNC_CONTROL_TOKEN_FILE: "/run/secrets/finance_sync_control_token"
       WF_HISTORICAL_IMPORTER_TOKEN_FILE: "/run/secrets/historical_importer_token"
     healthcheck:
@@ -106,13 +109,20 @@ secrets:
   wf_secret_key:
     file: ${WF_SECRET_KEY_FILE_SOURCE:?provide the OpenBao-rendered tmpfs master-key file}
   wf_auth_password_hash:
-    file: ${WF_AUTH_PASSWORD_HASH_FILE_SOURCE:?provide the OpenBao-rendered tmpfs Argon2id hash file}
+    file:
+      ${WF_AUTH_PASSWORD_HASH_FILE_SOURCE:?provide the OpenBao-rendered tmpfs Argon2id hash file}
   wf_oidc_client_secret:
-    file: ${WF_OIDC_CLIENT_SECRET_FILE_SOURCE:?provide the OpenBao-rendered tmpfs OIDC client-secret file}
+    file:
+      ${WF_OIDC_CLIENT_SECRET_FILE_SOURCE:?provide the OpenBao-rendered tmpfs OIDC client-secret
+      file}
   finance_sync_control_token:
-    file: ${FINANCE_SYNC_CONTROL_TOKEN_FILE_SOURCE:?provide an OpenBao-rendered tmpfs control token file}
+    file:
+      ${FINANCE_SYNC_CONTROL_TOKEN_FILE_SOURCE:?provide an OpenBao-rendered tmpfs control token
+      file}
   historical_importer_token:
-    file: ${WF_HISTORICAL_IMPORTER_TOKEN_FILE_SOURCE:?provide an OpenBao-rendered tmpfs historical importer token file}
+    file:
+      ${WF_HISTORICAL_IMPORTER_TOKEN_FILE_SOURCE:?provide an OpenBao-rendered tmpfs historical
+      importer token file}
 
 volumes:
   wealthfolio-data:

@@ -15,8 +15,7 @@ describe("provider connection browser safeguards", () => {
   });
 
   it("accepts only credential-free HTTPS redirects", () => {
-    const official =
-      "https://app.snaptrade.com/snapTrade/redeemToken?token=short-lived";
+    const official = "https://app.snaptrade.com/snapTrade/redeemToken?token=short-lived";
     expect(validatedHttpsRedirect(official)).toBe(official);
     expect(() => validatedHttpsRedirect("http://app.snaptrade.com/snapTrade/redeemToken")).toThrow(
       "invalid redirect",
@@ -24,9 +23,9 @@ describe("provider connection browser safeguards", () => {
     expect(() => validatedHttpsRedirect("https://example.com/snapTrade/redeemToken")).toThrow(
       "invalid redirect",
     );
-    expect(() => validatedHttpsRedirect("https://user:secret@app.snaptrade.com/snapTrade/redeemToken")).toThrow(
-      "invalid redirect",
-    );
+    expect(() =>
+      validatedHttpsRedirect("https://user:secret@app.snaptrade.com/snapTrade/redeemToken"),
+    ).toThrow("invalid redirect");
   });
 
   it("loads Plaid Link only from the official stable HTTPS script", async () => {

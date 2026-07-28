@@ -39,9 +39,7 @@ export function loadPlaidLink(): Promise<PlaidApi> {
   if (plaidScriptPromise) return plaidScriptPromise;
 
   const promise = new Promise<PlaidApi>((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(
-      `script[src="${PLAID_SCRIPT_URL}"]`,
-    );
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${PLAID_SCRIPT_URL}"]`);
     const script = existing ?? document.createElement("script");
     const onLoad = () => {
       if (window.Plaid) resolve(window.Plaid);
@@ -78,7 +76,8 @@ export function validatedHttpsRedirect(value: string): string {
 }
 
 async function openPlaid(linkToken: string, continuationToken: string): Promise<void> {
-  if (!linkToken || !continuationToken) throw new Error("Plaid did not return a complete link session.");
+  if (!linkToken || !continuationToken)
+    throw new Error("Plaid did not return a complete link session.");
   const plaid = await loadPlaidLink();
   await new Promise<void>((resolve, reject) => {
     let handler: PlaidHandler;
@@ -159,7 +158,8 @@ function ProviderCard({ status }: { status: ProviderConnectionStatus }) {
     onError: (error: Error) => setErrorMsg(error.message || "Account could not be added."),
   });
 
-  const stateLabel = status.status === "configured" ? "Configured" : status.status.replaceAll("_", " ");
+  const stateLabel =
+    status.status === "configured" ? "Configured" : status.status.replaceAll("_", " ");
 
   return (
     <Card className="border">
@@ -197,11 +197,15 @@ function ProviderCard({ status }: { status: ProviderConnectionStatus }) {
           <div className="space-y-2 border-t pt-3">
             <p className="text-muted-foreground text-xs font-medium">Choose accounts to add</p>
             {discovered.map((account) => (
-              <div key={`${account.connectionId}:${account.providerAccountId}`} className="flex items-center gap-2 rounded-md border px-3 py-2">
+              <div
+                key={`${account.connectionId}:${account.providerAccountId}`}
+                className="flex items-center gap-2 rounded-md border px-3 py-2"
+              >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-medium">{account.name}</p>
                   <p className="text-muted-foreground text-[11px]">
-                    {account.type} · {account.currency}{account.mask ? ` · •••• ${account.mask}` : ""}
+                    {account.type} · {account.currency}
+                    {account.mask ? ` · •••• ${account.mask}` : ""}
                     {status.provider === "snaptrade"
                       ? account.assets.length === 0
                         ? " · Cash only"
@@ -212,7 +216,10 @@ function ProviderCard({ status }: { status: ProviderConnectionStatus }) {
                 <button
                   type="button"
                   disabled={admitMutation.isPending}
-                  onClick={() => { setErrorMsg(null); admitMutation.mutate(account); }}
+                  onClick={() => {
+                    setErrorMsg(null);
+                    admitMutation.mutate(account);
+                  }}
                   className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-8 items-center rounded-md px-3 text-xs font-medium disabled:opacity-50"
                 >
                   {admitMutation.isPending ? "Adding..." : "Add"}

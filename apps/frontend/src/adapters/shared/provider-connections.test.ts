@@ -70,8 +70,8 @@ describe("provider-connections shared adapter", () => {
 
     await expect(listProviderConnections()).rejects.toThrow("unavailable");
     await expect(startProviderConnection("snaptrade")).rejects.toThrow("unavailable");
-    await expect(
-      completePlaidConnection("public-token", "continuation-token"),
-    ).rejects.toThrow("unavailable");
+    await expect(completePlaidConnection("public-token", "continuation-token")).rejects.toThrow(
+      "unavailable",
+    );
   });
 });

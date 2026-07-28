@@ -269,7 +269,8 @@ All configuration is done via environment variables in `.env.web`.
 - `WF_SECRET_KEY_FILE` - File-backed alternative to `WF_SECRET_KEY`
 - `WF_AUTH_PASSWORD_HASH` - Argon2id PHC string enabling password-only
   authentication for web mode
-- `WF_AUTH_PASSWORD_HASH_FILE` - File-backed alternative to `WF_AUTH_PASSWORD_HASH`
+- `WF_AUTH_PASSWORD_HASH_FILE` - File-backed alternative to
+  `WF_AUTH_PASSWORD_HASH`
 - `WF_AUTH_TOKEN_TTL_MINUTES` - Optional JWT access token expiry in minutes
   (default `60`)
 - `WF_AUTH_REQUIRED` - Set to `false` to allow starting on non-loopback
@@ -282,7 +283,8 @@ All configuration is done via environment variables in `.env.web`.
     `<issuer>/.well-known/openid-configuration`)
   - `WF_OIDC_CLIENT_ID` - client id registered with the IdP
   - `WF_OIDC_CLIENT_SECRET` - **Optional** client secret (PKCE is always used)
-  - `WF_OIDC_CLIENT_SECRET_FILE` - File-backed alternative to `WF_OIDC_CLIENT_SECRET`
+  - `WF_OIDC_CLIENT_SECRET_FILE` - File-backed alternative to
+    `WF_OIDC_CLIENT_SECRET`
   - `WF_OIDC_REDIRECT_URL` - **Required** when OIDC is enabled; must be
     registered in the IdP, e.g. `https://your.host/api/v1/auth/oidc/callback`
   - `WF_OIDC_SCOPES` - **Optional** space-separated scopes (default
@@ -305,10 +307,20 @@ All configuration is done via environment variables in `.env.web`.
     post logout redirect URIs"). If unset, the IdP shows its own logged-out
     page.
   - `WF_OIDC_RP_LOGOUT` - **Optional**, default `true`. Set to `false` to force
-    local-only logout even when the IdP supports RP-Initiated Logout.
-For `WF_SECRET_KEY`, `WF_AUTH_PASSWORD_HASH`, and `WF_OIDC_CLIENT_SECRET`, set at most one direct variable or its `_FILE` alternative. `_FILE` values are read exactly (except for one final LF/CRLF); unreadable or whitespace-only files and dual sources stop startup without logging the secret. The production `compose.yml` is file-only and mounts these values from OpenBao-rendered host tmpfs sources.
+    local-only logout even when the IdP supports RP-Initiated Logout. For
+    `WF_SECRET_KEY`, `WF_AUTH_PASSWORD_HASH`, and `WF_OIDC_CLIENT_SECRET`, set
+    at most one direct variable or its `_FILE` alternative. `_FILE` values are
+    read exactly (except for one final LF/CRLF); unreadable or whitespace-only
+    files and dual sources stop startup without logging the secret. The
+    production `compose.yml` is file-only and mounts these values from
+    OpenBao-rendered host tmpfs sources.
 
-Protected releases use `.woodpecker.yml`: test, build one full-SHA image, record its exact zot digest, scan it with Trivy, then invoke the restricted deployment adapter. The adapter preserves the existing OpenBao-rendered runtime secrets and data volume, checks Docker health, and restores the previous image if the candidate fails. Local development continues to use the existing development overlays.
+Protected releases use `.woodpecker.yml`: test, build one full-SHA image, record
+its exact zot digest, scan it with Trivy, then invoke the restricted
+deployment adapter. The adapter preserves the existing OpenBao-rendered runtime
+secrets and data volume, checks Docker health, and restores the previous image
+if the candidate fails. Local development continues to use the existing
+development overlays.
 
 - `WF_COOKIE_SECURE` - Controls the `Secure` attribute on session cookies
   (default: `auto`)
