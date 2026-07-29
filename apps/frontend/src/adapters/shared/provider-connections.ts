@@ -28,7 +28,7 @@ export interface ProviderConnectionStartResponse extends ProviderConnectionStatu
   redirectUrl?: string;
 }
 
-export interface ProviderConnectionCompleteResponse extends ProviderConnectionStatus {}
+export type ProviderConnectionCompleteResponse = ProviderConnectionStatus;
 
 export interface DiscoveredProviderAsset {
   providerAssetId: string;

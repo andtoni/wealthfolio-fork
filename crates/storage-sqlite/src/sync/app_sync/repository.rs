@@ -5289,7 +5289,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn overwrite_risk_summary_counts_accounts_goals_and_budgets() {
+    async fn overwrite_risk_summary_counts_accounts_goals_and_budget_targets() {
         let (pool, writer) = setup_db();
         let repo = AppSyncRepository::new(pool.clone(), writer);
 
@@ -5302,12 +5302,6 @@ mod tests {
                  (id, period_key, target_type, taxonomy_id, category_id, group_id, amount, created_at, updated_at) \
                  VALUES ('budget-target-overwrite-risk', '2026-01', 'group_buffer', NULL, NULL, \
                          '032ecb02-5912-42e8-9724-2cd566fc08d5', '100.00', \
-                         '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'); \
-                 INSERT INTO budget_rollover_settings \
-                 (id, target_type, taxonomy_id, category_id, group_id, enabled, start_month, \
-                  starting_balance, created_at, updated_at) \
-                 VALUES ('budget-rollover-overwrite-risk', 'group', NULL, NULL, \
-                         '032ecb02-5912-42e8-9724-2cd566fc08d5', 1, '2026-01', '0', \
                          '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
             )
             .expect("insert budget rows");
@@ -5317,7 +5311,7 @@ mod tests {
             .get_local_sync_overwrite_risk_summary()
             .expect("overwrite risk summary");
 
-        assert_eq!(summary.total_rows, 4);
+        assert_eq!(summary.total_rows, 3);
         assert!(summary
             .non_empty_tables
             .iter()
@@ -5330,10 +5324,6 @@ mod tests {
             .non_empty_tables
             .iter()
             .any(|row| row.table == "budget_targets" && row.rows == 1));
-        assert!(summary
-            .non_empty_tables
-            .iter()
-            .any(|row| row.table == "budget_rollover_settings" && row.rows == 1));
     }
 
     #[tokio::test]
@@ -7429,14 +7419,7 @@ mod tests {
              ('budget-target-future', 'default', 'category', 'spending_categories', 'cat_future_budget',
               NULL, '100', '2026-02-12T00:00:00Z', '2026-02-12T00:00:00Z'),
              ('budget-target-custom', 'default', 'category', 'spending_categories', 'budget-category-custom',
-              NULL, '100', '2026-02-12T00:00:00Z', '2026-02-12T00:00:00Z');
-             INSERT INTO budget_rollover_settings
-             (id, target_type, taxonomy_id, category_id, group_id, enabled, start_month, starting_balance, created_at, updated_at)
-             VALUES
-             ('budget-rollover-future', 'category', 'spending_categories', 'cat_future_budget',
-              NULL, 1, '2026-01', '0', '2026-02-12T00:00:00Z', '2026-02-12T00:00:00Z'),
-             ('budget-rollover-custom', 'category', 'spending_categories', 'budget-category-custom',
-              NULL, 1, '2026-01', '0', '2026-02-12T00:00:00Z', '2026-02-12T00:00:00Z')",
+              NULL, '100', '2026-02-12T00:00:00Z', '2026-02-12T00:00:00Z')",
         )
         .expect("insert budget dependency rows");
 
@@ -7446,7 +7429,6 @@ mod tests {
                 "taxonomy_categories".to_string(),
                 "budget_group_assignments".to_string(),
                 "budget_targets".to_string(),
-                "budget_rollover_settings".to_string(),
             ])
             .await
             .expect("export budget snapshot");
@@ -7463,7 +7445,6 @@ mod tests {
                 vec![
                     "budget_group_assignments".to_string(),
                     "budget_targets".to_string(),
-                    "budget_rollover_settings".to_string(),
                     "taxonomy_categories".to_string(),
                     "budget_groups".to_string(),
                 ],
@@ -7487,9 +7468,7 @@ mod tests {
         let missing_dependency_rows: CountRow = diesel::sql_query(
             "SELECT COUNT(*) AS c FROM budget_group_assignments WHERE id = 'budget-assignment-future'
              UNION ALL
-             SELECT COUNT(*) AS c FROM budget_targets WHERE id = 'budget-target-future'
-             UNION ALL
-             SELECT COUNT(*) AS c FROM budget_rollover_settings WHERE id = 'budget-rollover-future'",
+             SELECT COUNT(*) AS c FROM budget_targets WHERE id = 'budget-target-future'",
         )
         .get_results::<CountRow>(&mut restore_conn)
         .expect("count skipped budget rows")

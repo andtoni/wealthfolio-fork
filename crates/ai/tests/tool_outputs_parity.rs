@@ -58,6 +58,8 @@ fn fixture_account(id: &str, name: &str, account_type: &str, currency: &str) -> 
         provider_account_id: None,
         is_archived: false,
         tracking_mode: TrackingMode::Transactions,
+        include_in_net_worth: true,
+        name_source: "manual".to_string(),
     }
 }
 

@@ -80,8 +80,7 @@ async function openPlaid(linkToken: string, continuationToken: string): Promise<
     throw new Error("Plaid did not return a complete link session.");
   const plaid = await loadPlaidLink();
   await new Promise<void>((resolve, reject) => {
-    let handler: PlaidHandler;
-    handler = plaid.create({
+    const handler: PlaidHandler = plaid.create({
       token: linkToken,
       onSuccess: (publicToken) => {
         void completePlaidConnection(publicToken, continuationToken)

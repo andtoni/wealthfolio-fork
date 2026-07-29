@@ -116,6 +116,11 @@ impl AgentEnvironment for StubEnv {
     ) -> Arc<dyn wealthfolio_spending::categorization_rules::CategorizationRulesServiceTrait> {
         unimplemented!("StubEnv")
     }
+    fn categorization_evidence_service(
+        &self,
+    ) -> Arc<wealthfolio_spending::categorization_evidence::CategorizationEvidenceService> {
+        unimplemented!("StubEnv")
+    }
 }
 
 struct NoopSink;
