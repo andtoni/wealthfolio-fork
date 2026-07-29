@@ -4,13 +4,15 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use tempfile::tempdir;
 use wealthfolio_server::config::Config;
 
-const SECRET_VARS: [&str; 6] = [
+const SECRET_VARS: [&str; 8] = [
     "WF_SECRET_KEY",
     "WF_SECRET_KEY_FILE",
     "WF_AUTH_PASSWORD_HASH",
     "WF_AUTH_PASSWORD_HASH_FILE",
     "WF_OIDC_CLIENT_SECRET",
     "WF_OIDC_CLIENT_SECRET_FILE",
+    "WF_FINANCE_SYNC_BRIDGE_TOKEN",
+    "WF_FINANCE_SYNC_BRIDGE_TOKEN_FILE",
 ];
 
 fn clear_secret_vars() {
@@ -33,10 +35,12 @@ fn secret_file_sources_allow_final_newlines_and_fail_closed() {
     let key_file = tmp.path().join("key");
     let password_file = tmp.path().join("password");
     let oidc_secret_file = tmp.path().join("oidc-secret");
+    let bridge_token_file = tmp.path().join("bridge-token");
     let key = BASE64.encode([9u8; 32]);
     std::fs::write(&key_file, format!("{key}\n")).unwrap();
     std::fs::write(&password_file, "$argon2id$test\n").unwrap();
     std::fs::write(&oidc_secret_file, " oidc-test-secret \r\n").unwrap();
+    std::fs::write(&bridge_token_file, "bridge-test-token\n").unwrap();
 
     clear_secret_vars();
     std::env::set_var("WF_LISTEN_ADDR", "127.0.0.1:8088");
@@ -48,12 +52,23 @@ fn secret_file_sources_allow_final_newlines_and_fail_closed() {
     std::env::set_var("WF_SECRET_KEY_FILE", &key_file);
     std::env::set_var("WF_AUTH_PASSWORD_HASH_FILE", &password_file);
     std::env::set_var("WF_OIDC_CLIENT_SECRET_FILE", &oidc_secret_file);
+    std::env::set_var("WF_FINANCE_SYNC_BRIDGE_TOKEN_FILE", &bridge_token_file);
+    std::env::set_var(
+        "WF_FINANCE_SYNC_BRIDGE_SUBJECT",
+        "urn:wealthfolio:password#local",
+    );
 
     let config = Config::from_env();
     assert_eq!(config.raw_secret_key, [9u8; 32]);
+    let auth = config.auth.unwrap();
+    assert_eq!(auth.password_hash.as_deref(), Some("$argon2id$test"));
     assert_eq!(
-        config.auth.unwrap().password_hash.as_deref(),
-        Some("$argon2id$test")
+        auth.bridge_service_token.as_deref(),
+        Some(b"bridge-test-token".as_slice())
+    );
+    assert_eq!(
+        auth.bridge_service_subject.as_deref(),
+        Some("urn:wealthfolio:password#local")
     );
     assert_eq!(
         config.oidc.unwrap().client_secret.as_deref(),
@@ -91,6 +106,7 @@ fn secret_file_sources_allow_final_newlines_and_fail_closed() {
         "WF_OIDC_CLIENT_ID",
         "WF_OIDC_REDIRECT_URL",
         "WF_OIDC_ALLOW_ANY",
+        "WF_FINANCE_SYNC_BRIDGE_SUBJECT",
     ] {
         std::env::remove_var(name);
     }

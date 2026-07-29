@@ -20,6 +20,8 @@ fn manager() -> Arc<AuthManager> {
             jwt_secret: vec![7; 32],
             access_token_ttl: Duration::from_secs(3600),
             cookie_secure: CookieSecurePolicy::Never,
+            bridge_service_token: None,
+            bridge_service_subject: None,
         })
         .unwrap(),
     )

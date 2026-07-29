@@ -35,6 +35,13 @@ function buildStaticNavigation(t: TFunction): NavigationProps {
         label: t("common:nav.label_dashboard"),
       },
       {
+        icon: <Icons.PiggyBank className="size-6" />,
+        title: t("common:budget", "Budget"),
+        href: "/settings/spending",
+        keywords: ["budget", "spending", "categories", "needs", "wants"],
+        label: t("common:nav.label_budget", "Plan and review monthly spending"),
+      },
+      {
         icon: <Icons.Insight className="size-6" />,
         title: t("common:insights"),
         href: "/insights",
@@ -50,9 +57,9 @@ function buildStaticNavigation(t: TFunction): NavigationProps {
       },
       {
         icon: <Icons.Activity className="size-6" />,
-        title: t("common:activities"),
+        title: t("common:transactions", "Transactions"),
         href: "/activities",
-        keywords: ["transactions", "trades", "history"],
+        keywords: ["transactions", "activities", "trades", "history"],
         label: t("common:nav.label_activities"),
       },
       {
@@ -71,6 +78,12 @@ function buildStaticNavigation(t: TFunction): NavigationProps {
       },
     ],
     secondary: [
+      {
+        icon: <Icons.Group className="size-6" />,
+        title: t("common:accounts_and_groups", "Accounts & Groups"),
+        href: "/settings/accounts",
+        keywords: ["accounts", "groups", "banks", "brokerages"],
+      },
       {
         icon: <Icons.Settings className="size-6" />,
         title: t("common:settings"),
@@ -106,8 +119,7 @@ export function useNavigation() {
     };
   }, []);
 
-  // Spending lives entirely on the dashboard tab (and its deep-linked pages);
-  // no top-level nav entry. Combine static navigation items with addons.
+  // Keep core finance destinations directly discoverable; combine them with addon navigation.
   const primary = [...staticNavigation.primary];
   const addons = useMemo(() => dynamicItems ?? [], [dynamicItems]);
 
@@ -166,6 +178,16 @@ export function isPathActive(pathname: string, href: string): boolean {
   if (normalizedHref === "/dashboard") {
     return (
       normalizedPath === "/" || normalizedPath === "/dashboard" || normalizedPath === "/net-worth"
+    );
+  }
+
+  if (normalizedHref === "/settings") {
+    const hasDedicatedNavigation = ["/settings/accounts", "/settings/spending"].some(
+      (path) => normalizedPath === path || normalizedPath.startsWith(`${path}/`),
+    );
+    return (
+      !hasDedicatedNavigation &&
+      (normalizedPath === "/settings" || normalizedPath.startsWith("/settings/"))
     );
   }
 

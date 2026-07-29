@@ -118,12 +118,14 @@ function ProviderCard({ status }: { status: ProviderConnectionStatus }) {
   const queryClient = useQueryClient();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const supportsConnect = true;
+  const canConnect = status.status === "available" || status.status === "configured";
+  const canDiscover = ["available", "configured", "connected", "completed"].includes(status.status);
   const { data: discovered = [] } = useQuery({
     queryKey: ["provider-accounts", status.provider],
     queryFn: () => listDiscoveredProviderAccounts(status.provider),
     staleTime: 15_000,
+    enabled: canDiscover,
   });
-  const canConnect = status.status === "available" || status.status === "configured";
 
   const startMutation = useMutation({
     mutationFn: async () => {
@@ -237,15 +239,40 @@ function ProviderCard({ status }: { status: ProviderConnectionStatus }) {
   );
 }
 
+const PROVIDER_FALLBACKS: ProviderConnectionStatus[] = [
+  { provider: "plaid", status: "unavailable", message: "Bank connection is not enabled yet." },
+  {
+    provider: "snaptrade",
+    status: "unavailable",
+    message: "Brokerage connection requires qualified live access.",
+  },
+  { provider: "investec", status: "unavailable", message: "Bank connection is not enabled yet." },
+  { provider: "mercury", status: "unavailable", message: "Bank connection is not enabled yet." },
+];
+
 export function ProviderConnectionsSection() {
   const { t } = useTranslation();
-  const { data: providers = [] } = useQuery({
+  const { data, isError, isPending } = useQuery({
     queryKey: ["provider-connections"],
     queryFn: listProviderConnections,
     staleTime: 30_000,
+    retry: 1,
   });
+  const statuses = new Map((data ?? []).map((status) => [status.provider, status]));
+  const providers = PROVIDER_FALLBACKS.map(
+    (fallback) => statuses.get(fallback.provider) ?? fallback,
+  );
 
-  if (providers.length === 0) return null;
+  if (isPending) {
+    return (
+      <div className="space-y-2" aria-live="polite">
+        <h3 className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">
+          {t("connect:directProviders", "Direct Provider Connections")}
+        </h3>
+        <div className="bg-muted h-24 animate-pulse rounded-lg" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -258,7 +285,13 @@ export function ProviderConnectionsSection() {
           "Connect your bank or brokerage directly for automatic syncing. Each provider requires separate setup.",
         )}
       </p>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {isError && (
+        <p className="border-warning/30 bg-warning/10 rounded-md border px-3 py-2 text-xs">
+          Automatic connections are currently locked while provider activation is completed. Manual
+          accounts remain available below.
+        </p>
+      )}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {providers.map((provider) => (
           <ProviderCard key={provider.provider} status={provider} />
         ))}

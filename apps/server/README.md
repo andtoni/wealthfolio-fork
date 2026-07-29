@@ -50,8 +50,11 @@ Key environment variables
   - `WF_OIDC_POST_LOGOUT_REDIRECT_URL`: **Optional**. When the IdP advertises an `end_session_endpoint`, sign-out performs RP-Initiated Logout (ends the IdP session too); otherwise logout is local-only. Set this to return to the app after IdP logout — it must be **registered** with the IdP (e.g. Keycloak's "Valid post logout redirect URIs"). If unset, the IdP shows its own logged-out page.
   - `WF_OIDC_RP_LOGOUT`: **Optional**, default `true`. Set to `false` to force local-only logout even when the IdP supports RP-Initiated Logout.
 - `WF_SECRET_FILE`: Optional override for where encrypted secrets are stored. Defaults to `<data-root>/secrets.json`.
+- `WF_HOUSEHOLD_ENABLED`: Enables the authenticated bridge and onboarding routes. Defaults to `false`.
+- `WF_FINANCE_SYNC_BRIDGE_TOKEN_FILE`: Dedicated Finance Sync bridge bearer token. It is accepted only for bridge commits and receipt lookups.
+- `WF_FINANCE_SYNC_BRIDGE_SUBJECT`: Issuer-qualified subject represented by that bridge token; it must match the admitted account owner.
 
-For `WF_SECRET_KEY`, `WF_AUTH_PASSWORD_HASH`, and `WF_OIDC_CLIENT_SECRET`, set at most one direct variable or its `_FILE` alternative. `_FILE` values are read at startup; a final newline is allowed, but unreadable or empty files and dual sources stop startup without logging the secret. The generic `compose.yml` passes these pairs through only; deployments using file paths must provide their own protected mounts (for example, the production OpenBao-agent tmpfs overlay).
+For `WF_SECRET_KEY`, `WF_AUTH_PASSWORD_HASH`, `WF_OIDC_CLIENT_SECRET`, and `WF_FINANCE_SYNC_BRIDGE_TOKEN`, set at most one direct variable or its `_FILE` alternative. `_FILE` values are read at startup; a final newline is allowed, but unreadable or empty files and dual sources stop startup without logging the secret. The generic `compose.yml` passes these pairs through only; deployments using file paths must provide their own protected mounts.
 
 Notes
 - The server also honors `DATABASE_URL`; when running in this workspace, `WF_DB_PATH` is preferred and propagated to `DATABASE_URL` internally so the core layer uses the expected path.

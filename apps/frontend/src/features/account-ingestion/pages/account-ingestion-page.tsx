@@ -33,7 +33,7 @@ export function IngestionHubContent() {
   }, [requiresAuth, isAuthenticated]);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 pt-12">
+    <div className="mx-auto max-w-5xl space-y-6 py-6 lg:py-8">
       {/* Logo + Welcome */}
       <div className="flex flex-col items-center text-center">
         <Avatar className="mb-4 h-20 w-20">
@@ -51,20 +51,23 @@ export function IngestionHubContent() {
         </p>
       </div>
 
-      {/* Zero connected accounts/providers */}
+      {/* Provider connections are the primary account-ingestion path. */}
+      <ProviderConnectionsSection />
+
+      {/* Manual and file-based fallbacks */}
       <Card>
-        <CardContent className="flex flex-col items-center gap-4 p-8 text-center">
+        <CardContent className="flex flex-col items-center gap-4 p-6 text-center sm:p-8">
           <div className="bg-muted flex h-16 w-16 items-center justify-center rounded-full">
             <Icons.Link className="text-muted-foreground h-7 w-7" />
           </div>
           <div>
             <h3 className="text-lg font-medium">
-              {t("connect:connect.noAccounts", "No Connected Accounts")}
+              {t("connect:connect.noAccounts", "Other ways to add accounts")}
             </h3>
             <p className="text-muted-foreground mt-1 text-sm">
               {t(
                 "connect:connect.noAccountsDescription",
-                "Connect your brokerage or bank to automatically sync transactions and holdings.",
+                "Create a manual account or import a file when a direct provider is not available.",
               )}
             </p>
           </div>
@@ -72,7 +75,7 @@ export function IngestionHubContent() {
             <Button asChild size="lg">
               <Link to="/settings/accounts" state={{ newAccount: true }}>
                 <Icons.Plus className="mr-2 h-4 w-4" />
-                {t("connect:connect.addAccount", "Add Account")}
+                {t("connect:connect.addAccount", "Add Manual Account")}
               </Link>
             </Button>
             <Button asChild variant="outline" size="lg">
@@ -84,9 +87,6 @@ export function IngestionHubContent() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Provider cards — truthful not_configured status from API */}
-      <ProviderConnectionsSection />
 
       {/* Secure local status */}
       <Card className="border-primary/20 bg-primary/5">

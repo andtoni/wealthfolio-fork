@@ -42,16 +42,17 @@ describe("AccountIngestionPage", () => {
     expect(screen.getByText("WF")).toBeInTheDocument();
   });
 
-  it("shows zero connected accounts empty state", () => {
+  it("shows direct providers before manual account fallbacks", () => {
     renderPage();
 
-    expect(screen.getByText("No Connected Accounts")).toBeInTheDocument();
+    expect(screen.getByText("Direct Provider Connections")).toBeInTheDocument();
+    expect(screen.getByText("Other ways to add accounts")).toBeInTheDocument();
   });
 
   it("renders a native Add account action linking to settings accounts", () => {
     renderPage();
 
-    const link = screen.getByRole("link", { name: /add account/i });
+    const link = screen.getByRole("link", { name: /add manual account/i });
     expect(link).toBeInTheDocument();
     expect(link).toHaveAttribute("href", "/settings/accounts");
   });

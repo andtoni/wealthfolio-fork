@@ -10,7 +10,7 @@ use axum::{
     extract::State,
     http::{
         header::{AUTHORIZATION, COOKIE, SET_COOKIE},
-        HeaderMap, HeaderValue, Request, StatusCode,
+        HeaderMap, HeaderValue, Method, Request, StatusCode,
     },
     middleware::Next,
     response::{IntoResponse, Response},
@@ -19,6 +19,7 @@ use axum::{
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
+use subtle::ConstantTimeEq;
 
 use crate::main_lib::AppState;
 use axum::Router;
@@ -54,6 +55,8 @@ pub struct AuthConfig {
     pub jwt_secret: Vec<u8>,
     pub access_token_ttl: Duration,
     pub cookie_secure: CookieSecurePolicy,
+    pub bridge_service_token: Option<Vec<u8>>,
+    pub bridge_service_subject: Option<String>,
 }
 
 pub struct AuthManager {
@@ -64,10 +67,16 @@ pub struct AuthManager {
     token_ttl: Duration,
     cookie_secure: CookieSecurePolicy,
     password_principal: PasswordPrincipal,
+    bridge_service: Option<BridgeServicePrincipal>,
 }
 
 #[derive(Clone, Debug)]
 struct PasswordPrincipal(String);
+
+struct BridgeServicePrincipal {
+    token: Vec<u8>,
+    subject: String,
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct OidcPrincipal(String);
@@ -161,6 +170,26 @@ impl AuthManager {
                 )
             })?;
         }
+        let bridge_service = match (
+            config.bridge_service_token.as_deref(),
+            config.bridge_service_subject.as_deref(),
+        ) {
+            (Some(token), Some(subject)) => {
+                let subject = subject.trim();
+                if token.is_empty() || token.len() > 4096 {
+                    anyhow::bail!("bridge service token must contain 1 to 4096 bytes");
+                }
+                if subject.is_empty() || !subject.contains('#') {
+                    anyhow::bail!("bridge service subject must be issuer-qualified");
+                }
+                Some(BridgeServicePrincipal {
+                    token: token.to_vec(),
+                    subject: subject.to_owned(),
+                })
+            }
+            (None, None) => None,
+            _ => anyhow::bail!("bridge service token and subject must be configured together"),
+        };
         let encoding_key = EncodingKey::from_secret(&config.jwt_secret);
         let decoding_key = DecodingKey::from_secret(&config.jwt_secret);
         let mut validation = Validation::new(Algorithm::HS256);
@@ -173,6 +202,7 @@ impl AuthManager {
             token_ttl: config.access_token_ttl,
             cookie_secure: config.cookie_secure.clone(),
             password_principal: PasswordPrincipal(config.password_subject.clone()),
+            bridge_service,
         })
     }
 
@@ -240,6 +270,29 @@ impl AuthManager {
 
     pub fn expires_in(&self) -> Duration {
         self.token_ttl
+    }
+
+    fn bridge_service_subject(
+        &self,
+        method: &Method,
+        path: &str,
+        token: &str,
+    ) -> Option<AuthenticatedSubject> {
+        let allowed = (*method == Method::POST
+            && matches!(path, "/bridge/commit" | "/api/v1/bridge/commit"))
+            || (*method == Method::GET
+                && (path.starts_with("/bridge/receipts/")
+                    || path.starts_with("/api/v1/bridge/receipts/")));
+        if !allowed {
+            return None;
+        }
+        let service = self.bridge_service.as_ref()?;
+        let presented = token.as_bytes();
+        if presented.len() != service.token.len() || service.token.ct_eq(presented).unwrap_u8() != 1
+        {
+            return None;
+        }
+        Some(AuthenticatedSubject(service.subject.clone()))
     }
 
     /// Mints a fresh session JWT and builds the `Set-Cookie` value for it.
@@ -430,6 +483,12 @@ pub async fn require_jwt(
     };
 
     let token = extract_token(&request)?;
+    if let Some(subject) =
+        auth.bridge_service_subject(request.method(), request.uri().path(), &token)
+    {
+        request.extensions_mut().insert(subject);
+        return Ok(next.run(request).await);
+    }
     let claims = auth.validate_token(&token)?;
     let subject = AuthenticatedSubject::from_claims(&claims)?;
     request.extensions_mut().insert(subject);
@@ -532,6 +591,21 @@ mod tests {
             jwt_secret: vec![0u8; 32],
             access_token_ttl: Duration::from_secs(3600),
             cookie_secure: policy,
+            bridge_service_token: None,
+            bridge_service_subject: None,
+        };
+        AuthManager::new(&config).unwrap()
+    }
+
+    fn make_bridge_manager() -> AuthManager {
+        let config = AuthConfig {
+            password_hash: None,
+            password_subject: "urn:wealthfolio:password#local".to_owned(),
+            jwt_secret: vec![0u8; 32],
+            access_token_ttl: Duration::from_secs(3600),
+            cookie_secure: CookieSecurePolicy::Never,
+            bridge_service_token: Some(b"dedicated-bridge-token".to_vec()),
+            bridge_service_subject: Some("urn:wealthfolio:password#local".to_owned()),
         };
         AuthManager::new(&config).unwrap()
     }
@@ -540,6 +614,52 @@ mod tests {
         let mut h = HeaderMap::new();
         h.insert("x-forwarded-proto", HeaderValue::from_str(value).unwrap());
         h
+    }
+
+    #[test]
+    fn bridge_service_configuration_fails_closed() {
+        let config = AuthConfig {
+            password_hash: None,
+            password_subject: "urn:wealthfolio:password#local".to_owned(),
+            jwt_secret: vec![0u8; 32],
+            access_token_ttl: Duration::from_secs(3600),
+            cookie_secure: CookieSecurePolicy::Never,
+            bridge_service_token: Some(b"token".to_vec()),
+            bridge_service_subject: None,
+        };
+        assert!(AuthManager::new(&config).is_err());
+    }
+
+    #[test]
+    fn bridge_service_token_is_scoped_to_bridge_routes() {
+        let manager = make_bridge_manager();
+        assert_eq!(
+            manager
+                .bridge_service_subject(
+                    &Method::POST,
+                    "/api/v1/bridge/commit",
+                    "dedicated-bridge-token",
+                )
+                .map(|subject| subject.0),
+            Some("urn:wealthfolio:password#local".to_owned())
+        );
+        assert!(manager
+            .bridge_service_subject(
+                &Method::GET,
+                "/api/v1/bridge/receipts/subject/key",
+                "dedicated-bridge-token",
+            )
+            .is_some());
+        assert!(manager
+            .bridge_service_subject(
+                &Method::GET,
+                "/api/v1/bridge/grant/subject/account",
+                "dedicated-bridge-token",
+            )
+            .is_none());
+        assert!(manager
+            .bridge_service_subject(&Method::POST, "/api/v1/bridge/commit", "wrong-token",)
+            .is_none());
     }
 
     #[test]

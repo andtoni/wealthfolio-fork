@@ -15,6 +15,7 @@ use tempfile::TempDir;
 use wealthfolio_server::{api::app_router, build_state, config::Config};
 
 const PASSWORD: &str = "super-secret";
+const BRIDGE_TOKEN: &str = "dedicated-finance-sync-bridge-token";
 
 /// Env vars are process-global; serialize config/state construction.
 static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -43,6 +44,11 @@ async fn spawn_server() -> TestServer {
         std::env::set_var("WF_SECRET_KEY", BASE64.encode(secret_bytes));
         std::env::set_var("WF_CORS_ALLOW_ORIGINS", "http://localhost:3000");
         std::env::set_var("WF_HOUSEHOLD_ENABLED", "true");
+        std::env::set_var("WF_FINANCE_SYNC_BRIDGE_TOKEN", BRIDGE_TOKEN);
+        std::env::set_var(
+            "WF_FINANCE_SYNC_BRIDGE_SUBJECT",
+            "urn:wealthfolio:password#local",
+        );
 
         let config = Config::from_env();
         let state = build_state(&config).await.unwrap();
@@ -168,7 +174,24 @@ async fn cross_subject_grant_is_forbidden() {
 }
 
 #[tokio::test]
-async fn bearer_bridge_commit_returns_accepted_receipt() {
+async fn finance_sync_service_token_cannot_grant_access() {
+    let server = spawn_server().await;
+    let subject = urlencoding::encode("urn:wealthfolio:password#local");
+    let response = server
+        .client
+        .post(format!(
+            "{}/api/v1/bridge/grant/{}/bridge-account",
+            server.base, subject
+        ))
+        .header(header::AUTHORIZATION, format!("Bearer {BRIDGE_TOKEN}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 401);
+}
+
+#[tokio::test]
+async fn finance_sync_service_token_commits_and_recovers_an_accepted_receipt() {
     let server = spawn_server().await;
     let jwt = login(&server).await;
     let subject = "urn:wealthfolio:password#local";
@@ -188,7 +211,7 @@ async fn bearer_bridge_commit_returns_accepted_receipt() {
         .as_i64()
         .unwrap();
     let idempotency_key = "bridge-positive-key";
-    let commit = server.client.post(format!("{}/api/v1/bridge/commit", server.base)).header(header::AUTHORIZATION, format!("Bearer {jwt}"))
+    let commit = server.client.post(format!("{}/api/v1/bridge/commit", server.base)).header(header::AUTHORIZATION, format!("Bearer {BRIDGE_TOKEN}"))
         .json(&serde_json::json!({"idempotency_key": idempotency_key, "subject": subject, "access_generation": access_generation, "kind": "ActivityUpsert", "resource_id": "bridge-activity", "activity": {"account_id": "bridge-account", "activity_type": "DEPOSIT", "status": "POSTED", "activity_date": "2026-01-01", "amount": "1", "currency": "USD", "notes": null, "activity_type_override": null, "needs_review": false}})).send().await.unwrap();
     assert_eq!(commit.status(), 200);
     let receipt = commit.json::<serde_json::Value>().await.unwrap();
@@ -214,7 +237,7 @@ async fn bearer_bridge_commit_returns_accepted_receipt() {
             urlencoding::encode(subject),
             idempotency_key
         ))
-        .header(header::AUTHORIZATION, format!("Bearer {jwt}"))
+        .header(header::AUTHORIZATION, format!("Bearer {BRIDGE_TOKEN}"))
         .send()
         .await
         .unwrap();

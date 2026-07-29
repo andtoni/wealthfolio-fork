@@ -107,6 +107,11 @@ impl Config {
         let password_hash = resolve_secret_env("WF_AUTH_PASSWORD_HASH");
 
         let oidc = OidcConfig::from_env();
+        let bridge_service_token =
+            resolve_secret_env("WF_FINANCE_SYNC_BRIDGE_TOKEN").map(String::into_bytes);
+        let bridge_service_subject = std::env::var("WF_FINANCE_SYNC_BRIDGE_SUBJECT")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
 
         // The session signer is needed whenever ANY auth method is enabled.
         let auth = if password_hash.is_some() || oidc.is_some() {
@@ -132,6 +137,8 @@ impl Config {
                 jwt_secret: jwt_key.to_vec(),
                 access_token_ttl: Duration::from_secs(ttl_minutes.saturating_mul(60)),
                 cookie_secure,
+                bridge_service_token,
+                bridge_service_subject,
             })
         } else {
             None
