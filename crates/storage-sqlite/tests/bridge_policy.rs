@@ -276,11 +276,11 @@ async fn current_state_cash_and_positive_liability_are_atomic_and_retry_bound() 
     assert_eq!(first.receipt_binding, retry.receipt_binding);
 
     let connection = Connection::open(&path).unwrap();
-    let persisted: (String, String, String, String, i64) = connection
+    let persisted: (String, String, String, String, i64, i64, i64, i64) = connection
         .query_row(
-            "SELECT cash_total_account_currency, liability_balance, position_market_values, source, (SELECT count(*) FROM provenance_records WHERE entity_type='snapshot' AND entity_id=holdings_snapshots.id AND role='live_canonical') FROM holdings_snapshots WHERE account_id='a1' AND snapshot_date='2026-07-18'",
+            "SELECT cash_total_account_currency, liability_balance, position_market_values, source, (SELECT count(*) FROM provenance_records WHERE entity_type='snapshot' AND entity_id=holdings_snapshots.id AND role='live_canonical'), (SELECT count(*) FROM provenance_records WHERE entity_type='account' AND entity_id='a1' AND role='live_canonical'), (SELECT count(*) FROM verified_receipts WHERE account_id='a1' AND verification_state='verified'), (SELECT include_in_net_worth FROM accounts WHERE id='a1') FROM holdings_snapshots WHERE account_id='a1' AND snapshot_date='2026-07-18'",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?)),
         )
         .unwrap();
     assert_eq!(
@@ -290,6 +290,9 @@ async fn current_state_cash_and_positive_liability_are_atomic_and_retry_bound() 
             "25".into(),
             "{}".into(),
             "BROKER_IMPORTED".into(),
+            1,
+            1,
+            1,
             1
         )
     );
@@ -431,6 +434,7 @@ async fn current_state_fault_rolls_back_snapshot_provenance_and_receipt() {
     for table in [
         "holdings_snapshots",
         "provenance_records",
+        "verified_receipts",
         "disclosure_receipts",
     ] {
         let count: i64 = connection
@@ -626,11 +630,16 @@ async fn provider_can_seed_description_but_not_user_owned_classification_overlay
         .await
         .unwrap();
     let c = Connection::open(&path).unwrap();
-    let overlays: (Option<String>, Option<String>, i64) = c.query_row(
-        "SELECT notes,activity_type_override,needs_review FROM activities WHERE id='provider-new'", [],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    let overlays: (Option<String>, Option<String>, i64, String, String, i64) = c.query_row(
+        "SELECT notes,activity_type_override,needs_review,created_at,updated_at,(SELECT count(*) FROM provenance_records WHERE entity_type='activity' AND entity_id=activities.id AND role='live_canonical') FROM activities WHERE id='provider-new'", [],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
     ).unwrap();
-    assert_eq!(overlays, (Some("provider note".into()), None, 0));
+    assert_eq!(overlays.0, Some("provider note".into()));
+    assert_eq!(overlays.1, None);
+    assert_eq!(overlays.2, 0);
+    chrono::DateTime::parse_from_rfc3339(&overlays.3).unwrap();
+    chrono::DateTime::parse_from_rfc3339(&overlays.4).unwrap();
+    assert_eq!(overlays.5, 1);
 }
 
 #[tokio::test]

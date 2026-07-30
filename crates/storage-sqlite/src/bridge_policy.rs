@@ -596,6 +596,7 @@ fn validate_current_state_operation(op: &DisclosureOperation) -> Result<()> {
 fn upsert_activity_row(
     c: &mut SqliteConnection,
     resource_id: &str,
+    subject: &str,
     act: &ActivityPayload,
 ) -> std::result::Result<(), diesel::result::Error> {
     #[derive(QueryableByName)]
@@ -647,7 +648,7 @@ fn upsert_activity_row(
     };
 
     sql_query(
-        "INSERT INTO activities(id,account_id,activity_type,status,activity_date,amount,currency,notes,activity_type_override,metadata,is_user_modified,needs_review,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,NULL,?,0,0,'now','now') ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,activity_type=excluded.activity_type,status=excluded.status,activity_date=excluded.activity_date,amount=excluded.amount,currency=excluded.currency,notes=CASE WHEN activities.is_user_modified=1 THEN activities.notes ELSE excluded.notes END,metadata=coalesce(excluded.metadata,activities.metadata),updated_at='now'"
+        "INSERT INTO activities(id,account_id,activity_type,status,activity_date,amount,currency,notes,activity_type_override,metadata,is_user_modified,needs_review,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,NULL,?,0,0,strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,activity_type=excluded.activity_type,status=excluded.status,activity_date=excluded.activity_date,amount=excluded.amount,currency=excluded.currency,notes=CASE WHEN activities.is_user_modified=1 THEN activities.notes ELSE excluded.notes END,metadata=coalesce(excluded.metadata,activities.metadata),updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')"
     )
         .bind::<Text,_>(resource_id)
         .bind::<Text,_>(&act.account_id)
@@ -658,6 +659,11 @@ fn upsert_activity_row(
         .bind::<Text,_>(&act.currency)
         .bind::<Nullable<Text>,_>(act.notes.as_deref())
         .bind::<Nullable<Text>,_>(metadata)
+        .execute(c)?;
+    sql_query("INSERT INTO provenance_records(entity_type,entity_id,role,source_system,source_record_id,actor_id) VALUES('activity',?,'live_canonical','finance',?,?) ON CONFLICT(entity_type,entity_id) DO UPDATE SET role='live_canonical',source_system='finance',source_record_id=excluded.source_record_id,actor_id=excluded.actor_id,updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')")
+        .bind::<Text, _>(resource_id)
+        .bind::<Text, _>(resource_id)
+        .bind::<Text, _>(subject)
         .execute(c)?;
     Ok(())
 }
@@ -703,7 +709,7 @@ fn do_upsert_activity(
     d: &str,
 ) -> std::result::Result<(), diesel::result::Error> {
     if let Some(ref act) = op.activity {
-        upsert_activity_row(c, &op.resource_id, act)?;
+        upsert_activity_row(c, &op.resource_id, &op.subject, act)?;
     }
     sql_query(
         "INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?) ON CONFLICT(deployment_id,person_subject_id,activity_id) DO UPDATE SET account_id=excluded.account_id,access_generation=excluded.access_generation"
@@ -821,6 +827,13 @@ fn persist_current_state(
         }
     }
 
+    // Provider current state owns its account/date. A generated duplicate can
+    // otherwise win an unordered same-day lookup and zero the visible balance.
+    sql_query("DELETE FROM holdings_snapshots WHERE account_id=? AND snapshot_date=? AND source='CALCULATED'")
+        .bind::<Text, _>(&state.account_id)
+        .bind::<Text, _>(&state.as_of_date)
+        .execute(c)?;
+
     let mut positions = serde_json::Map::new();
     let mut market_values = serde_json::Map::new();
     let mut total_cost_basis = Decimal::ZERO;
@@ -909,6 +922,24 @@ fn persist_current_state(
         .bind::<Text, _>(&snapshot_id)
         .bind::<Text, _>(provenance)
         .bind::<Text, _>(&op.subject)
+        .execute(c)?;
+    sql_query("INSERT INTO provenance_records(entity_type,entity_id,role,source_system,source_record_id,actor_id) VALUES('account',?,'live_canonical','finance',?,?) ON CONFLICT(entity_type,entity_id) DO UPDATE SET role='live_canonical',source_system='finance',source_record_id=excluded.source_record_id,actor_id=excluded.actor_id,updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')")
+        .bind::<Text, _>(&state.account_id)
+        .bind::<Text, _>(&state.provider_connection_id)
+        .bind::<Text, _>(&op.subject)
+        .execute(c)?;
+    sql_query("INSERT INTO verified_receipts(id,account_id,basis,as_of,provider_receipt_ref,verification_state) VALUES(?,?,'current_snapshot',?,?,'verified') ON CONFLICT(id) DO UPDATE SET as_of=excluded.as_of,provider_receipt_ref=excluded.provider_receipt_ref,verification_state='verified',updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')")
+        .bind::<Text, _>(format!("finance-current-state:{}", state.account_id))
+        .bind::<Text, _>(&state.account_id)
+        .bind::<Text, _>(&state.as_of_date)
+        .bind::<Text, _>(&op.idempotency_key)
+        .execute(c)?;
+    sql_query("UPDATE accounts SET include_in_net_worth=1,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+        .bind::<Text, _>(&state.account_id)
+        .execute(c)?;
+    sql_query("INSERT INTO provenance_records(entity_type,entity_id,role,source_system,source_record_id,actor_id) SELECT 'daily_valuation',id,'live_canonical','WEALTHFOLIO_DERIVED',NULL,? FROM daily_account_valuation WHERE account_id=? ON CONFLICT(entity_type,entity_id) DO UPDATE SET role='live_canonical',source_system='WEALTHFOLIO_DERIVED',actor_id=excluded.actor_id,updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')")
+        .bind::<Text, _>(&op.subject)
+        .bind::<Text, _>(&state.account_id)
         .execute(c)?;
     Ok(())
 }
@@ -1069,7 +1100,7 @@ impl BridgePolicyStore {
                     // Create/update its provider-owned row inside this same transaction,
                     // then migrate the pending row's user-owned overlays onto it.
                     if let Some(ref activity) = op.activity {
-                        upsert_activity_row(c, n, activity)?;
+                        upsert_activity_row(c, n, &op.subject, activity)?;
                     }
                     let posted = sql_query("SELECT account_id,status FROM activities WHERE id=?")
                         .bind::<Text,_>(n)
