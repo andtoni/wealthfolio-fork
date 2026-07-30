@@ -13,7 +13,7 @@ use reqwest::{header, Client, StatusCode, Url};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use wealthfolio_core::accounts::{
-    AccountServiceTrait, AccountUpdate, NewAccount as CoreNewAccount, TrackingMode,
+    account_types, AccountServiceTrait, AccountUpdate, NewAccount as CoreNewAccount, TrackingMode,
 };
 
 use crate::{
@@ -43,6 +43,27 @@ impl std::fmt::Display for ProviderKind {
             Self::Plaid => write!(f, "plaid"),
             Self::SnapTrade => write!(f, "snaptrade"),
         }
+    }
+}
+
+fn native_account_type(provider: ProviderKind, provider_type: &str) -> &'static str {
+    if provider == ProviderKind::SnapTrade {
+        return account_types::SECURITIES;
+    }
+    if provider != ProviderKind::Plaid {
+        // Investec's private-bank products are transactional accounts that may
+        // legitimately carry negative cash balances; Mercury is cash-ledger too.
+        return account_types::CASH;
+    }
+
+    match provider_type.trim().to_ascii_lowercase().as_str() {
+        "credit card" | "line of credit" | "loan" | "mortgage" | "student loan" => {
+            account_types::CREDIT_CARD
+        }
+        "401a" | "401k" | "403b" | "457b" | "brokerage" | "hsa" | "ira" | "keogh" | "lira"
+        | "pension" | "roth" | "rrif" | "rrsp" | "sep ira" | "simple ira" | "sipp"
+        | "stock plan" | "tfsa" | "trust" | "ugma" | "utma" => account_types::SECURITIES,
+        _ => account_types::CASH,
     }
 }
 
@@ -1166,7 +1187,7 @@ async fn admit_provider_account(
         let new_account = CoreNewAccount {
             id: None,
             name: name.to_string(),
-            account_type: source.account_type,
+            account_type: native_account_type(provider, &source.account_type).to_string(),
             group: None,
             currency: source.currency,
             is_default: false,
@@ -1488,6 +1509,42 @@ mod tests {
             serde_json::from_value(fixture["response"].clone()).unwrap();
         assert_eq!(response.provider, ProviderKind::Plaid);
         assert_eq!(response.status, ProviderStatus::Configured);
+    }
+
+    #[test]
+    fn provider_accounts_use_native_account_types() {
+        assert_eq!(
+            native_account_type(ProviderKind::Investec, "Private Bank Account"),
+            account_types::CASH
+        );
+        assert_eq!(
+            native_account_type(ProviderKind::Investec, "PrimeSaver"),
+            account_types::CASH
+        );
+        assert_eq!(
+            native_account_type(ProviderKind::Mercury, "mercury"),
+            account_types::CASH
+        );
+        assert_eq!(
+            native_account_type(ProviderKind::Plaid, "savings"),
+            account_types::CASH
+        );
+        assert_eq!(
+            native_account_type(ProviderKind::Plaid, "credit card"),
+            account_types::CREDIT_CARD
+        );
+        assert_eq!(
+            native_account_type(ProviderKind::Plaid, "loan"),
+            account_types::CREDIT_CARD
+        );
+        assert_eq!(
+            native_account_type(ProviderKind::Plaid, "brokerage"),
+            account_types::SECURITIES
+        );
+        assert_eq!(
+            native_account_type(ProviderKind::SnapTrade, "unknown"),
+            account_types::SECURITIES
+        );
     }
 
     #[test]
