@@ -791,20 +791,15 @@ body.qr-scan-active .scan-hide-target {
     overflow-wrap: break-word;
   }
 
-  /* Ensure grid and flex containers don't overflow */
+  /* Keep layout primitives within the viewport without disabling intentional
+   * nested horizontal scrollers (budget rings, assistant content, etc.). */
   .grid,
   .flex {
     max-width: 100%;
-    overflow-x: hidden;
   }
 
-  /* assistant-ui thread needs native overflow behavior for sticky footer + viewport */
-  .aui-root,
-  .aui-root .flex,
-  .aui-root .grid {
-    overflow-x: visible;
-  }
-
+  /* Assistant UI owns its viewport scrolling; do not override it via a broad
+   * descendant rule. */
   .aui-thread-viewport {
     overflow-x: auto;
   }

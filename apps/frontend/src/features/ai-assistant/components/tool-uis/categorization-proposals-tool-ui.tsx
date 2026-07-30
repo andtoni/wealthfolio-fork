@@ -287,7 +287,7 @@ function CategorizationProposalsContentImpl({
       </CardHeader>
       <CardContent className="space-y-3 px-0 pb-3">
         {!isSubmitted && rows.length > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-2 px-6">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-6">
             <label className="flex cursor-pointer items-center gap-2 text-xs">
               <Checkbox
                 checked={
@@ -333,7 +333,7 @@ function CategorizationProposalsContentImpl({
             <div
               key={row.activityId}
               className={cn(
-                "hover:bg-background/50 flex items-center gap-3 rounded-md px-4 py-2 text-xs",
+                "hover:bg-background/50 grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 rounded-md px-3 py-2 text-xs sm:grid-cols-[auto_6rem_6rem_minmax(0,1fr)_auto_auto] sm:gap-x-3 sm:px-4",
                 row.selected && "bg-background/40",
               )}
             >
@@ -343,10 +343,10 @@ function CategorizationProposalsContentImpl({
                 disabled={isSubmitted}
                 aria-label={t("ai:categorization.selectRow")}
               />
-              <span className="text-muted-foreground w-24 whitespace-nowrap tabular-nums">
+              <span className="text-muted-foreground min-w-0 whitespace-nowrap tabular-nums">
                 {formatActivityDate(row.activityDate)}
               </span>
-              <span className="w-24 text-right tabular-nums">
+              <span className="whitespace-nowrap text-right tabular-nums">
                 {formatActivityAmount(
                   row.amount,
                   amountFormatter,
@@ -354,7 +354,7 @@ function CategorizationProposalsContentImpl({
                   row.currency || baseCurrency,
                 )}
               </span>
-              <span className="flex-1 truncate" title={row.notes ?? ""}>
+              <span className="col-span-3 min-w-0 truncate sm:col-span-1" title={row.notes ?? ""}>
                 {row.notes ?? (
                   <span className="text-muted-foreground italic">
                     {t("ai:categorization.noNotes")}
@@ -365,14 +365,14 @@ function CategorizationProposalsContentImpl({
                 trigger={
                   <button
                     type="button"
-                    className="hover:bg-muted/70 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px]"
+                    className="hover:bg-muted/70 col-span-2 inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] sm:col-span-1"
                     disabled={isSubmitted}
                   >
                     <span
                       className="h-2 w-2 rounded-full"
                       style={{ backgroundColor: row.categoryColor }}
                     />
-                    <span className="max-w-[180px] truncate">{row.categoryPath}</span>
+                    <span className="min-w-0 max-w-[180px] truncate">{row.categoryPath}</span>
                   </button>
                 }
                 selectedCategoryId={row.categoryId}
@@ -399,13 +399,13 @@ function CategorizationProposalsContentImpl({
               {visibleUnproposed.map((row) => (
                 <div
                   key={row.activityId}
-                  className="hover:bg-background/40 flex items-center gap-3 rounded-md px-4 py-2 text-xs"
+                  className="hover:bg-background/40 grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 rounded-md px-3 py-2 text-xs sm:grid-cols-[auto_6rem_6rem_minmax(0,1fr)_auto] sm:gap-x-3 sm:px-4"
                 >
                   <span className="w-5" />
-                  <span className="text-muted-foreground w-24 whitespace-nowrap tabular-nums">
+                  <span className="text-muted-foreground min-w-0 whitespace-nowrap tabular-nums">
                     {formatActivityDate(row.activityDate)}
                   </span>
-                  <span className="w-24 text-right tabular-nums">
+                  <span className="whitespace-nowrap text-right tabular-nums">
                     {formatActivityAmount(
                       row.amount,
                       amountFormatter,
@@ -413,7 +413,10 @@ function CategorizationProposalsContentImpl({
                       row.currency || baseCurrency,
                     )}
                   </span>
-                  <span className="flex-1 truncate" title={row.notes ?? ""}>
+                  <span
+                    className="col-span-3 min-w-0 truncate sm:col-span-1"
+                    title={row.notes ?? ""}
+                  >
                     {row.notes ?? (
                       <span className="text-muted-foreground italic">
                         {t("ai:categorization.noNotes")}
@@ -424,7 +427,7 @@ function CategorizationProposalsContentImpl({
                     trigger={
                       <button
                         type="button"
-                        className="text-muted-foreground hover:bg-muted/70 inline-flex items-center gap-1 rounded-full border border-dashed px-2 py-0.5 text-[11px]"
+                        className="text-muted-foreground hover:bg-muted/70 col-span-3 inline-flex min-w-0 max-w-full items-center justify-center gap-1 rounded-full border border-dashed px-2 py-0.5 text-[11px] sm:col-span-1"
                       >
                         <Icons.Plus className="h-3 w-3" />
                         {t("ai:categorization.pickCategory")}
@@ -465,7 +468,7 @@ function CategorizationProposalsContentImpl({
         </div>
 
         {submitError && (
-          <div className="mx-6">
+          <div className="mx-3 sm:mx-6">
             <Alert variant="error">
               <Icons.AlertCircle className="h-4 w-4" />
               <AlertTitle>{t("ai:categorization.failedApplyTitle")}</AlertTitle>
@@ -475,7 +478,7 @@ function CategorizationProposalsContentImpl({
         )}
 
         {isSubmitted && (
-          <div className="px-6">
+          <div className="px-3 sm:px-6">
             <div className="border-success/30 bg-success/10 flex items-center gap-3 rounded-md border px-3 py-2">
               <div className="bg-success/20 text-success flex h-7 w-7 shrink-0 items-center justify-center rounded-full">
                 <Icons.Check className="h-4 w-4" />
@@ -493,7 +496,7 @@ function CategorizationProposalsContentImpl({
         )}
 
         {!isSubmitted && rows.length > 0 && (
-          <div className="flex items-center justify-end px-6 pt-1">
+          <div className="flex items-center justify-end px-3 pt-1 sm:px-6">
             <Button onClick={handleSubmit} disabled={!canSubmit}>
               {isSubmitting ? (
                 <Icons.Spinner className="mr-2 h-4 w-4 animate-spin" />

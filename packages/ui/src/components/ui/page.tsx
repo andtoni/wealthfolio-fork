@@ -81,7 +81,11 @@ export function Page({ children, className, containerMode = false, ...props }: P
   if (containerMode) {
     return (
       <PageContext.Provider value={{ scrollY, isScrolled }}>
-        <div ref={scrollContainerRef} className={cn("relative w-full", "bg-background", className)} {...props}>
+        <div
+          ref={scrollContainerRef}
+          className={cn("bg-background relative w-full min-w-0 max-w-full", className)}
+          {...props}
+        >
           {children}
         </div>
       </PageContext.Provider>
@@ -90,7 +94,11 @@ export function Page({ children, className, containerMode = false, ...props }: P
 
   return (
     <PageContext.Provider value={{ scrollY, isScrolled }}>
-      <div ref={scrollContainerRef} className={cn("relative w-full", "bg-background", className)} {...props}>
+      <div
+        ref={scrollContainerRef}
+        className={cn("bg-background relative w-full min-w-0 max-w-full", className)}
+        {...props}
+      >
         {children}
       </div>
     </PageContext.Provider>
@@ -136,6 +144,7 @@ export function PageHeader({
       </div>
     </div>
   ) : null;
+  const hasLeadingContent = Boolean(onBack || titleContent || children);
 
   return (
     <header
@@ -158,16 +167,27 @@ export function PageHeader({
 
       <div className="p-4">
         <div className="mx-auto">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              {onBack && (
-                <Button variant="ghost" size="icon" onClick={onBack}>
-                  <Icons.ArrowLeft className="size-5" />
-                </Button>
-              )}
-              {titleContent ?? children}
-            </div>
-            {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+          <div
+            className={cn(
+              "gap-3",
+              hasLeadingContent
+                ? "flex flex-col sm:flex-row sm:items-center sm:justify-between"
+                : "flex items-center justify-end",
+            )}
+          >
+            {hasLeadingContent && (
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                {onBack && (
+                  <Button variant="ghost" size="icon" onClick={onBack}>
+                    <Icons.ArrowLeft className="size-5" />
+                  </Button>
+                )}
+                {titleContent ?? children}
+              </div>
+            )}
+            {actions && (
+              <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 sm:justify-end">{actions}</div>
+            )}
           </div>
         </div>
       </div>
@@ -202,7 +222,7 @@ export function PageContent({
       )}
       {...props}
     >
-      <div className="mx-auto space-y-6">{children}</div>
+      <div className="mx-auto min-w-0 max-w-full space-y-6">{children}</div>
     </div>
   );
 }

@@ -34,19 +34,20 @@ export function DashboardCard({
 }: DashboardCardProps) {
   return (
     <div className="w-full">
-      <div className="flex items-baseline justify-between pb-2">
-        <div className="flex items-baseline gap-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2 pb-2">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-2">
           <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
           {subtitle != null && subtitle !== "" && (
             <span className="text-muted-foreground/60 text-xs">{subtitle}</span>
           )}
         </div>
-        {action ??
-          (meta ? (
-            <span className="text-muted-foreground/70 text-xs font-medium uppercase tracking-wide">
-              {meta}
-            </span>
-          ) : null)}
+        {action ? (
+          <div className="min-w-0 max-w-full shrink-0">{action}</div>
+        ) : meta ? (
+          <span className="text-muted-foreground/70 text-xs font-medium uppercase tracking-wide">
+            {meta}
+          </span>
+        ) : null}
       </div>
       <div
         className={`border-border/40 rounded-xl border backdrop-blur-xl ${elevated ? "bg-card/90 shadow-xs" : "bg-card/70"} ${padded ? "p-3 md:p-4" : ""} ${className ?? ""}`}

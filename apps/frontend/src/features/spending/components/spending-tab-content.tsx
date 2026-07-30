@@ -39,6 +39,9 @@ import {
   SPENDING_MONTH_PARAM,
   SPENDING_MONTH_STORAGE_KEY,
   addMonthsToMonthKey,
+  budgetPeriodKeyForDate,
+  budgetPeriodParts,
+  budgetPeriodRange,
   localDateFromParts,
   monthKeyFromParts,
   monthLabel,
@@ -383,7 +386,7 @@ export default function SpendingTabContent() {
   const taxonomy = useTaxonomy(SPENDING_TAXONOMY);
   const { data: budget, isError: budgetErrored } = useBudget();
   const todayParts = useMemo(() => getZonedDateParts(new Date(), appTimezone), [appTimezone]);
-  const currentBudgetMonthKey = useMemo(() => monthKeyFromParts(todayParts), [todayParts]);
+  const currentBudgetMonthKey = useMemo(() => budgetPeriodKeyForDate(todayParts), [todayParts]);
   const budgetSyncKey = useMemo(
     () => budgetSelectionSyncKey(selection, currentBudgetMonthKey),
     [selection, currentBudgetMonthKey],
@@ -424,13 +427,10 @@ export default function SpendingTabContent() {
   const hasNoIncludedAccounts = !spendingSettingsLoading && spendingAccountIds.length === 0;
 
   const budgetMonthRange = useMemo(() => {
-    const month = parseMonthKey(budgetMonthKey) ?? todayParts;
-    const start = { year: month.year, month: month.month, day: 1 };
-    const end =
-      budgetMonthKey === currentBudgetMonthKey
-        ? todayParts
-        : { ...month, day: daysInCalendarMonth(month.year, month.month) };
-    return { from: localDateFromParts(start), to: localDateFromParts(end) };
+    const range = budgetPeriodRange(budgetMonthKey);
+    return budgetMonthKey === currentBudgetMonthKey
+      ? { ...range, to: localDateFromParts(todayParts) }
+      : range;
   }, [budgetMonthKey, currentBudgetMonthKey, todayParts]);
   const monthReportReq = useMemo(
     () => rangeToReportRequest(budgetMonthRange, appTimezone),
@@ -452,33 +452,36 @@ export default function SpendingTabContent() {
     });
   };
 
-  const historyReportReq = useMemo(() => {
-    const month = parseMonthKey(budgetMonthKey) ?? todayParts;
-    const monthStart = { year: month.year, month: month.month, day: 1 };
-    const historyStart = addCalendarMonths(monthStart, -3);
-    const historyEndMonth = addCalendarMonths(monthStart, -1);
-    const historyEnd = {
-      ...historyEndMonth,
-      day: daysInCalendarMonth(historyEndMonth.year, historyEndMonth.month),
-    };
+  const budgetHistoryRange = useMemo(() => {
+    const selected = budgetPeriodParts(budgetMonthKey);
+    const first = budgetPeriodParts(addMonthsToMonthKey(budgetMonthKey, -3));
+    if (!selected || !first) return null;
     return {
-      startDate: zonedCalendarDateBoundaryToDate(historyStart, "start", appTimezone).toISOString(),
-      endDate: zonedCalendarDateBoundaryToDate(historyEnd, "end", appTimezone).toISOString(),
+      start: first.start,
+      end: addCalendarDays(selected.start, -1),
     };
-  }, [budgetMonthKey, appTimezone, todayParts]);
+  }, [budgetMonthKey]);
+  const historyReportReq = useMemo(() => {
+    const range = budgetHistoryRange;
+    const fallback = budgetPeriodParts(budgetMonthKey);
+    const start = range?.start ?? fallback?.start ?? todayParts;
+    const end = range?.end ?? fallback?.end ?? todayParts;
+    return {
+      startDate: zonedCalendarDateBoundaryToDate(start, "start", appTimezone).toISOString(),
+      endDate: zonedCalendarDateBoundaryToDate(end, "end", appTimezone).toISOString(),
+    };
+  }, [budgetHistoryRange, budgetMonthKey, appTimezone, todayParts]);
   const { data: historyReport } = useSpendingReport(historyReportReq);
 
   const historicalDailyAvg = useMemo(() => {
     const total = historyReport?.current.outflow ?? 0;
-    if (total <= 0) return 0;
-    const month = parseMonthKey(budgetMonthKey) ?? todayParts;
-    const monthStart = { year: month.year, month: month.month, day: 1 };
-    const start = addCalendarMonths(monthStart, -3);
-    const endMonth = addCalendarMonths(monthStart, -1);
-    const end = { ...endMonth, day: daysInCalendarMonth(endMonth.year, endMonth.month) };
-    const days = Math.max(1, calendarDaysBetweenInclusive(start, end));
+    if (total <= 0 || !budgetHistoryRange) return 0;
+    const days = Math.max(
+      1,
+      calendarDaysBetweenInclusive(budgetHistoryRange.start, budgetHistoryRange.end),
+    );
     return total / days;
-  }, [historyReport?.current.outflow, budgetMonthKey, todayParts]);
+  }, [historyReport?.current.outflow, budgetHistoryRange]);
 
   // Always render in the user's base currency. The backend FX-converts every
   // activity in `report` to base at period end, so labeling by the first

@@ -1,4 +1,9 @@
-import { useMemo } from "react";
+import {
+  useMemo,
+  useRef,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
@@ -8,6 +13,14 @@ import { formatCompactAmount, Icons, PrivacyAmount, useBalancePrivacy } from "@w
 
 import { CategoryIcon, type CategoryMetaMap } from "./category-chips";
 import { topCategoryId } from "../lib/category-rollup";
+import {
+  budgetPeriodDayIndex,
+  budgetPeriodKeyForDate,
+  budgetPeriodLabel,
+  budgetPeriodParts,
+  compactMonthLabel,
+} from "../lib/month-period";
+import { calendarDaysBetweenInclusive } from "../lib/timezone";
 import type { BudgetCategoryRow } from "../types/budget";
 import type { DayBucket } from "../types/report";
 
@@ -23,6 +36,66 @@ interface BudgetToday {
 }
 
 const MIN_HISTORICAL_PACE_MONTHS = 2;
+
+function useHorizontalDragScroll() {
+  const drag = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    scrollLeft: number;
+    dragging: boolean;
+  } | null>(null);
+  const blockNextClick = useRef(false);
+
+  const clear = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const state = drag.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+    if (state.dragging) {
+      blockNextClick.current = true;
+      window.setTimeout(() => {
+        blockNextClick.current = false;
+      }, 0);
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    drag.current = null;
+  };
+
+  return {
+    onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!event.isPrimary || event.pointerType === "mouse") return;
+      drag.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        scrollLeft: event.currentTarget.scrollLeft,
+        dragging: false,
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
+      const state = drag.current;
+      if (!state || state.pointerId !== event.pointerId) return;
+      const deltaX = event.clientX - state.startX;
+      const deltaY = event.clientY - state.startY;
+      if (!state.dragging) {
+        if (Math.abs(deltaX) < 6 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
+        state.dragging = true;
+      }
+      event.preventDefault();
+      event.currentTarget.scrollLeft = state.scrollLeft - deltaX;
+    },
+    onPointerUp: clear,
+    onPointerCancel: clear,
+    onClickCapture: (event: ReactMouseEvent<HTMLDivElement>) => {
+      if (!blockNextClick.current) return;
+      blockNextClick.current = false;
+      event.preventDefault();
+      event.stopPropagation();
+    },
+  };
+}
 
 function parseMonthKey(value: string | null | undefined): { year: number; month: number } | null {
   if (!value || !/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) return null;
@@ -99,44 +172,49 @@ export function BudgetLineChartCard({
   historicalByDay: DayBucket[];
 }) {
   const { t } = useTranslation();
+  const ringScrollHandlers = useHorizontalDragScroll();
   // All hooks must run unconditionally — the `target <= 0` early return below
   // sits between hooks otherwise, which trips "Rendered more hooks than during
   // the previous render" when a target is added or cleared.
   const monthMeta = useMemo(() => {
-    const parts = parseMonthKey(monthKey) ?? today;
-    const year = parts.year;
-    const month = parts.month;
-    const daysInMonth = new Date(year, month, 0).getDate();
-    const dayOfMonth = isCurrentMonth ? Math.min(today.day, daysInMonth) : daysInMonth;
-    const monthDate = new Date(year, month - 1, 1);
+    const period = budgetPeriodParts(monthKey);
+    const fallback = parseMonthKey(monthKey) ?? today;
+    const start = period?.start ?? { ...fallback, day: 1 };
+    const end = period?.end ?? {
+      ...fallback,
+      day: new Date(fallback.year, fallback.month, 0).getDate(),
+    };
+    const daysInPeriod = calendarDaysBetweenInclusive(start, end);
+    const todayIndex = calendarDaysBetweenInclusive(start, today);
+    const dayOfPeriod = isCurrentMonth
+      ? Math.min(daysInPeriod, Math.max(1, todayIndex))
+      : daysInPeriod;
     return {
-      dayOfMonth,
-      daysInMonth,
-      daysRemaining: isCurrentMonth ? Math.max(0, daysInMonth - dayOfMonth) : 0,
-      monthLabel: monthDate
-        .toLocaleString("en-US", { month: "long", year: "numeric" })
-        .toUpperCase(),
-      shortLabel: monthDate
-        .toLocaleString("en-US", { month: "short", year: "numeric" })
-        .toUpperCase(),
+      dayOfPeriod,
+      daysInPeriod,
+      daysRemaining: isCurrentMonth ? Math.max(0, daysInPeriod - dayOfPeriod) : 0,
+      monthLabel: budgetPeriodLabel(monthKey, "short").toUpperCase(),
+      shortLabel: compactMonthLabel(monthKey).toUpperCase(),
+      startLabel: formatCycleEndpoint(start),
+      endLabel: formatCycleEndpoint(end),
     };
   }, [monthKey, isCurrentMonth, today]);
-  const { dayOfMonth, daysInMonth, daysRemaining, monthLabel } = monthMeta;
+  const { dayOfPeriod, daysInPeriod, daysRemaining, monthLabel } = monthMeta;
 
   const cumulative = useMemo(() => {
     const byDay = new Map<number, number>();
-    for (const b of monthByDay) {
-      const d = parseInt(b.date.split("-")[2], 10);
-      if (Number.isFinite(d)) byDay.set(d, (byDay.get(d) ?? 0) + b.outflow);
+    for (const bucket of monthByDay) {
+      const day = budgetPeriodDayIndex(bucket.date, monthKey);
+      if (day !== null) byDay.set(day, (byDay.get(day) ?? 0) + bucket.outflow);
     }
     let running = 0;
     const out: { day: number; value: number }[] = [];
-    for (let d = 1; d <= dayOfMonth; d++) {
-      running += byDay.get(d) ?? 0;
-      out.push({ day: d, value: running });
+    for (let day = 1; day <= dayOfPeriod; day++) {
+      running += byDay.get(day) ?? 0;
+      out.push({ day, value: running });
     }
     return out;
-  }, [monthByDay, dayOfMonth]);
+  }, [monthByDay, monthKey, dayOfPeriod]);
 
   const rings = useMemo(() => {
     const spentByTop = new Map<string, number>();
@@ -179,7 +257,7 @@ export function BudgetLineChartCard({
 
   const actualPath = useMemo(() => {
     if (!cumulative.length) return "";
-    const xForDay = (day: number) => padL + ((day - 1) / Math.max(1, daysInMonth - 1)) * innerW;
+    const xForDay = (day: number) => padL + ((day - 1) / Math.max(1, daysInPeriod - 1)) * innerW;
     const yForVal = (v: number) => padT + (1 - v / yMax) * innerH;
     return (
       "M " +
@@ -187,16 +265,16 @@ export function BudgetLineChartCard({
         .map((p) => `${xForDay(p.day).toFixed(2)} ${yForVal(p.value).toFixed(2)}`)
         .join(" L ")
     );
-  }, [cumulative, daysInMonth, innerW, innerH, padL, padT, yMax]);
+  }, [cumulative, daysInPeriod, innerW, innerH, padL, padT, yMax]);
 
   const historicalPace = useMemo(
-    () => buildHistoricalPaceCurve(historicalByDay, daysInMonth),
-    [historicalByDay, daysInMonth],
+    () => buildHistoricalPaceCurve(historicalByDay, daysInPeriod),
+    [historicalByDay, daysInPeriod],
   );
 
   const targetPacePath = useMemo(() => {
     if (!historicalPace || target <= 0) return "";
-    const xForDay = (day: number) => padL + ((day - 1) / Math.max(1, daysInMonth - 1)) * innerW;
+    const xForDay = (day: number) => padL + ((day - 1) / Math.max(1, daysInPeriod - 1)) * innerW;
     const yForVal = (v: number) => padT + (1 - v / yMax) * innerH;
     return toSvgPath(
       historicalPace.points.map((p) => ({
@@ -206,15 +284,15 @@ export function BudgetLineChartCard({
       xForDay,
       yForVal,
     );
-  }, [historicalPace, target, daysInMonth, innerW, innerH, padL, padT, yMax]);
+  }, [historicalPace, target, daysInPeriod, innerW, innerH, padL, padT, yMax]);
 
   const haveHistory = historicalDailyAvg > 0;
   const forecast =
     target > 0 && isCurrentMonth
       ? haveHistory
         ? spent + historicalDailyAvg * daysRemaining
-        : dayOfMonth > 0
-          ? (spent / dayOfMonth) * daysInMonth
+        : dayOfPeriod > 0
+          ? (spent / dayOfPeriod) * daysInPeriod
           : 0
       : 0;
   const headerAction = (
@@ -231,7 +309,7 @@ export function BudgetLineChartCard({
     return (
       <DashboardCard
         title={t("spending:budgetChart.monthlyBudget")}
-        subtitle={monthMeta.shortLabel}
+        subtitle={monthMeta.monthLabel}
         action={headerAction}
         className="text-center"
       >
@@ -249,14 +327,14 @@ export function BudgetLineChartCard({
   const remaining = Math.max(0, target - spent);
   const overBy = spent - target;
   const isOver = overBy > 0;
-  const forecastReliable = isCurrentMonth && (haveHistory || dayOfMonth >= 7);
+  const forecastReliable = isCurrentMonth && (haveHistory || dayOfPeriod >= 7);
   const forecastDelta = forecast - target;
   const willOverspend = forecastReliable && forecastDelta > 0;
 
-  const historicalPaceAtToday = historicalPace?.pctByDay[dayOfMonth];
+  const historicalPaceAtToday = historicalPace?.pctByDay[dayOfPeriod];
   const paceAtToday =
     target *
-    (historicalPaceAtToday !== undefined ? historicalPaceAtToday : dayOfMonth / daysInMonth);
+    (historicalPaceAtToday !== undefined ? historicalPaceAtToday : dayOfPeriod / daysInPeriod);
   const gapVsPace = spent - paceAtToday;
   const aheadOfPace = gapVsPace < 0;
 
@@ -266,12 +344,12 @@ export function BudgetLineChartCard({
   const statusLabel =
     !isCurrentMonth && !isOver ? t("spending:budgetChart.underBudget") : t(a.labelKey);
 
-  const xForDay = (day: number) => padL + ((day - 1) / Math.max(1, daysInMonth - 1)) * innerW;
+  const xForDay = (day: number) => padL + ((day - 1) / Math.max(1, daysInPeriod - 1)) * innerW;
   const yForVal = (v: number) => padT + (1 - v / yMax) * innerH;
 
   const paceX1 = xForDay(1);
   const paceY1 = yForVal(0);
-  const paceX2 = xForDay(daysInMonth);
+  const paceX2 = xForDay(daysInPeriod);
   const paceY2 = yForVal(target);
 
   const endX = cumulative.length ? xForDay(cumulative[cumulative.length - 1].day) : padL;
@@ -314,7 +392,7 @@ export function BudgetLineChartCard({
         <span className="text-foreground text-sm font-semibold">{statusLabel}</span>
         <span className="text-muted-foreground/70 ml-auto text-xs tabular-nums">
           {isCurrentMonth
-            ? t("spending:budgetChart.dayOf", { day: dayOfMonth, total: daysInMonth })
+            ? t("spending:budgetChart.dayOf", { day: dayOfPeriod, total: daysInPeriod })
             : t("spending:budgetChart.closed")}
         </span>
       </div>
@@ -455,8 +533,8 @@ export function BudgetLineChartCard({
         )}
       </div>
       <div className="text-muted-foreground/70 mt-1 flex justify-between text-[10px] tabular-nums">
-        <span>{t("spending:budgetChart.dayN", { day: 1 })}</span>
-        <span>{t("spending:budgetChart.dayN", { day: daysInMonth })}</span>
+        <span>{monthMeta.startLabel}</span>
+        <span>{monthMeta.endLabel}</span>
       </div>
 
       <div className="border-border mt-4 grid grid-cols-2 gap-3 border-t pt-3 text-xs">
@@ -533,7 +611,8 @@ export function BudgetLineChartCard({
         ) : (
           <div
             data-no-swipe-drag
-            className="-mx-1 flex min-w-0 touch-pan-x gap-3 overflow-x-auto overscroll-x-contain px-1 pb-1 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            {...ringScrollHandlers}
+            className="-mx-1 flex min-w-0 cursor-grab touch-pan-y gap-3 overflow-x-auto overscroll-x-contain px-1 pb-1 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] active:cursor-grabbing [&::-webkit-scrollbar]:hidden"
             style={{
               maskImage: "linear-gradient(to right, black calc(100% - 32px), transparent 100%)",
               WebkitMaskImage:
@@ -552,52 +631,54 @@ export function BudgetLineChartCard({
 
 function buildHistoricalPaceCurve(
   byDay: DayBucket[],
-  currentDaysInMonth: number,
+  currentDaysInPeriod: number,
 ): { points: PacePoint[]; pctByDay: number[] } | null {
-  const months = new Map<
+  const periods = new Map<
     string,
-    { daysInMonth: number; outflowByDay: Map<number, number>; total: number }
+    { daysInPeriod: number; outflowByDay: Map<number, number>; total: number }
   >();
 
   for (const bucket of byDay) {
     const parsed = parseDayBucketDate(bucket.date);
     if (!parsed) continue;
+    const periodKey = budgetPeriodKeyForDate(parsed);
+    const period = budgetPeriodParts(periodKey);
+    const day = budgetPeriodDayIndex(bucket.date, periodKey);
+    if (!period || day === null) continue;
     const outflow = Number.isFinite(bucket.outflow) ? bucket.outflow : 0;
-
-    const key = `${parsed.year}-${String(parsed.month).padStart(2, "0")}`;
-    const month = months.get(key) ?? {
-      daysInMonth: new Date(parsed.year, parsed.month, 0).getDate(),
+    const row = periods.get(periodKey) ?? {
+      daysInPeriod: calendarDaysBetweenInclusive(period.start, period.end),
       outflowByDay: new Map<number, number>(),
       total: 0,
     };
-    month.outflowByDay.set(parsed.day, (month.outflowByDay.get(parsed.day) ?? 0) + outflow);
-    month.total += outflow;
-    months.set(key, month);
+    row.outflowByDay.set(day, (row.outflowByDay.get(day) ?? 0) + outflow);
+    row.total += outflow;
+    periods.set(periodKey, row);
   }
 
-  const eligibleMonths = Array.from(months.values())
-    .filter((month) => month.total > 0)
-    .map((month) => {
-      const cumulativeByDay = Array.from({ length: month.daysInMonth + 1 }, () => 0);
+  const eligiblePeriods = Array.from(periods.values())
+    .filter((period) => period.total > 0)
+    .map((period) => {
+      const cumulativeByDay = Array.from({ length: period.daysInPeriod + 1 }, () => 0);
       let running = 0;
-      for (let day = 1; day <= month.daysInMonth; day++) {
-        running += month.outflowByDay.get(day) ?? 0;
-        cumulativeByDay[day] = Math.max(cumulativeByDay[day - 1], clamp(running, 0, month.total));
+      for (let day = 1; day <= period.daysInPeriod; day++) {
+        running += period.outflowByDay.get(day) ?? 0;
+        cumulativeByDay[day] = Math.max(cumulativeByDay[day - 1], clamp(running, 0, period.total));
       }
-      return { ...month, cumulativeByDay };
+      return { ...period, cumulativeByDay };
     });
 
-  if (eligibleMonths.length < MIN_HISTORICAL_PACE_MONTHS) return null;
+  if (eligiblePeriods.length < MIN_HISTORICAL_PACE_MONTHS) return null;
 
-  const pctByDay = Array.from({ length: currentDaysInMonth + 1 }, () => 0);
+  const pctByDay = Array.from({ length: currentDaysInPeriod + 1 }, () => 0);
   const points: PacePoint[] = [];
-  for (let day = 1; day <= currentDaysInMonth; day++) {
-    const values = eligibleMonths.map((month) => {
+  for (let day = 1; day <= currentDaysInPeriod; day++) {
+    const values = eligiblePeriods.map((period) => {
       const historyDay = Math.min(
-        month.daysInMonth,
-        Math.max(1, Math.ceil((day / currentDaysInMonth) * month.daysInMonth)),
+        period.daysInPeriod,
+        Math.max(1, Math.ceil((day / currentDaysInPeriod) * period.daysInPeriod)),
       );
-      return clamp(month.cumulativeByDay[historyDay] / month.total, 0, 1);
+      return clamp(period.cumulativeByDay[historyDay] / period.total, 0, 1);
     });
     const value = median(values);
     pctByDay[day] = value;
@@ -615,6 +696,12 @@ function parseDayBucketDate(date: string): { year: number; month: number; day: n
   if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   return { year, month, day };
+}
+
+function formatCycleEndpoint(date: { year: number; month: number; day: number }): string {
+  return new Date(Date.UTC(date.year, date.month - 1, date.day))
+    .toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })
+    .toUpperCase();
 }
 
 function toSvgPath(
@@ -665,7 +752,7 @@ function BudgetCardHeaderActions({
         >
           <Icons.ChevronLeft className="h-3.5 w-3.5" />
         </button>
-        <span className="text-foreground min-w-[74px] px-1 text-center text-[11px] font-medium tabular-nums">
+        <span className="text-foreground min-w-[74px] whitespace-nowrap px-1 text-center text-[11px] font-medium tabular-nums">
           {monthLabel}
         </span>
         <button
