@@ -2,9 +2,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
+import { getAccounts, listProviderConnections } from "@/adapters";
 import AccountIngestionPage from "./account-ingestion-page";
 
 vi.mock("@/adapters", () => ({
+  admitProviderAccount: vi.fn(),
+  completePlaidConnection: vi.fn(),
+  getAccounts: vi.fn().mockResolvedValue([]),
+  listDiscoveredProviderAccounts: vi.fn().mockResolvedValue([]),
   listProviderConnections: vi.fn().mockResolvedValue([]),
   startProviderConnection: vi.fn().mockRejectedValue(new Error("Not implemented")),
 }));
@@ -69,5 +74,117 @@ describe("AccountIngestionPage", () => {
     renderPage();
 
     expect(screen.getByText("Your Data Stays Local")).toBeInTheDocument();
+  });
+
+  it("shows already connected Plaid accounts and an add-institution action", async () => {
+    vi.mocked(listProviderConnections).mockResolvedValueOnce([
+      { provider: "plaid", status: "configured", message: "Provider is configured." },
+    ]);
+    vi.mocked(getAccounts).mockResolvedValueOnce([
+      {
+        id: "plaid-account",
+        name: "Connected savings",
+        accountType: "CASH",
+        balance: 0,
+        currency: "USD",
+        isDefault: false,
+        isActive: true,
+        isArchived: false,
+        trackingMode: "TRANSACTIONS",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+        provider: "plaid",
+        providerAccountId: "provider-account",
+      },
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText("Connected accounts")).toBeInTheDocument();
+    expect(screen.getByText("Connected savings")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add institution" })).toBeEnabled();
+  });
+
+  it("keeps Add institution enabled when Plaid reports a completed connection", async () => {
+    vi.mocked(listProviderConnections).mockResolvedValueOnce([
+      { provider: "plaid", status: "completed", message: "Connection completed." },
+    ]);
+    vi.mocked(getAccounts).mockResolvedValueOnce([
+      {
+        id: "plaid-account",
+        name: "Connected checking",
+        accountType: "CASH",
+        balance: 0,
+        currency: "USD",
+        isDefault: false,
+        isActive: true,
+        isArchived: false,
+        trackingMode: "TRANSACTIONS",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+        provider: "plaid",
+        providerAccountId: "provider-account",
+      },
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: "Add institution" })).toBeEnabled();
+  });
+
+  it("shows provider failures instead of masking them as connected", async () => {
+    vi.mocked(listProviderConnections).mockResolvedValueOnce([
+      { provider: "plaid", status: "auth_required", message: "Authentication required." },
+    ]);
+    vi.mocked(getAccounts).mockResolvedValueOnce([
+      {
+        id: "plaid-account",
+        name: "Expired checking",
+        accountType: "CASH",
+        balance: 0,
+        currency: "USD",
+        isDefault: false,
+        isActive: true,
+        isArchived: false,
+        trackingMode: "TRANSACTIONS",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+        provider: "plaid",
+        providerAccountId: "provider-account",
+      },
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText("auth required")).toBeInTheDocument();
+  });
+
+  it("does not treat legacy Wealthfolio Connect SnapTrade accounts as direct connections", async () => {
+    vi.mocked(listProviderConnections).mockResolvedValueOnce([
+      { provider: "snaptrade", status: "configured", message: "Direct connection is available." },
+    ]);
+    vi.mocked(getAccounts).mockResolvedValueOnce([
+      {
+        id: "legacy-snaptrade-account",
+        name: "Legacy brokerage",
+        accountType: "SECURITIES",
+        balance: 0,
+        currency: "USD",
+        isDefault: false,
+        isActive: true,
+        isArchived: false,
+        trackingMode: "HOLDINGS",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+        provider: "SNAPTRADE",
+        providerAccountId: "legacy-provider-account",
+      },
+    ]);
+
+    renderPage();
+
+    const connectButtons = await screen.findAllByRole("button", { name: "Connect" });
+    expect(connectButtons.some((button) => !button.hasAttribute("disabled"))).toBe(true);
+    expect(screen.queryByText("Legacy brokerage")).not.toBeInTheDocument();
   });
 });

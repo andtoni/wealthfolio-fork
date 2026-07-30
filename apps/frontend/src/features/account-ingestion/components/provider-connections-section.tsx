@@ -1,11 +1,13 @@
 import {
   admitProviderAccount,
   completePlaidConnection,
+  getAccounts,
   listDiscoveredProviderAccounts,
   listProviderConnections,
   startProviderConnection,
   type ProviderConnectionStatus,
 } from "@/adapters";
+import type { Account } from "@/lib/types";
 import { Card, CardContent, Icons } from "@wealthfolio/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -75,23 +77,30 @@ export function validatedHttpsRedirect(value: string): string {
   return redirect.href;
 }
 
-async function openPlaid(linkToken: string, continuationToken: string): Promise<void> {
+export async function openPlaid(linkToken: string, continuationToken: string): Promise<void> {
   if (!linkToken || !continuationToken)
     throw new Error("Plaid did not return a complete link session.");
   const plaid = await loadPlaidLink();
   await new Promise<void>((resolve, reject) => {
+    let completionStarted = false;
     const handler: PlaidHandler = plaid.create({
       token: linkToken,
       onSuccess: (publicToken) => {
+        completionStarted = true;
         void completePlaidConnection(publicToken, continuationToken)
           .then(() => resolve())
           .catch(reject)
           .finally(() => handler.destroy());
       },
       onExit: (error) => {
+        if (completionStarted) return;
         handler.destroy();
-        if (error) reject(new Error(error.display_message || "Plaid Link was not completed."));
-        else resolve();
+        reject(
+          new Error(
+            error?.display_message ||
+              "Plaid Link closed before the connection completed. Reopen it and finish the final confirmation.",
+          ),
+        );
       },
     });
     handler.open();
@@ -112,13 +121,26 @@ const PROVIDER_ICONS: Record<string, React.ReactNode> = {
   snaptrade: <Icons.ArrowLeftRight className="h-5 w-5" />,
 };
 
-function ProviderCard({ status }: { status: ProviderConnectionStatus }) {
+function ProviderCard({
+  status,
+  connectedAccounts,
+}: {
+  status: ProviderConnectionStatus;
+  connectedAccounts: Account[];
+}) {
   const name = PROVIDER_NAMES[status.provider] ?? status.provider;
   const icon = PROVIDER_ICONS[status.provider] ?? <Icons.Link className="h-5 w-5" />;
   const queryClient = useQueryClient();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const supportsConnect = true;
-  const canConnect = status.status === "available" || status.status === "configured";
+  const providerReportsConnected = status.status === "connected" || status.status === "completed";
+  const visibleConnectedAccounts =
+    status.provider === "snaptrade" && !providerReportsConnected ? [] : connectedAccounts;
+  const isConnected = visibleConnectedAccounts.length > 0;
+  const supportsConnect = status.provider === "plaid" || !isConnected;
+  const canConnect =
+    status.status === "available" ||
+    status.status === "configured" ||
+    (status.provider === "plaid" && providerReportsConnected);
   const canDiscover = ["available", "configured", "connected", "completed"].includes(status.status);
   const { data: discovered = [] } = useQuery({
     queryKey: ["provider-accounts", status.provider],
@@ -159,8 +181,16 @@ function ProviderCard({ status }: { status: ProviderConnectionStatus }) {
     onError: (error: Error) => setErrorMsg(error.message || "Account could not be added."),
   });
 
+  const connectionIsHealthy = !["auth_required", "unavailable", "not_configured"].includes(
+    status.status,
+  );
   const stateLabel =
-    status.status === "configured" ? "Configured" : status.status.replaceAll("_", " ");
+    isConnected && connectionIsHealthy
+      ? "Connected"
+      : status.status === "configured"
+        ? "Configured"
+        : status.status.replaceAll("_", " ");
+  const connectLabel = status.provider === "plaid" && isConnected ? "Add institution" : "Connect";
 
   return (
     <Card className="border">
@@ -189,11 +219,29 @@ function ProviderCard({ status }: { status: ProviderConnectionStatus }) {
                 }}
                 className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-8 items-center rounded-md px-3 text-xs font-medium transition-colors disabled:opacity-50"
               >
-                {startMutation.isPending ? "Connecting..." : "Connect"}
+                {startMutation.isPending ? "Connecting..." : connectLabel}
               </button>
             )}
           </div>
         </div>
+        {visibleConnectedAccounts.length > 0 && (
+          <div className="space-y-2 border-t pt-3">
+            <p className="text-muted-foreground text-xs font-medium">Connected accounts</p>
+            {visibleConnectedAccounts.map((account) => (
+              <div key={account.id} className="flex items-center gap-2 rounded-md border px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium">{account.name}</p>
+                  <p className="text-muted-foreground text-[11px]">
+                    {account.accountType.replaceAll("_", " ")} · {account.currency}
+                  </p>
+                </div>
+                <span className="bg-success/10 text-success rounded-full px-2 py-0.5 text-[10px] font-medium">
+                  Connected
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         {discovered.length > 0 && (
           <div className="space-y-2 border-t pt-3">
             <p className="text-muted-foreground text-xs font-medium">Choose accounts to add</p>
@@ -258,6 +306,10 @@ export function ProviderConnectionsSection() {
     staleTime: 30_000,
     retry: 1,
   });
+  const { data: accounts = [] } = useQuery<Account[], Error>({
+    queryKey: ["accounts"],
+    queryFn: () => getAccounts(),
+  });
   const statuses = new Map((data ?? []).map((status) => [status.provider, status]));
   const providers = PROVIDER_FALLBACKS.map(
     (fallback) => statuses.get(fallback.provider) ?? fallback,
@@ -293,7 +345,14 @@ export function ProviderConnectionsSection() {
       )}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {providers.map((provider) => (
-          <ProviderCard key={provider.provider} status={provider} />
+          <ProviderCard
+            key={provider.provider}
+            status={provider}
+            connectedAccounts={accounts.filter(
+              (account) =>
+                !account.isArchived && account.provider?.toLowerCase() === provider.provider,
+            )}
+          />
         ))}
       </div>
     </div>
