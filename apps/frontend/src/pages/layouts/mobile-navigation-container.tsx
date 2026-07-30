@@ -21,7 +21,7 @@ export function MobileNavigationContainer() {
     <div className="relative flex min-h-0 w-full flex-1">
       <PageScrollContainer
         withMobileNavOffset
-        className="lg:px-6 lg:py-0"
+        className="safe-area-inset-top lg:px-6 lg:py-0"
         {...pullToRefreshHandlers}
       >
         <AnimatePresence mode="wait" initial={false}>

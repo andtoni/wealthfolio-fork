@@ -29,7 +29,7 @@ interface RulePresetPickerProps {
 
 /**
  * Country picker that seeds the categorization-rules table from a bundled
- * preset (US/CA/GB). Idempotent — re-importing skips already-installed rules.
+ * preset (US/CA/GB/ZA). Idempotent — re-importing skips already-installed rules.
  * Installed presets expose a remove control that uninstalls them (user-edited
  * rules are detached and kept).
  */

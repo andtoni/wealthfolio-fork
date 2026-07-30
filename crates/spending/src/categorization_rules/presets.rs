@@ -88,6 +88,7 @@ const PRESET_JSONS: &[(&str, &str)] = &[
     ("us", include_str!("../../seeds/presets/us.json")),
     ("ca", include_str!("../../seeds/presets/ca.json")),
     ("gb", include_str!("../../seeds/presets/gb.json")),
+    ("za", include_str!("../../seeds/presets/za.json")),
 ];
 
 /// Parse all bundled presets. Bad JSON (or schema-mismatched files) is logged
@@ -149,7 +150,7 @@ mod tests {
 
     #[test]
     fn bundled_presets_have_unique_keys_and_valid_regexes() {
-        for preset_id in ["us", "ca", "gb"] {
+        for preset_id in ["us", "ca", "gb", "za"] {
             let preset = load_preset(preset_id).expect("preset should load");
             assert_eq!(preset.preset_id, preset_id);
             assert!(!preset.rules.is_empty(), "preset {preset_id} has no rules");
@@ -184,5 +185,24 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn us_and_south_africa_preset_identities_can_coexist() {
+        let presets = [
+            load_preset("us").expect("US preset should load"),
+            load_preset("za").expect("South Africa preset should load"),
+        ];
+        let mut identities = HashSet::new();
+        for preset in presets {
+            for rule in preset.rules {
+                assert!(
+                    identities.insert((preset.preset_id.clone(), rule.key)),
+                    "preset rule identity collision"
+                );
+            }
+        }
+        assert!(identities.iter().any(|(preset_id, _)| preset_id == "us"));
+        assert!(identities.iter().any(|(preset_id, _)| preset_id == "za"));
     }
 }

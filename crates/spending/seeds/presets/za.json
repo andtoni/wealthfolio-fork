@@ -1,0 +1,89 @@
+{
+  "presetId": "za",
+  "presetVersion": "2026-07.1",
+  "name": "South Africa",
+  "description": "10 common South African merchant families; no historical transactions are imported.",
+  "language": "en-ZA",
+  "rules": [
+    {
+      "key": "za.groceries-major",
+      "name": "South African supermarkets",
+      "pattern": "(?i)\\b(CHECKERS|SHOPRITE|PICK[ -]?N[ -]?PAY|PNP|WOOLWORTHS FOOD|SPAR|FOOD LOVERS? MARKET|BOXER)\\b",
+      "matchType": "regex",
+      "categoryKey": "groceries",
+      "priority": 120
+    },
+    {
+      "key": "za.groceries-delivery",
+      "name": "South African grocery delivery",
+      "pattern": "(?i)\\b(CHECKERS SIXTY60|SIXTY60|WOOLIES DASH|PNP ASAP)\\b",
+      "matchType": "regex",
+      "categoryKey": "groceries",
+      "priority": 140
+    },
+    {
+      "key": "za.coffee",
+      "name": "South African coffee shops",
+      "pattern": "(?i)\\b(SEATTLE COFFEE|VIDA E CAFFE|MUGG AND BEAN|MUGG & BEAN|BOOTLEGGER COFFEE|TRIBE COFFEE)\\b",
+      "matchType": "regex",
+      "categoryKey": "food_coffee",
+      "priority": 130
+    },
+    {
+      "key": "za.restaurants",
+      "name": "South African restaurants",
+      "pattern": "(?i)\\b(NANDOS|NANDO.S|SPUR STEAK|OCEAN BASKET|WIMPY|ROCOMAMAS|STEERS|DEBONAIRS|ROMANS PIZZA|CHICKEN LICKEN|KAUAI)\\b",
+      "matchType": "regex",
+      "categoryKey": "food_restaurants",
+      "priority": 120
+    },
+    {
+      "key": "za.food-delivery",
+      "name": "South African food delivery",
+      "pattern": "(?i)\\b(MR D|MRD FOOD|UBER EATS)\\b",
+      "matchType": "regex",
+      "categoryKey": "food_delivery",
+      "priority": 135
+    },
+    {
+      "key": "za.fuel",
+      "name": "South African fuel stations",
+      "pattern": "(?i)\\b(ENGEN|SASOL|ASTRON ENERGY|CALTEX|TOTALENERGIES|TOTAL GARAGE|SHELL SERVICE|BP SERVICE)\\b",
+      "matchType": "regex",
+      "categoryKey": "transport_gas",
+      "priority": 125
+    },
+    {
+      "key": "za.rideshare",
+      "name": "South African rideshare",
+      "pattern": "(?i)\\b(UBER TRIP|BOLT RIDE|BOLT SOUTH AFRICA)\\b",
+      "matchType": "regex",
+      "categoryKey": "transport_rideshare",
+      "priority": 135
+    },
+    {
+      "key": "za.internet",
+      "name": "South African internet providers",
+      "pattern": "(?i)\\b(AFRIHOST|WEBAFRICA|VOX TELECOM|COOL IDEAS|M[ -]?WEB|VUMATEL|OPENserve)\\b",
+      "matchType": "regex",
+      "categoryKey": "bills_phone",
+      "priority": 125
+    },
+    {
+      "key": "za.online-shopping",
+      "name": "South African online shopping",
+      "pattern": "(?i)\\b(TAKEALOT|SUPERBALIST|ZANDO|BASH ONLINE|ONECART)\\b",
+      "matchType": "regex",
+      "categoryKey": "shopping_online",
+      "priority": 125
+    },
+    {
+      "key": "za.electronics",
+      "name": "South African electronics retailers",
+      "pattern": "(?i)\\b(INCREDIBLE CONNECTION|HIRSCHS|HI[ -]?FI CORPORATION|COMPUTER MANIA|EVETECH)\\b",
+      "matchType": "regex",
+      "categoryKey": "shopping_electronics",
+      "priority": 125
+    }
+  ]
+}

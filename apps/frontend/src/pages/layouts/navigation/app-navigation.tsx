@@ -24,7 +24,7 @@ export interface NavigationProps {
 
 type TFunction = ReturnType<typeof useTranslation>["t"];
 
-function buildStaticNavigation(t: TFunction): NavigationProps {
+export function buildStaticNavigation(t: TFunction): NavigationProps {
   return {
     primary: [
       {
@@ -35,18 +35,18 @@ function buildStaticNavigation(t: TFunction): NavigationProps {
         label: t("common:nav.label_dashboard"),
       },
       {
-        icon: <Icons.PiggyBank className="size-6" />,
-        title: t("common:budget", "Budget"),
-        href: "/settings/spending",
-        keywords: ["budget", "spending", "categories", "needs", "wants"],
-        label: t("common:nav.label_budget", "Plan and review monthly spending"),
-      },
-      {
         icon: <Icons.Insight className="size-6" />,
         title: t("common:insights"),
         href: "/insights",
-        keywords: ["insights", "Analytics"],
+        keywords: ["portfolio value", "performance", "income", "insights", "analytics"],
         label: t("common:nav.label_insights"),
+      },
+      {
+        icon: <Icons.PiggyBank className="size-6" />,
+        title: t("common:budget", "Budget"),
+        href: "/spending/budget",
+        keywords: ["budget", "spending", "categories", "needs", "wants"],
+        label: t("common:nav.label_budget", "Plan and review monthly spending"),
       },
       {
         icon: <Icons.Holdings className="size-6" />,
@@ -182,7 +182,7 @@ export function isPathActive(pathname: string, href: string): boolean {
   }
 
   if (normalizedHref === "/settings") {
-    const hasDedicatedNavigation = ["/settings/accounts", "/settings/spending"].some(
+    const hasDedicatedNavigation = ["/settings/accounts"].some(
       (path) => normalizedPath === path || normalizedPath.startsWith(`${path}/`),
     );
     return (

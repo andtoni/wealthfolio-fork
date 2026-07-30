@@ -532,6 +532,12 @@
     @apply border-border outline-ring/50;
   }
 
+  html,
+  body,
+  #root {
+    background-color: var(--background);
+  }
+
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);

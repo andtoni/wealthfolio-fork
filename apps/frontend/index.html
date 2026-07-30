@@ -2,16 +2,17 @@
 <html lang="en" class="overflow-x-hidden">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/wealthfolio-native-icon-192-v3.png" />
+    <link rel="icon" type="image/png" href="/wealthfolio-native-icon-192-v4.png" />
     <link rel="manifest" href="/manifest.json" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/wealthfolio-native-icon-180-v3.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/wealthfolio-native-icon-180-v4.png" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#100f0f" />
     <title>Wealthfolio</title>
     <!-- Splash styles live in an external file on purpose: an inline <style>
          here makes Tauri nonce the CSP style-src at runtime, which disables
@@ -36,6 +37,9 @@
                 : "light";
           document.documentElement.classList.add(resolved);
           document.documentElement.style.colorScheme = resolved;
+          var themeColor = document.querySelector('meta[name="theme-color"]');
+          if (themeColor)
+            themeColor.setAttribute("content", resolved === "dark" ? "#100f0f" : "#fffcf0");
         } catch (e) {}
       })();
     </script>
