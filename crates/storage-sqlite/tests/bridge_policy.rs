@@ -597,7 +597,7 @@ async fn repeated_provider_upsert_preserves_user_owned_overlays() {
 }
 
 #[tokio::test]
-async fn provider_cannot_seed_user_owned_overlays() {
+async fn provider_can_seed_description_but_not_user_owned_classification_overlays() {
     let (_dir, path, store) = store(D1).await;
     seed(&path, &[D1], &["alice"]);
     let generation = store.grant("alice", "a1").await.unwrap();
@@ -630,7 +630,7 @@ async fn provider_cannot_seed_user_owned_overlays() {
         "SELECT notes,activity_type_override,needs_review FROM activities WHERE id='provider-new'", [],
         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     ).unwrap();
-    assert_eq!(overlays, (None, None, 0));
+    assert_eq!(overlays, (Some("provider note".into()), None, 0));
 }
 
 #[tokio::test]

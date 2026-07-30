@@ -647,7 +647,7 @@ fn upsert_activity_row(
     };
 
     sql_query(
-        "INSERT INTO activities(id,account_id,activity_type,status,activity_date,amount,currency,notes,activity_type_override,metadata,is_user_modified,needs_review,created_at,updated_at) VALUES(?,?,?,?,?,?,?,NULL,NULL,?,0,0,'now','now') ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,activity_type=excluded.activity_type,status=excluded.status,activity_date=excluded.activity_date,amount=excluded.amount,currency=excluded.currency,metadata=coalesce(excluded.metadata,activities.metadata),updated_at='now'"
+        "INSERT INTO activities(id,account_id,activity_type,status,activity_date,amount,currency,notes,activity_type_override,metadata,is_user_modified,needs_review,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,NULL,?,0,0,'now','now') ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,activity_type=excluded.activity_type,status=excluded.status,activity_date=excluded.activity_date,amount=excluded.amount,currency=excluded.currency,notes=CASE WHEN activities.is_user_modified=1 THEN activities.notes ELSE excluded.notes END,metadata=coalesce(excluded.metadata,activities.metadata),updated_at='now'"
     )
         .bind::<Text,_>(resource_id)
         .bind::<Text,_>(&act.account_id)
@@ -656,6 +656,7 @@ fn upsert_activity_row(
         .bind::<Text,_>(&act.activity_date)
         .bind::<Text,_>(&act.amount)
         .bind::<Text,_>(&act.currency)
+        .bind::<Nullable<Text>,_>(act.notes.as_deref())
         .bind::<Nullable<Text>,_>(metadata)
         .execute(c)?;
     Ok(())
