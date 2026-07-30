@@ -188,6 +188,48 @@ mod tests {
     }
 
     #[test]
+    fn south_africa_v2_is_conservative_and_evidence_bounded() {
+        let preset = load_preset("za").expect("South Africa preset should load");
+        assert_eq!(preset.preset_version, "2026-07.3");
+        assert_eq!(preset.rules.len(), 18);
+        let bank_fee = preset
+            .rules
+            .iter()
+            .find(|rule| rule.key == "za.bank-fees")
+            .expect("bank fee rule should exist");
+        let bank_fee_pattern =
+            Regex::new(&bank_fee.pattern).expect("bank fee regex should compile");
+        assert!(bank_fee_pattern.is_match("ATM FEE"));
+        assert!(!bank_fee_pattern.is_match("ATM FEE REVERSAL"));
+
+        let office_supplies = preset
+            .rules
+            .iter()
+            .find(|rule| rule.key == "za.office-supplies")
+            .expect("office supplies rule should exist");
+        let office_supplies_pattern =
+            Regex::new(&office_supplies.pattern).expect("office supplies regex should compile");
+        assert!(!office_supplies_pattern.is_match("CNA"));
+        assert!(!office_supplies_pattern.is_match("CNA INSURANCE"));
+
+        for key in [
+            "za.bank-fees",
+            "za.fast-food",
+            "za.liquor",
+            "za.mobile",
+            "za.streaming",
+            "za.pharmacy",
+            "za.office-supplies",
+            "za.courier",
+        ] {
+            assert!(
+                preset.rules.iter().any(|rule| rule.key == key),
+                "missing {key}"
+            );
+        }
+    }
+
+    #[test]
     fn us_and_south_africa_preset_identities_can_coexist() {
         let presets = [
             load_preset("us").expect("US preset should load"),

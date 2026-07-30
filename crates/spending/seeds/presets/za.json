@@ -1,8 +1,8 @@
 {
   "presetId": "za",
-  "presetVersion": "2026-07.1",
+  "presetVersion": "2026-07.3",
   "name": "South Africa",
-  "description": "10 common South African merchant families; no historical transactions are imported.",
+  "description": "18 conservative South African merchant and bank-narrative rules; no historical transactions are imported.",
   "language": "en-ZA",
   "rules": [
     {
@@ -83,6 +83,70 @@
       "pattern": "(?i)\\b(INCREDIBLE CONNECTION|HIRSCHS|HI[ -]?FI CORPORATION|COMPUTER MANIA|EVETECH)\\b",
       "matchType": "regex",
       "categoryKey": "shopping_electronics",
+      "priority": 125
+    },
+    {
+      "key": "za.bank-fees",
+      "name": "South African bank and payment fees",
+      "pattern": "(?i)^\\s*(FASTER PAYMENT FEE|IMMEDIATE PAYMENT FEE|MONTHLY (ACCOUNT|SERVICE) FEE|CARD (SERVICE )?FEE|CASH WITHDRAWAL FEE|ATM FEE|FOREIGN TRANSACTION FEE|INTERNATIONAL TRANSACTION FEE)\\s*$",
+      "matchType": "regex",
+      "categoryKey": "fees_bank",
+      "priority": 160
+    },
+    {
+      "key": "za.fast-food",
+      "name": "South African fast food",
+      "pattern": "(?i)\\b(MCDONALD'?S|KFC|BURGER KING|SUBWAY|PEDROS|GALITOS|FISH[ -]?AWAYS|CHESANYAMA)\\b",
+      "matchType": "regex",
+      "categoryKey": "food_restaurants",
+      "priority": 130
+    },
+    {
+      "key": "za.liquor",
+      "name": "South African liquor retailers",
+      "pattern": "(?i)\\b(TOPS AT SPAR|CHECKERS LIQUOR|LIQUORSHOP|ULTRA LIQUORS|LIQUOR CITY|NORMAN GOODFELLOWS)\\b",
+      "matchType": "regex",
+      "categoryKey": "food_alcohol",
+      "priority": 130
+    },
+    {
+      "key": "za.mobile",
+      "name": "South African mobile networks",
+      "pattern": "(?i)\\b(VODACOM|MTN|CELL C|TELKOM MOBILE|RAIN NETWORK)\\b",
+      "matchType": "regex",
+      "categoryKey": "bills_phone",
+      "priority": 130
+    },
+    {
+      "key": "za.streaming",
+      "name": "South African streaming services",
+      "pattern": "(?i)\\b(SHOWMAX|MULTICHOICE|DSTV|NETFLIX|SPOTIFY)\\b",
+      "matchType": "regex",
+      "categoryKey": "entertainment_streaming",
+      "priority": 130
+    },
+    {
+      "key": "za.pharmacy",
+      "name": "South African pharmacies",
+      "pattern": "(?i)\\b(DIS[ -]?CHEM|CLICKS|MEDIRITE)\\b",
+      "matchType": "regex",
+      "categoryKey": "health_pharmacy",
+      "priority": 130
+    },
+    {
+      "key": "za.office-supplies",
+      "name": "South African office supplies",
+      "pattern": "(?i)\\b(PNA|WALTONS)\\b",
+      "matchType": "regex",
+      "categoryKey": "shopping",
+      "priority": 130
+    },
+    {
+      "key": "za.courier",
+      "name": "South African courier services",
+      "pattern": "(?i)\\b(POSTNET|THE COURIER GUY|COURIER GUY|PUDO|ARAMEX|DHL EXPRESS)\\b",
+      "matchType": "regex",
+      "categoryKey": "other_expense",
       "priority": 125
     }
   ]
