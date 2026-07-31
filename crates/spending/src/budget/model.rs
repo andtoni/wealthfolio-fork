@@ -1,6 +1,8 @@
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
+use crate::settings::BudgetCycleSettings;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BudgetGroup {
@@ -245,6 +247,9 @@ pub struct BudgetSnapshotState {
 pub struct BudgetSnapshotComputed {
     pub currency: String,
     pub period_key: String,
+    pub period_start: Option<String>,
+    pub period_end: Option<String>,
+    pub budget_cycle: BudgetCycleSettings,
     pub fx_as_of: Option<String>,
     pub group_rows: Vec<BudgetGroupRow>,
     pub ungrouped_rows: Vec<BudgetCategoryRow>,
@@ -260,7 +265,13 @@ pub struct BudgetSnapshot {
 }
 
 impl BudgetSnapshot {
-    pub fn empty(period_key: String, currency: String) -> Self {
+    pub fn empty(
+        period_key: String,
+        currency: String,
+        budget_cycle: BudgetCycleSettings,
+        period_start: Option<String>,
+        period_end: Option<String>,
+    ) -> Self {
         Self {
             state: BudgetSnapshotState {
                 groups: Vec::new(),
@@ -271,6 +282,9 @@ impl BudgetSnapshot {
             computed: BudgetSnapshotComputed {
                 currency,
                 period_key,
+                period_start,
+                period_end,
+                budget_cycle,
                 fx_as_of: None,
                 group_rows: Vec::new(),
                 ungrouped_rows: Vec::new(),

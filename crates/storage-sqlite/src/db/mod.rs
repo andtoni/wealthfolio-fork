@@ -443,6 +443,55 @@ mod migration_tests {
     }
 
     #[test]
+    fn configurable_budget_cycle_migrates_populated_legacy_period_keys() {
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        migrate_until(&mut conn, "20260730000002");
+        conn.batch_execute(
+            "INSERT INTO budget_targets
+               (id,period_key,target_type,group_id,amount)
+             VALUES
+               ('legacy-period-target','2026-08','group_buffer',
+                '032ecb02-5912-42e8-9724-2cd566fc08d5','123.45');",
+        )
+        .unwrap();
+
+        conn.run_pending_migrations(MIGRATIONS).unwrap();
+
+        let period_key = diesel::sql_query(
+            "SELECT period_key AS value FROM budget_targets WHERE id='legacy-period-target'",
+        )
+        .get_result::<SnapshotRow>(&mut conn)
+        .unwrap()
+        .value;
+        assert_eq!(period_key, "2026-07-25");
+        let cycle = diesel::sql_query(
+            "SELECT setting_value AS value FROM app_settings WHERE setting_key='spending.budget_cycle'",
+        )
+        .get_result::<SnapshotRow>(&mut conn)
+        .unwrap()
+        .value;
+        assert_eq!(cycle, r#"{"cadence":"monthly","anchorDate":"2026-07-25"}"#);
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM finance_v1_budget_policy
+                 WHERE currency='ZAR' AND rollover_enabled=0 AND transfers_excluded=1",
+            ),
+            1
+        );
+        let locked = conn
+            .batch_execute(
+                "UPDATE budget_targets SET amount='0' WHERE id='finance_v1_target_salary';",
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(
+            locked.contains("Finance v1 budget target is locked"),
+            "{locked}"
+        );
+    }
+
+    #[test]
     fn finance_v1_correction_upgrades_colliding_assignments_to_the_exact_snapshot() {
         let mut conn = SqliteConnection::establish(":memory:").unwrap();
         migrate_until(&mut conn, "20260719000001");
@@ -453,7 +502,7 @@ mod migration_tests {
         )
         .unwrap();
 
-        conn.run_pending_migrations(MIGRATIONS).unwrap();
+        migrate_until(&mut conn, "20260728000001");
 
         assert_eq!(
             count(

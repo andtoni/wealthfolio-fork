@@ -43,6 +43,7 @@ import {
   budgetPeriodParts,
   budgetPeriodRange,
   localDateFromParts,
+  shiftBudgetPeriodKey,
   monthKeyFromParts,
   monthLabel,
   monthRange,
@@ -57,6 +58,7 @@ import {
   shouldPreferDashboardPeriod,
 } from "../lib/period-preferences";
 import type { ReportsPeriod } from "../lib/reports-period";
+import type { BudgetCycleSettings } from "../types";
 import { FOREST_THEME, themeBg, type Palette } from "../lib/theme";
 import {
   addCalendarDays,
@@ -207,21 +209,33 @@ function selectionFromParams(
 
 function budgetMonthStateForSelection(
   selection: SpendingSelection,
-  currentMonthKey: string,
+  currentPeriodKey: string,
+  cycle: BudgetCycleSettings,
 ): { monthKey: string; touched: boolean } {
   if (selection.kind === "period" && selection.code === "LAST_MONTH") {
-    return { monthKey: addMonthsToMonthKey(currentMonthKey, -1), touched: true };
+    return {
+      monthKey: shiftBudgetPeriodKey(currentPeriodKey, -1, cycle),
+      touched: true,
+    };
   }
-  if (selection.kind === "month" && selection.monthKey <= currentMonthKey) {
-    return { monthKey: selection.monthKey, touched: true };
+  if (selection.kind === "month") {
+    const month = parseMonthKey(selection.monthKey);
+    if (month) {
+      const periodKey = budgetPeriodKeyForDate({ ...month, day: 1 }, cycle);
+      if (periodKey <= currentPeriodKey) return { monthKey: periodKey, touched: true };
+    }
   }
-  return { monthKey: currentMonthKey, touched: false };
+  return { monthKey: currentPeriodKey, touched: false };
 }
 
-function budgetSelectionSyncKey(selection: SpendingSelection, currentMonthKey: string): string {
-  if (selection.kind === "month") return `month:${selection.monthKey}`;
-  if (selection.code === "LAST_MONTH") return `period:${selection.code}:${currentMonthKey}`;
-  return `period:${selection.code}`;
+function budgetSelectionSyncKey(
+  selection: SpendingSelection,
+  currentPeriodKey: string,
+  cycle: BudgetCycleSettings,
+): string {
+  const selectionKey =
+    selection.kind === "month" ? `month:${selection.monthKey}` : `period:${selection.code}`;
+  return `${selectionKey}:${currentPeriodKey}:${cycle.cadence}:${cycle.anchorDate}`;
 }
 
 function selectionData(selection: SpendingSelection, timezone?: string | null) {
@@ -302,8 +316,11 @@ export default function SpendingTabContent() {
   const baseCurrency = settings?.baseCurrency ?? "USD";
   const appTimezone = settings?.timezone ?? undefined;
   const navigate = useNavigate();
-  const { accountIds: spendingAccountIds, isLoading: spendingSettingsLoading } =
-    useSpendingSettings();
+  const {
+    accountIds: spendingAccountIds,
+    budgetCycle,
+    isLoading: spendingSettingsLoading,
+  } = useSpendingSettings();
 
   const [searchParams, setSearchParams] = useSearchParams();
   // URL-driven so `/dashboard?tab=spending&spendingInterval=3M` is shareable
@@ -386,25 +403,28 @@ export default function SpendingTabContent() {
   const taxonomy = useTaxonomy(SPENDING_TAXONOMY);
   const { data: budget, isError: budgetErrored } = useBudget();
   const todayParts = useMemo(() => getZonedDateParts(new Date(), appTimezone), [appTimezone]);
-  const currentBudgetMonthKey = useMemo(() => budgetPeriodKeyForDate(todayParts), [todayParts]);
+  const currentBudgetMonthKey = useMemo(
+    () => budgetPeriodKeyForDate(todayParts, budgetCycle),
+    [todayParts, budgetCycle],
+  );
   const budgetSyncKey = useMemo(
-    () => budgetSelectionSyncKey(selection, currentBudgetMonthKey),
-    [selection, currentBudgetMonthKey],
+    () => budgetSelectionSyncKey(selection, currentBudgetMonthKey, budgetCycle),
+    [selection, currentBudgetMonthKey, budgetCycle],
   );
   const lastBudgetSyncKey = useRef(budgetSyncKey);
   const [budgetMonthKey, setBudgetMonthKey] = useState(() => {
-    return budgetMonthStateForSelection(selection, currentBudgetMonthKey).monthKey;
+    return budgetMonthStateForSelection(selection, currentBudgetMonthKey, budgetCycle).monthKey;
   });
   const [budgetMonthTouched, setBudgetMonthTouched] = useState(() => {
-    return budgetMonthStateForSelection(selection, currentBudgetMonthKey).touched;
+    return budgetMonthStateForSelection(selection, currentBudgetMonthKey, budgetCycle).touched;
   });
   useEffect(() => {
     if (lastBudgetSyncKey.current === budgetSyncKey) return;
     lastBudgetSyncKey.current = budgetSyncKey;
-    const next = budgetMonthStateForSelection(selection, currentBudgetMonthKey);
+    const next = budgetMonthStateForSelection(selection, currentBudgetMonthKey, budgetCycle);
     setBudgetMonthKey(next.monthKey);
     setBudgetMonthTouched(next.touched);
-  }, [budgetSyncKey, currentBudgetMonthKey, selection]);
+  }, [budgetSyncKey, currentBudgetMonthKey, selection, budgetCycle]);
   useEffect(() => {
     setBudgetMonthKey((monthKey) => {
       if (!budgetMonthTouched) return currentBudgetMonthKey;
@@ -427,11 +447,11 @@ export default function SpendingTabContent() {
   const hasNoIncludedAccounts = !spendingSettingsLoading && spendingAccountIds.length === 0;
 
   const budgetMonthRange = useMemo(() => {
-    const range = budgetPeriodRange(budgetMonthKey);
+    const range = budgetPeriodRange(budgetMonthKey, budgetCycle);
     return budgetMonthKey === currentBudgetMonthKey
       ? { ...range, to: localDateFromParts(todayParts) }
       : range;
-  }, [budgetMonthKey, currentBudgetMonthKey, todayParts]);
+  }, [budgetMonthKey, currentBudgetMonthKey, todayParts, budgetCycle]);
   const monthReportReq = useMemo(
     () => rangeToReportRequest(budgetMonthRange, appTimezone),
     [budgetMonthRange, appTimezone],
@@ -447,30 +467,33 @@ export default function SpendingTabContent() {
   const shiftBudgetMonth = (months: number) => {
     setBudgetMonthTouched(true);
     setBudgetMonthKey((monthKey) => {
-      const next = addMonthsToMonthKey(monthKey, months);
+      const next = shiftBudgetPeriodKey(monthKey, months, budgetCycle);
       return next > currentBudgetMonthKey ? currentBudgetMonthKey : next;
     });
   };
 
   const budgetHistoryRange = useMemo(() => {
-    const selected = budgetPeriodParts(budgetMonthKey);
-    const first = budgetPeriodParts(addMonthsToMonthKey(budgetMonthKey, -3));
+    const selected = budgetPeriodParts(budgetMonthKey, budgetCycle);
+    const first = budgetPeriodParts(
+      shiftBudgetPeriodKey(budgetMonthKey, -3, budgetCycle),
+      budgetCycle,
+    );
     if (!selected || !first) return null;
     return {
       start: first.start,
       end: addCalendarDays(selected.start, -1),
     };
-  }, [budgetMonthKey]);
+  }, [budgetMonthKey, budgetCycle]);
   const historyReportReq = useMemo(() => {
     const range = budgetHistoryRange;
-    const fallback = budgetPeriodParts(budgetMonthKey);
+    const fallback = budgetPeriodParts(budgetMonthKey, budgetCycle);
     const start = range?.start ?? fallback?.start ?? todayParts;
     const end = range?.end ?? fallback?.end ?? todayParts;
     return {
       startDate: zonedCalendarDateBoundaryToDate(start, "start", appTimezone).toISOString(),
       endDate: zonedCalendarDateBoundaryToDate(end, "end", appTimezone).toISOString(),
     };
-  }, [budgetHistoryRange, budgetMonthKey, appTimezone, todayParts]);
+  }, [budgetHistoryRange, budgetMonthKey, appTimezone, todayParts, budgetCycle]);
   const { data: historyReport } = useSpendingReport(historyReportReq);
 
   const historicalDailyAvg = useMemo(() => {
@@ -535,8 +558,8 @@ export default function SpendingTabContent() {
   const priorIsMeaningful = priorSpending >= Math.max(100, totalSpending * 0.02);
   const displayDeltaPct = priorIsMeaningful ? deltaPct : null;
   const maxPickerMonth = useMemo(
-    () => addMonthsToMonthKey(currentBudgetMonthKey, -1),
-    [currentBudgetMonthKey],
+    () => addMonthsToMonthKey(monthKeyFromParts(todayParts), -1),
+    [todayParts],
   );
 
   const handleIntervalSelect = (code: SpendingDashboardPeriod) => {
@@ -1122,6 +1145,7 @@ export default function SpendingTabContent() {
               <div className="order-2 lg:order-none">
                 <BudgetLineChartCard
                   monthKey={budgetMonthKey}
+                  cycle={budgetCycle}
                   today={todayParts}
                   isCurrentMonth={budgetMonthKey === currentBudgetMonthKey}
                   onPreviousMonth={() => shiftBudgetMonth(-1)}

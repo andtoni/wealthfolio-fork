@@ -185,6 +185,9 @@ function projectBudget(insight: SpendingInsight): BudgetSnapshot {
     computed: {
       currency: insight.currency,
       periodKey: "default",
+      periodStart: null,
+      periodEnd: null,
+      budgetCycle: insight.budgetCycle,
       fxAsOf: null,
       groupRows,
       ungroupedRows: [],

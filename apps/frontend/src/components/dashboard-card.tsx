@@ -33,7 +33,7 @@ export function DashboardCard({
   children,
 }: DashboardCardProps) {
   return (
-    <div className="w-full">
+    <div className="w-full min-w-0 max-w-full">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2 pb-2">
         <div className="flex min-w-0 flex-wrap items-baseline gap-2">
           <h2 className="text-sm font-semibold tracking-tight">{title}</h2>

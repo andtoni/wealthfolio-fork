@@ -18,6 +18,10 @@ export function useSpendingSettings() {
     settings: query.data,
     isEnabled: query.data?.enabled ?? false,
     accountIds: query.data?.accountIds ?? [],
+    budgetCycle: query.data?.budgetCycle ?? {
+      cadence: "monthly" as const,
+      anchorDate: "2026-07-25",
+    },
     isLoading: query.isLoading,
     error: query.error,
   };

@@ -1,4 +1,5 @@
 import type { BudgetGroup } from "./budget";
+import type { BudgetCycleSettings } from "./index";
 import type { CategoryBreakdownRow } from "./report";
 
 export type CompareMode = "prior" | "year_over_year";
@@ -23,10 +24,11 @@ export interface PeriodMeta {
 export type AmountSource = "default" | "override" | "prorated" | "prorated_override";
 
 export interface MonthlyAmount {
-  month: string; // YYYY-MM
-  /** Effective amount contributed to the period total (post-proration). */
+  /** Budget cycle start key (`YYYY-MM-DD`); field name retained for API compatibility. */
+  month: string;
+  /** Effective amount contributed to the report total (post-proration). */
   amount: number;
-  /** Full monthly budget for that month (un-prorated). */
+  /** Full per-cycle budget before proration. */
   fullMonthlyAmount: number;
   source: AmountSource;
 }
@@ -133,6 +135,7 @@ export interface SpendingInsight {
    * `period.end` (snapshot-date convention, matches net_worth + holdings).
    */
   currency: string;
+  budgetCycle: BudgetCycleSettings;
   /**
    * Currencies (other than `currency`) observed on contributing activities,
    * sorted alphabetically. Empty when every counted activity was already

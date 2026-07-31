@@ -1202,6 +1202,10 @@ mod tests {
         async fn set_settings(&self, _: Vec<(String, String)>) -> Result<()> {
             unimplemented!()
         }
+
+        async fn has_concrete_budget_records(&self) -> Result<bool> {
+            Ok(false)
+        }
     }
 
     struct MockAccountRepo {

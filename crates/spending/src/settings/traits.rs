@@ -13,4 +13,7 @@ pub trait SpendingSettingsRepositoryTrait: Send + Sync {
 
     /// Upsert multiple setting values in one storage transaction.
     async fn set_settings(&self, values: Vec<(String, String)>) -> Result<()>;
+
+    /// Whether changing the cycle would strand concrete period data.
+    async fn has_concrete_budget_records(&self) -> Result<bool>;
 }

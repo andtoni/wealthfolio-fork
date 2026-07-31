@@ -977,7 +977,7 @@
     "section_sources": "来源",
     "section_sources_meta": "哪些账户提供数据给跟踪器",
     "section_budgets": "预算",
-    "section_budgets_meta": "默认月度计划和结转行为",
+    "section_budgets_meta": "重复周期和每周期计划",
     "section_taxonomy": "分类法",
     "section_taxonomy_meta": "交易如何分类",
     "section_automation": "自动化",
@@ -1025,14 +1025,27 @@
       "stop_tracking_aria": "停止跟踪 {{name}}",
       "mixed_warning": "从被跟踪的现金账户支付的信用卡还款应关联为转账。未关联的还款可能导致信用卡消费和现金还款都被计为支出。"
     },
+    "budget_cycle": {
+      "title": "预算周期",
+      "description": "选择预算重置的频率，以及所有周期重复计算的起始日期。",
+      "frequency": "频率",
+      "anchor_date": "起始日期",
+      "weekly": "每周",
+      "biweekly": "每两周",
+      "monthly": "每月",
+      "current_period": "当前周期",
+      "history_note": "更改周期会重新归集预算历史中的实际金额。默认金额适用于每个周期。更改此设置前，请删除所有周期专属覆盖设置。",
+      "save": "保存周期",
+      "saving": "正在保存…"
+    },
     "budget_overview": {
-      "title": "默认月度计划",
-      "empty_description": "定义分组和默认目标，作为每月的基准。",
+      "title": "默认周期计划",
+      "empty_description": "定义分组和默认目标，作为每个周期的基准。",
       "setup_cta": "设置预算",
       "open_aria": "打开预算设置",
-      "description": "每月使用的基准分组目标，直到您更改为止。",
+      "description": "每个周期使用的基准分组目标，直到您更改为止。",
       "planned_spending": "计划支出",
-      "planned_vs_income": "计划支出 / 月度收入",
+      "planned_vs_income": "计划支出 / 周期收入",
       "pct_of_income": "占收入的 {{pct}}%",
       "open": "打开计划"
     },
@@ -1094,8 +1107,8 @@
       "more": "+{{count}} 更多"
     },
     "setup": {
-      "title": "默认月度预算计划",
-      "description": "定义分组、默认月度目标和结转行为。作为每月的基准使用。"
+      "title": "默认周期预算计划",
+      "description": "定义分组、每周期默认目标和结转行为。作为每个周期的基准使用。"
     },
     "categories": {
       "heading": "类别",

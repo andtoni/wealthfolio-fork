@@ -1,3 +1,5 @@
+import type { BudgetCycleSettings } from ".";
+
 export type BudgetTargetType = "category" | "group_buffer";
 export type BudgetRolloverTargetType = "category" | "group";
 
@@ -140,6 +142,9 @@ export interface BudgetSnapshot {
   computed: {
     currency: string;
     periodKey: string;
+    periodStart: string | null;
+    periodEnd: string | null;
+    budgetCycle: BudgetCycleSettings;
     fxAsOf: string | null;
     groupRows: BudgetGroupRow[];
     ungroupedRows: BudgetCategoryRow[];

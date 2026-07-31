@@ -1,6 +1,6 @@
 //! Repository for app-side device sync tables.
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Datelike, Duration, Months, NaiveDate, Utc};
 use diesel::prelude::*;
 use diesel::r2d2::{self, Pool};
 use diesel::sqlite::SqliteConnection;
@@ -189,7 +189,9 @@ impl SyncRowFilter {
                 "UPPER(run_type) = 'IMPORT' AND UPPER(source_system) IN ('CSV', 'MANUAL')"
             }
             Self::UserSyncableActivities => USER_SYNCABLE_ACTIVITIES_FILTER_SQL,
-            Self::SpendingSettings => "setting_key IN ('spending.enabled', 'spending.account_ids')",
+            Self::SpendingSettings => {
+                "setting_key IN ('spending.enabled', 'spending.account_ids', 'spending.budget_cycle')"
+            }
             Self::UserTaxonomies => "is_system = 0",
             // Spending/income seed category IDs use the `cat_` prefix; user-created rows use UUIDs.
             Self::SyncableTaxonomyCategories => {
@@ -463,8 +465,28 @@ fn apply_value_migration(table: &str, column: &str, value: serde_json::Value) ->
             }
             value
         }
+        ("budget_targets", "period_key") | ("budget_rollover_settings", "start_month") => {
+            migrate_legacy_budget_period_key(value)
+        }
         _ => value,
     }
+}
+
+fn migrate_legacy_budget_period_key(value: serde_json::Value) -> serde_json::Value {
+    let Some(period_key) = value.as_str() else {
+        return value;
+    };
+    let Ok(ending_month) = NaiveDate::parse_from_str(&format!("{period_key}-01"), "%Y-%m-%d")
+    else {
+        return value;
+    };
+    let Some(start_month) = ending_month.checked_sub_months(Months::new(1)) else {
+        return value;
+    };
+    let Some(start) = NaiveDate::from_ymd_opt(start_month.year(), start_month.month(), 25) else {
+        return value;
+    };
+    serde_json::Value::String(start.format("%Y-%m-%d").to_string())
 }
 
 fn migrate_legacy_goal_lifecycle_value(value: serde_json::Value) -> serde_json::Value {
@@ -731,6 +753,23 @@ const SYNC_TABLE_SNAPSHOT_CLEAR_FILTERS: &[SyncTableFilterSpec] = &[
         filter: SyncRowFilter::BudgetRolloverSettingsWithExistingDependencies,
     },
 ];
+
+fn snapshot_restore_select_expression(table: &str, column: &str) -> String {
+    let column_ident = quote_identifier(column);
+    match (table, column) {
+        ("budget_targets", "period_key") => format!(
+            "CASE WHEN {column_ident} GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]' \
+             THEN date({column_ident} || '-01', '-1 month', '+24 days') \
+             ELSE {column_ident} END"
+        ),
+        ("budget_rollover_settings", "start_month") => format!(
+            "CASE WHEN {column_ident} GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]' \
+             THEN date({column_ident} || '-01', '-1 month', '+24 days') \
+             ELSE {column_ident} END"
+        ),
+        _ => column_ident,
+    }
+}
 
 fn snapshot_copy_filter_for_table(table: &str) -> Option<&'static str> {
     SYNC_TABLE_SNAPSHOT_COPY_FILTERS
@@ -3196,12 +3235,17 @@ impl AppSyncRepository {
                             .map(|column| quote_identifier(column))
                             .collect::<Vec<_>>()
                             .join(", ");
+                        let select_columns_sql = common_columns
+                            .iter()
+                            .map(|column| snapshot_restore_select_expression(table, column))
+                            .collect::<Vec<_>>()
+                            .join(", ");
                         let copy_sql = match snapshot_copy_filter_for_table(table) {
                             Some(where_clause) => format!(
-                                "INSERT INTO {table_ident} ({columns_sql}) SELECT {columns_sql} FROM {alias_ident}.{table_ident} WHERE {where_clause}"
+                                "INSERT INTO {table_ident} ({columns_sql}) SELECT {select_columns_sql} FROM {alias_ident}.{table_ident} WHERE {where_clause}"
                             ),
                             None => format!(
-                                "INSERT INTO {table_ident} ({columns_sql}) SELECT {columns_sql} FROM {alias_ident}.{table_ident}"
+                                "INSERT INTO {table_ident} ({columns_sql}) SELECT {select_columns_sql} FROM {alias_ident}.{table_ident}"
                             ),
                         };
                         // For filtered tables, only delete rows matching the filter so
@@ -5300,7 +5344,7 @@ mod tests {
             conn.batch_execute(
                 "INSERT INTO budget_targets \
                  (id, period_key, target_type, taxonomy_id, category_id, group_id, amount, created_at, updated_at) \
-                 VALUES ('budget-target-overwrite-risk', '2026-01', 'group_buffer', NULL, NULL, \
+                 VALUES ('budget-target-overwrite-risk', '2025-12-25', 'group_buffer', NULL, NULL, \
                          '032ecb02-5912-42e8-9724-2cd566fc08d5', '100.00', \
                          '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
             )
@@ -7382,6 +7426,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn snapshot_restore_migrates_legacy_budget_period_keys() {
+        #[derive(diesel::QueryableByName)]
+        struct PeriodRow {
+            #[diesel(sql_type = diesel::sql_types::Text)]
+            period_key: String,
+        }
+
+        let snapshot_dir = tempdir().expect("tempdir");
+        let snapshot_path = snapshot_dir.path().join("legacy-budget-snapshot.db");
+        let mut snapshot_conn =
+            SqliteConnection::establish(snapshot_path.to_string_lossy().as_ref())
+                .expect("open snapshot db");
+        snapshot_conn
+            .batch_execute(
+                "CREATE TABLE budget_targets (
+                    id TEXT PRIMARY KEY,
+                    period_key TEXT NOT NULL,
+                    target_type TEXT NOT NULL,
+                    taxonomy_id TEXT,
+                    category_id TEXT,
+                    group_id TEXT,
+                    amount TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                 );
+                 INSERT INTO budget_targets
+                    (id,period_key,target_type,taxonomy_id,category_id,group_id,amount,created_at,updated_at)
+                 VALUES
+                    ('legacy-snapshot-target','2026-08','group_buffer',NULL,NULL,
+                     '032ecb02-5912-42e8-9724-2cd566fc08d5','123',
+                     '2026-07-01T00:00:00Z','2026-07-01T00:00:00Z');",
+            )
+            .expect("create legacy snapshot");
+        drop(snapshot_conn);
+
+        let (pool, writer) = setup_db();
+        let repo = AppSyncRepository::new(pool.clone(), writer);
+        repo.restore_snapshot_tables_from_file(
+            snapshot_path.to_string_lossy().to_string(),
+            vec!["budget_targets".to_string()],
+            205,
+            "device-legacy-budget".to_string(),
+            Some(1),
+        )
+        .await
+        .expect("restore legacy budget snapshot");
+
+        let mut conn = get_connection(&pool).expect("conn");
+        let restored = diesel::sql_query(
+            "SELECT period_key FROM budget_targets WHERE id='legacy-snapshot-target'",
+        )
+        .get_result::<PeriodRow>(&mut conn)
+        .expect("load restored target");
+        assert_eq!(restored.period_key, "2026-07-25");
+    }
+
+    #[tokio::test]
     async fn snapshot_restore_skips_budget_rows_with_missing_category_dependencies() {
         #[derive(diesel::QueryableByName)]
         struct CountRow {
@@ -7525,13 +7626,40 @@ mod tests {
         let settings_count: CountRow = diesel::sql_query("SELECT COUNT(*) AS c FROM app_settings")
             .get_result(&mut exported_conn)
             .expect("count settings");
-        assert_eq!(settings_count.c, 2);
+        assert_eq!(settings_count.c, 3);
+
+        let cycle_count: CountRow = diesel::sql_query(
+            "SELECT COUNT(*) AS c FROM app_settings WHERE setting_key = 'spending.budget_cycle'",
+        )
+        .get_result(&mut exported_conn)
+        .expect("count budget cycle setting");
+        assert_eq!(cycle_count.c, 1);
 
         let theme_count: CountRow =
             diesel::sql_query("SELECT COUNT(*) AS c FROM app_settings WHERE setting_key = 'theme'")
                 .get_result(&mut exported_conn)
                 .expect("count theme setting");
         assert_eq!(theme_count.c, 0);
+    }
+
+    #[test]
+    fn sync_replay_migrates_legacy_budget_period_keys() {
+        assert_eq!(
+            apply_value_migration("budget_targets", "period_key", serde_json::json!("2026-01"),),
+            serde_json::json!("2025-12-25")
+        );
+        assert_eq!(
+            apply_value_migration(
+                "budget_rollover_settings",
+                "start_month",
+                serde_json::json!("2026-05"),
+            ),
+            serde_json::json!("2026-04-25")
+        );
+        assert_eq!(
+            apply_value_migration("budget_targets", "period_key", serde_json::json!("default"),),
+            serde_json::json!("default")
+        );
     }
 
     #[test]
@@ -7882,7 +8010,7 @@ mod tests {
                 1,
                 serde_json::json!({
                     "id": "target-invalid",
-                    "periodKey": "2026-05",
+                    "periodKey": "2026-04-25",
                     "targetType": "category",
                     "taxonomyId": "spending_categories",
                     "categoryId": "cat_food",

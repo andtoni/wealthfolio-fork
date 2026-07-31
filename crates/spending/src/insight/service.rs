@@ -27,12 +27,13 @@ use crate::activity_splits::ActivitySplitRepositoryTrait;
 use crate::aggregate_eligibility::{
     filter_eligible_activity_rows, resolve_eligible_spending_accounts,
 };
+use crate::budget::period::{period_for_date, period_for_key, period_keys_between};
 use crate::budget::service::{
     category_meta, resolve_group_for_category, top_category_id, top_level_categories, TargetIndex,
 };
 use crate::budget::BudgetRepositoryTrait;
 use crate::error::SpendingError;
-use crate::settings::SpendingSettingsService;
+use crate::settings::{BudgetCycleSettings, SpendingSettingsService};
 
 const SPENDING_TAXONOMY: &str = "spending_categories";
 const INCOME_TAXONOMY: &str = "income_sources";
@@ -109,8 +110,9 @@ impl InsightService {
 
         // ── 1. Settings gate ──────────────────────────────────────────────────
         let settings = self.settings.get().await?;
+        let budget_cycle = settings.budget_cycle.clone();
         if !settings.enabled || settings.account_ids.is_empty() {
-            return Ok(empty_insight(period, prior, currency));
+            return Ok(empty_insight(period, prior, currency, budget_cycle.clone()));
         }
 
         // ── 2. Resolve target accounts ────────────────────────────────────────
@@ -123,7 +125,7 @@ impl InsightService {
             None => settings.account_ids.clone(),
         };
         if requested.is_empty() {
-            return Ok(empty_insight(period, prior, currency));
+            return Ok(empty_insight(period, prior, currency, budget_cycle.clone()));
         }
         let eligible_accounts = resolve_eligible_spending_accounts(
             self.account_repo.as_ref(),
@@ -133,7 +135,7 @@ impl InsightService {
         )
         .await?;
         if eligible_accounts.ids.is_empty() {
-            return Ok(empty_insight(period, prior, currency));
+            return Ok(empty_insight(period, prior, currency, budget_cycle.clone()));
         }
         let account_types = eligible_accounts.account_types;
         let eligible_account_ids: HashSet<String> = eligible_accounts.ids.iter().cloned().collect();
@@ -142,7 +144,7 @@ impl InsightService {
             .filter(|id| eligible_account_ids.contains(id))
             .collect();
         if account_ids.is_empty() {
-            return Ok(empty_insight(period, prior, currency));
+            return Ok(empty_insight(period, prior, currency, budget_cycle.clone()));
         }
         let target_account_ids: HashSet<String> = account_ids.iter().cloned().collect();
 
@@ -173,7 +175,7 @@ impl InsightService {
                     );
                     fallback.id.clone()
                 }
-                None => return Ok(empty_insight(period, prior, currency)),
+                None => return Ok(empty_insight(period, prior, currency, budget_cycle.clone())),
             },
         };
         let assignment_by_category: HashMap<String, String> = group_assignments
@@ -254,17 +256,17 @@ impl InsightService {
             prior_window.1.date_naive(),
         );
 
-        // ── 6. Fan out budgets per month with proration ───────────────────────
+        // ── 6. Fan out budgets per configured cycle with proration ────────────
         let target_index = TargetIndex::new(&targets);
-        let month_prorations = build_month_prorations(start, end, &period.months);
+        let cycle_prorations = build_cycle_prorations(start, end, timezone, &budget_cycle)?;
 
         let mut category_budgets: HashMap<String, AmountBlock> = HashMap::new();
         for cat in &top_categories {
-            let block = fanout_amount(&month_prorations, |month| {
+            let block = fanout_amount(&cycle_prorations, |period_key| {
                 let amount =
-                    target_index.effective_category_decimal(month, SPENDING_TAXONOMY, &cat.id);
+                    target_index.effective_category_decimal(period_key, SPENDING_TAXONOMY, &cat.id);
                 let has_override =
-                    target_index.has_month_category(month, SPENDING_TAXONOMY, &cat.id);
+                    target_index.has_month_category(period_key, SPENDING_TAXONOMY, &cat.id);
                 (amount, has_override)
             });
             category_budgets.insert(cat.id.clone(), block);
@@ -272,9 +274,9 @@ impl InsightService {
 
         let mut group_buffers: HashMap<String, AmountBlock> = HashMap::new();
         for g in &groups {
-            let block = fanout_amount(&month_prorations, |month| {
-                let amount = target_index.effective_group_buffer_decimal(month, &g.id);
-                let has_override = target_index.has_month_group_buffer(month, &g.id);
+            let block = fanout_amount(&cycle_prorations, |period_key| {
+                let amount = target_index.effective_group_buffer_decimal(period_key, &g.id);
+                let has_override = target_index.has_month_group_buffer(period_key, &g.id);
                 (amount, has_override)
             });
             group_buffers.insert(g.id.clone(), block);
@@ -495,6 +497,7 @@ impl InsightService {
             period,
             prior,
             currency: currency.to_string(),
+            budget_cycle,
             foreign_currencies,
             native_outflow_by_currency,
             headline,
@@ -1062,51 +1065,55 @@ impl PeriodMeta {
 }
 
 #[derive(Clone)]
-struct MonthProration {
-    month: String,
-    /// `days_in_window_for_this_month / days_in_this_month` — 1.0 for fully-covered months.
+struct CycleProration {
+    period_key: String,
+    /// `days_in_window_for_this_cycle / days_in_this_cycle` — 1.0 when fully covered.
     factor: Decimal,
-    /// True when the window does not fully cover the month.
+    /// True when the report window does not fully cover the cycle.
     prorated: bool,
 }
 
-fn build_month_prorations(
+fn build_cycle_prorations(
     start: DateTime<Utc>,
     end: DateTime<Utc>,
-    months: &[String],
-) -> Vec<MonthProration> {
-    let start_d = start.date_naive();
-    let end_d = end.date_naive();
-    months
-        .iter()
-        .map(|month| {
-            let (m_start, m_end) = month_bounds(month);
-            let win_start = start_d.max(m_start);
-            let win_end = end_d.min(m_end);
+    timezone: &str,
+    cycle: &BudgetCycleSettings,
+) -> Result<Vec<CycleProration>> {
+    let start_d =
+        wealthfolio_core::utils::time_utils::activity_date_in_user_timezone(start, timezone);
+    let end_d = wealthfolio_core::utils::time_utils::activity_date_in_user_timezone(end, timezone);
+    let first = period_for_date(start_d, cycle)?;
+    let last = period_for_date(end_d, cycle)?;
+    period_keys_between(&first.key, &last.key, cycle)?
+        .into_iter()
+        .map(|period_key| {
+            let period = period_for_key(&period_key, cycle)?;
+            let win_start = start_d.max(period.start);
+            let win_end = end_d.min(period.end);
             let days_in_window = (win_end - win_start).num_days() + 1;
-            let days_in_month = (m_end - m_start).num_days() + 1;
-            let factor = if days_in_month > 0 {
-                Decimal::from(days_in_window) / Decimal::from(days_in_month)
+            let days_in_cycle = (period.end - period.start).num_days() + 1;
+            let factor = if days_in_cycle > 0 {
+                Decimal::from(days_in_window) / Decimal::from(days_in_cycle)
             } else {
                 Decimal::ZERO
             };
-            MonthProration {
-                month: month.clone(),
+            Ok(CycleProration {
+                period_key,
                 factor: factor.clamp(Decimal::ZERO, Decimal::ONE),
-                prorated: days_in_window != days_in_month,
-            }
+                prorated: days_in_window != days_in_cycle,
+            })
         })
         .collect()
 }
 
-fn fanout_amount<F>(prorations: &[MonthProration], lookup: F) -> AmountBlock
+fn fanout_amount<F>(prorations: &[CycleProration], lookup: F) -> AmountBlock
 where
     F: Fn(&str) -> (Decimal, bool),
 {
     let mut breakdown = Vec::with_capacity(prorations.len());
     let mut total = Decimal::ZERO;
     for p in prorations {
-        let (full_amount, has_override) = lookup(&p.month);
+        let (full_amount, has_override) = lookup(&p.period_key);
         let prorated_amount = full_amount * p.factor;
         total += prorated_amount;
         let source = match (has_override, p.prorated) {
@@ -1116,7 +1123,7 @@ where
             (false, false) => AmountSource::Default,
         };
         breakdown.push(MonthlyAmount {
-            month: p.month.clone(),
+            month: p.period_key.clone(),
             amount: decimal_to_f64(prorated_amount),
             full_monthly_amount: decimal_to_f64(full_amount),
             source,
@@ -1190,19 +1197,6 @@ fn months_in_window(start: DateTime<Utc>, end: DateTime<Utc>) -> Vec<String> {
         }
     }
     out
-}
-
-fn month_bounds(month_key: &str) -> (NaiveDate, NaiveDate) {
-    let year: i32 = month_key[0..4].parse().unwrap_or(1970);
-    let month: u32 = month_key[5..7].parse().unwrap_or(1);
-    let start = NaiveDate::from_ymd_opt(year, month, 1).unwrap();
-    let (next_year, next_month) = if month == 12 {
-        (year + 1, 1)
-    } else {
-        (year, month + 1)
-    };
-    let end = NaiveDate::from_ymd_opt(next_year, next_month, 1).unwrap() - Duration::days(1);
-    (start, end)
 }
 
 fn period_key_for_date_in_tz(date: DateTime<Utc>, timezone: &str) -> String {
@@ -1512,7 +1506,12 @@ mod float_eq {
 // Empty-insight constructor for the gated path
 // ──────────────────────────────────────────────────────────────────────────────
 
-fn empty_insight(period: PeriodMeta, prior: PeriodMeta, currency: &str) -> SpendingInsight {
+fn empty_insight(
+    period: PeriodMeta,
+    prior: PeriodMeta,
+    currency: &str,
+    budget_cycle: BudgetCycleSettings,
+) -> SpendingInsight {
     let pace = PaceState {
         daily_avg: 0.0,
         days_elapsed: 0,
@@ -1524,6 +1523,7 @@ fn empty_insight(period: PeriodMeta, prior: PeriodMeta, currency: &str) -> Spend
         period,
         prior,
         currency: currency.to_string(),
+        budget_cycle,
         foreign_currencies: vec![],
         native_outflow_by_currency: HashMap::new(),
         headline: Headline {
@@ -1755,6 +1755,10 @@ mod tests {
 
         async fn set_settings(&self, _: Vec<(String, String)>) -> Result<()> {
             unimplemented!()
+        }
+
+        async fn has_concrete_budget_records(&self) -> Result<bool> {
+            Ok(false)
         }
     }
 
@@ -2657,19 +2661,24 @@ mod tests {
         assert_eq!(p.day_count, 1);
     }
 
-    // ── build_month_prorations ────────────────────────────────────────────────
+    // ── build_cycle_prorations ────────────────────────────────────────────────
+
+    fn first_of_month_cycle() -> BudgetCycleSettings {
+        BudgetCycleSettings {
+            cadence: crate::settings::BudgetCadence::Monthly,
+            anchor_date: "2026-03-01".to_string(),
+        }
+    }
 
     #[test]
-    fn proration_is_one_for_fully_covered_months() {
-        let p = build_month_prorations(
+    fn proration_is_one_for_fully_covered_cycles() {
+        let p = build_cycle_prorations(
             dt(2026, 3, 1),
             dt(2026, 5, 19),
-            &[
-                "2026-03".to_string(),
-                "2026-04".to_string(),
-                "2026-05".to_string(),
-            ],
-        );
+            "UTC",
+            &first_of_month_cycle(),
+        )
+        .unwrap();
         assert_eq!(p[0].factor, Decimal::ONE);
         assert!(!p[0].prorated);
         assert_eq!(p[1].factor, Decimal::ONE);
@@ -2680,12 +2689,14 @@ mod tests {
     }
 
     #[test]
-    fn proration_handles_partial_start_month() {
-        let p = build_month_prorations(
+    fn proration_handles_partial_start_cycle() {
+        let p = build_cycle_prorations(
             dt(2026, 3, 15),
             dt(2026, 4, 30),
-            &["2026-03".to_string(), "2026-04".to_string()],
-        );
+            "UTC",
+            &first_of_month_cycle(),
+        )
+        .unwrap();
         // March: days 15..=31 = 17 days out of 31.
         assert_eq!(p[0].factor, Decimal::from(17) / Decimal::from(31));
         assert!(p[0].prorated);
@@ -2693,22 +2704,37 @@ mod tests {
         assert_eq!(p[1].factor, Decimal::ONE);
     }
 
+    #[test]
+    fn weekly_budget_fans_out_for_each_cycle_in_the_report_window() {
+        let weekly = BudgetCycleSettings {
+            cadence: crate::settings::BudgetCadence::Weekly,
+            anchor_date: "2026-01-01".to_string(),
+        };
+        let prorations =
+            build_cycle_prorations(dt(2026, 1, 1), dt(2026, 1, 31), "UTC", &weekly).unwrap();
+        let block = fanout_amount(&prorations, |_| (Decimal::new(100, 0), false));
+
+        assert_eq!(prorations.len(), 5);
+        assert!((block.total - (400.0 + 300.0 / 7.0)).abs() < 1e-9);
+        assert_eq!(block.monthly_breakdown[0].month, "2026-01-01");
+        assert_eq!(block.monthly_breakdown[4].month, "2026-01-29");
+        assert_eq!(block.monthly_breakdown[4].source, AmountSource::Prorated);
+    }
+
     // ── fanout_amount + source labelling ──────────────────────────────────────
 
     #[test]
     fn fanout_sums_prorated_amounts_and_tags_source() {
-        let prorations = build_month_prorations(
+        let prorations = build_cycle_prorations(
             dt(2026, 3, 1),
             dt(2026, 5, 19),
-            &[
-                "2026-03".to_string(),
-                "2026-04".to_string(),
-                "2026-05".to_string(),
-            ],
-        );
-        // Education: default 50/mo, May override 150.
-        let block = fanout_amount(&prorations, |month| match month {
-            "2026-05" => (Decimal::new(150, 0), true),
+            "UTC",
+            &first_of_month_cycle(),
+        )
+        .unwrap();
+        // Education: default 50/cycle, May override 150.
+        let block = fanout_amount(&prorations, |period_key| match period_key {
+            "2026-05-01" => (Decimal::new(150, 0), true),
             _ => (Decimal::new(50, 0), false),
         });
         let expected = 50.0 + 50.0 + 150.0 * (19.0 / 31.0);
@@ -2734,14 +2760,16 @@ mod tests {
 
     #[test]
     fn combine_monthly_sums_category_blocks_into_group_block() {
-        let prorations = build_month_prorations(
+        let prorations = build_cycle_prorations(
             dt(2026, 3, 1),
             dt(2026, 4, 30),
-            &["2026-03".to_string(), "2026-04".to_string()],
-        );
+            "UTC",
+            &first_of_month_cycle(),
+        )
+        .unwrap();
         let a = fanout_amount(&prorations, |_| (Decimal::new(100, 0), false));
-        let b = fanout_amount(&prorations, |month| match month {
-            "2026-04" => (Decimal::new(50, 0), true),
+        let b = fanout_amount(&prorations, |period_key| match period_key {
+            "2026-04-01" => (Decimal::new(50, 0), true),
             _ => (Decimal::new(50, 0), false),
         });
         let combined = combine_monthly([&a, &b]);

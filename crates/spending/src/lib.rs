@@ -20,7 +20,7 @@
 //! - `categories_seed` — boot-time seeder for the two scope=`activity` system taxonomies.
 //! - `categorization_rules` — pattern-based auto-categorization (Gmail-filters style).
 //! - `events` — first-class event entity (trips, holidays) with event_types.
-//! - `budget` — monthly budget config and per-category allocations.
+//! - `budget` — recurring-cycle budget config and per-category allocations.
 //! - `analytics` — aggregations for the Spending overview / reports pages.
 //! - `insight` — reconciled period payload powering the Spending Insight dashboard.
 

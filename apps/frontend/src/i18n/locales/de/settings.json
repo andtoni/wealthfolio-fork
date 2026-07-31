@@ -893,7 +893,7 @@
     "section_sources": "Quellen",
     "section_sources_meta": "Welche Konten den Tracker speisen",
     "section_budgets": "Budgets",
-    "section_budgets_meta": "Standard-Monatsplan und Übertragsverhalten",
+    "section_budgets_meta": "Wiederkehrender Zyklus und Plan pro Zyklus",
     "section_taxonomy": "Taxonomie",
     "section_taxonomy_meta": "Wie Transaktionen klassifiziert werden",
     "section_automation": "Automatisierung",
@@ -941,14 +941,27 @@
       "stop_tracking_aria": "Verfolgung von {{name}} beenden",
       "mixed_warning": "Kreditkartenzahlungen von verfolgten Bargeldkonten sollten als Überweisungen verknüpft werden. Nicht verknüpfte Zahlungen können dazu führen, dass sowohl die Kartenbelastung als auch die Bargeldzahlung als Ausgabe zählen."
     },
+    "budget_cycle": {
+      "title": "Budgetzyklus",
+      "description": "Legen Sie fest, wie oft das Budget zurückgesetzt wird und ab welchem Ankerdatum sich alle Zeiträume wiederholen.",
+      "frequency": "Häufigkeit",
+      "anchor_date": "Beginn am",
+      "weekly": "Jede Woche",
+      "biweekly": "Alle zwei Wochen",
+      "monthly": "Jeden Monat",
+      "current_period": "Aktueller Zeitraum",
+      "history_note": "Eine Änderung des Zyklus ordnet die Ist-Werte im Budgetverlauf neu zu. Standardbeträge gelten für jeden Zyklus. Entfernen Sie vor der Änderung alle zyklusspezifischen Anpassungen.",
+      "save": "Zyklus speichern",
+      "saving": "Wird gespeichert…"
+    },
     "budget_overview": {
-      "title": "Standard-Monatsplan",
-      "empty_description": "Definieren Sie Gruppen und Standardziele, die jeden Monat als Grundlage dienen.",
+      "title": "Standard-Zyklusplan",
+      "empty_description": "Definieren Sie Gruppen und Standardziele, die in jedem Zyklus als Grundlage dienen.",
       "setup_cta": "Budget einrichten",
       "open_aria": "Budget-Einrichtung öffnen",
-      "description": "Grundlegende Gruppenziele, die jeden Monat gelten, bis Sie sie ändern.",
+      "description": "Grundlegende Gruppenziele, die für jeden Zyklus gelten, bis Sie sie ändern.",
       "planned_spending": "Geplante Ausgaben",
-      "planned_vs_income": "Geplante Ausgaben / Monatseinkommen",
+      "planned_vs_income": "Geplante Ausgaben / Zykluseinnahmen",
       "pct_of_income": "{{pct}} % des Einkommens",
       "open": "Plan öffnen"
     },
@@ -1010,8 +1023,8 @@
       "more": "+{{count}} weitere"
     },
     "setup": {
-      "title": "Standard-Monatsbudgetplan",
-      "description": "Definieren Sie Gruppen, monatliche Standardziele und das Übertragsverhalten. Wird jeden Monat als Grundlage verwendet."
+      "title": "Standard-Budgetplan pro Zyklus",
+      "description": "Definieren Sie Gruppen, Standardziele pro Zyklus und das Übertragsverhalten. Wird in jedem Zyklus als Grundlage verwendet."
     },
     "categories": {
       "heading": "Kategorien",

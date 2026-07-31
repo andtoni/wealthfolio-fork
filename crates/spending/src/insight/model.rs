@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::budget::BudgetGroup;
+use crate::settings::BudgetCycleSettings;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -53,13 +54,12 @@ pub enum AmountSource {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MonthlyAmount {
-    /// `YYYY-MM`
+    /// Budget cycle start key (`YYYY-MM-DD`). The field name is retained for API compatibility.
     pub month: String,
-    /// Effective amount contributed by this month to the period total
-    /// (already prorated if the window only covers part of the month).
+    /// Effective amount contributed by this cycle to the report total
+    /// (already prorated if the window covers only part of the cycle).
     pub amount: f64,
-    /// Full monthly budget for that month (un-prorated). Lets the UI show
-    /// "$1000 monthly budget" alongside the prorated contribution.
+    /// Full per-cycle budget before proration. The field name is retained for API compatibility.
     pub full_monthly_amount: f64,
     pub source: AmountSource,
 }
@@ -67,7 +67,7 @@ pub struct MonthlyAmount {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AmountBlock {
-    /// Sum of `monthly_breakdown[].amount`.
+    /// Sum of `monthly_breakdown[].amount` (one entry per budget cycle).
     pub total: f64,
     pub monthly_breakdown: Vec<MonthlyAmount>,
 }
@@ -146,7 +146,7 @@ pub struct GroupInsight {
     pub group: BudgetGroup,
     /// Sum of category-level budgets within the group.
     pub budget: AmountBlock,
-    /// Group buffer target fanned out per month.
+    /// Group buffer target fanned out per budget cycle.
     pub buffer: AmountBlock,
     pub spent: f64,
     pub prior_spent: f64,
@@ -217,6 +217,8 @@ pub struct SpendingInsight {
     /// this currency (FX-converted from native at `period.end`, matching
     /// net_worth's snapshot-date convention).
     pub currency: String,
+    #[serde(default)]
+    pub budget_cycle: BudgetCycleSettings,
     /// Currencies (other than `currency`) observed on contributing activities
     /// in the current window. Sorted alphabetically. Empty when every counted
     /// activity was already in `currency`.

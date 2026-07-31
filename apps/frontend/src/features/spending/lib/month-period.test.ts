@@ -7,6 +7,7 @@ import {
   budgetPeriodLabel,
   budgetPeriodParts,
   currentBudgetPeriodKey,
+  shiftBudgetPeriodKey,
   currentMonthKey,
   monthReportsRange,
   parseMonthKey,
@@ -40,33 +41,60 @@ describe("spending month periods", () => {
     expect(currentMonthKey("America/Toronto")).toBe("2026-05");
   });
 
-  it("uses the ending month as the budget period key at the 24th/25th boundary", () => {
-    expect(budgetPeriodKeyForDate({ year: 2026, month: 7, day: 24 })).toBe("2026-07");
-    expect(budgetPeriodKeyForDate({ year: 2026, month: 7, day: 25 })).toBe("2026-08");
-    expect(budgetPeriodKeyForDate({ year: 2026, month: 12, day: 25 })).toBe("2027-01");
+  it("preserves the existing monthly cycle at the 24th/25th boundary", () => {
+    expect(budgetPeriodKeyForDate({ year: 2026, month: 7, day: 24 })).toBe("2026-06-25");
+    expect(budgetPeriodKeyForDate({ year: 2026, month: 7, day: 25 })).toBe("2026-07-25");
+    expect(budgetPeriodKeyForDate({ year: 2026, month: 12, day: 25 })).toBe("2026-12-25");
   });
 
   it("reads the current budget period in the configured timezone", () => {
     const instant = new Date("2026-07-24T22:30:00.000Z");
 
-    expect(currentBudgetPeriodKey("Africa/Johannesburg", instant)).toBe("2026-08");
-    expect(currentBudgetPeriodKey("America/Toronto", instant)).toBe("2026-07");
+    expect(currentBudgetPeriodKey("Africa/Johannesburg", undefined, instant)).toBe("2026-07-25");
+    expect(currentBudgetPeriodKey("America/Toronto", undefined, instant)).toBe("2026-06-25");
   });
 
-  it("resolves budget period bounds and sequential days across calendar months", () => {
-    expect(budgetPeriodParts("2026-08")).toEqual({
+  it("resolves monthly period bounds and sequential days across calendar months", () => {
+    expect(budgetPeriodParts("2026-07-25")).toEqual({
       start: { year: 2026, month: 7, day: 25 },
       end: { year: 2026, month: 8, day: 24 },
     });
-    expect(budgetPeriodDayIndex("2026-07-25", "2026-08")).toBe(1);
-    expect(budgetPeriodDayIndex("2026-08-01", "2026-08")).toBe(8);
-    expect(budgetPeriodDayIndex("2026-08-24", "2026-08")).toBe(31);
-    expect(budgetPeriodDayIndex("2026-08-25", "2026-08")).toBeNull();
-    expect(budgetPeriodLabel("2026-08", "short", "en-US")).toBe("Jul 25 – Aug 24, 2026");
+    expect(budgetPeriodDayIndex("2026-07-25", "2026-07-25")).toBe(1);
+    expect(budgetPeriodDayIndex("2026-08-01", "2026-07-25")).toBe(8);
+    expect(budgetPeriodDayIndex("2026-08-24", "2026-07-25")).toBe(31);
+    expect(budgetPeriodDayIndex("2026-08-25", "2026-07-25")).toBeNull();
+    expect(budgetPeriodLabel("2026-07-25", "short", "en-US")).toBe("Jul 25 – Aug 24, 2026");
+  });
+
+  it("supports anchored weekly and biweekly cycles", () => {
+    const weekly = { cadence: "weekly" as const, anchorDate: "2026-01-07" };
+    const biweekly = { cadence: "biweekly" as const, anchorDate: "2026-01-01" };
+
+    expect(budgetPeriodKeyForDate({ year: 2026, month: 1, day: 6 }, weekly)).toBe("2025-12-31");
+    expect(budgetPeriodParts("2026-01-29", biweekly)).toEqual({
+      start: { year: 2026, month: 1, day: 29 },
+      end: { year: 2026, month: 2, day: 11 },
+    });
+    expect(shiftBudgetPeriodKey("2026-01-29", 1, biweekly)).toBe("2026-02-12");
+  });
+
+  it("clamps short months and preserves an end-of-month anchor across leap years", () => {
+    const day30 = { cadence: "monthly" as const, anchorDate: "2024-01-30" };
+    expect(budgetPeriodParts("2024-02-29", day30)).toEqual({
+      start: { year: 2024, month: 2, day: 29 },
+      end: { year: 2024, month: 3, day: 29 },
+    });
+
+    const monthEnd = { cadence: "monthly" as const, anchorDate: "2024-02-29" };
+    expect(budgetPeriodParts("2025-02-28", monthEnd)).toEqual({
+      start: { year: 2025, month: 2, day: 28 },
+      end: { year: 2025, month: 3, day: 30 },
+    });
+    expect(budgetPeriodParts("2025-02-27", monthEnd)).toBeNull();
   });
 
   it("converts Johannesburg budget bounds to the expected UTC report window", () => {
-    const period = budgetPeriodParts("2026-08");
+    const period = budgetPeriodParts("2026-07-25");
     expect(period).not.toBeNull();
     expect(
       zonedCalendarDateBoundaryToDate(period!.start, "start", "Africa/Johannesburg").toISOString(),

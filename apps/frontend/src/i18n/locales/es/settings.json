@@ -977,7 +977,7 @@
     "section_sources": "Fuentes",
     "section_sources_meta": "Qué cuentas alimentan el control",
     "section_budgets": "Presupuestos",
-    "section_budgets_meta": "Plan mensual predeterminado y comportamiento del traspaso",
+    "section_budgets_meta": "Ciclo recurrente y plan por ciclo",
     "section_taxonomy": "Taxonomía",
     "section_taxonomy_meta": "Cómo se clasifican las transacciones",
     "section_automation": "Automatización",
@@ -1025,14 +1025,27 @@
       "stop_tracking_aria": "Dejar de controlar {{name}}",
       "mixed_warning": "Los pagos de tarjeta de crédito desde cuentas de efectivo controladas deben vincularse como transferencias. Los pagos sin vincular pueden hacer que tanto el cargo de la tarjeta como el pago en efectivo cuenten como gasto."
     },
+    "budget_cycle": {
+      "title": "Ciclo presupuestario",
+      "description": "Elige con qué frecuencia se reinicia el presupuesto y la fecha de inicio desde la que se repiten todos los periodos.",
+      "frequency": "Frecuencia",
+      "anchor_date": "Comienza el",
+      "weekly": "Cada semana",
+      "biweekly": "Cada dos semanas",
+      "monthly": "Cada mes",
+      "current_period": "Periodo actual",
+      "history_note": "Cambiar el ciclo redistribuye los datos reales del historial presupuestario. Los importes predeterminados se aplican a cada ciclo. Elimina las excepciones específicas del ciclo antes de cambiar este ajuste.",
+      "save": "Guardar ciclo",
+      "saving": "Guardando…"
+    },
     "budget_overview": {
-      "title": "Plan mensual predeterminado",
-      "empty_description": "Define grupos y objetivos predeterminados para usarlos como base cada mes.",
+      "title": "Plan de ciclo predeterminado",
+      "empty_description": "Define grupos y objetivos predeterminados para usarlos como base en cada ciclo.",
       "setup_cta": "Configurar presupuesto",
       "open_aria": "Abrir la configuración del presupuesto",
-      "description": "Objetivos base por grupo que se usan cada mes hasta que los cambies.",
+      "description": "Objetivos base por grupo que se usan en cada ciclo hasta que los cambies.",
       "planned_spending": "Gasto previsto",
-      "planned_vs_income": "Gasto previsto / Ingresos mensuales",
+      "planned_vs_income": "Gasto previsto / Ingresos del ciclo",
       "pct_of_income": "{{pct}}% de los ingresos",
       "open": "Abrir plan"
     },
@@ -1094,8 +1107,8 @@
       "more": "+{{count}} más"
     },
     "setup": {
-      "title": "Plan de presupuesto mensual predeterminado",
-      "description": "Define grupos, objetivos mensuales predeterminados y el comportamiento del traspaso. Se usa como base para cada mes."
+      "title": "Plan de presupuesto predeterminado por ciclo",
+      "description": "Define grupos, objetivos predeterminados por ciclo y el comportamiento del traspaso. Se usa como base en cada ciclo."
     },
     "categories": {
       "heading": "Categorías",

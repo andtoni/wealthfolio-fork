@@ -979,7 +979,7 @@
     "section_sources": "Sources",
     "section_sources_meta": "Quels comptes alimentent le suivi",
     "section_budgets": "Budgets",
-    "section_budgets_meta": "Plan mensuel par défaut et comportement de report",
+    "section_budgets_meta": "Cycle récurrent et plan par cycle",
     "section_taxonomy": "Taxonomie",
     "section_taxonomy_meta": "Comment les transactions sont classées",
     "section_automation": "Automatisation",
@@ -1027,14 +1027,27 @@
       "stop_tracking_aria": "Arrêter de suivre {{name}}",
       "mixed_warning": "Les paiements par carte de crédit depuis les comptes de trésorerie suivis doivent être liés comme des virements. Les paiements non liés peuvent faire compter à la fois la dépense de la carte et le paiement en trésorerie."
     },
+    "budget_cycle": {
+      "title": "Cycle budgétaire",
+      "description": "Choisissez la fréquence de réinitialisation du budget et la date de départ à partir de laquelle toutes les périodes se répètent.",
+      "frequency": "Fréquence",
+      "anchor_date": "À partir du",
+      "weekly": "Chaque semaine",
+      "biweekly": "Toutes les deux semaines",
+      "monthly": "Chaque mois",
+      "current_period": "Période actuelle",
+      "history_note": "La modification du cycle redistribue les données réelles dans l’historique du budget. Les montants par défaut s’appliquent à chaque cycle. Supprimez les ajustements propres au cycle avant de modifier ce paramètre.",
+      "save": "Enregistrer le cycle",
+      "saving": "Enregistrement…"
+    },
     "budget_overview": {
-      "title": "Plan mensuel par défaut",
-      "empty_description": "Définissez des groupes et des objectifs par défaut à utiliser comme référence chaque mois.",
+      "title": "Plan de cycle par défaut",
+      "empty_description": "Définissez des groupes et des objectifs par défaut à utiliser comme référence à chaque cycle.",
       "setup_cta": "Configurer le budget",
       "open_aria": "Ouvrir la configuration du budget",
-      "description": "Objectifs de groupe de référence utilisés chaque mois jusqu’à modification.",
+      "description": "Objectifs de groupe de référence utilisés à chaque cycle jusqu’à modification.",
       "planned_spending": "Dépenses prévues",
-      "planned_vs_income": "Dépenses prévues / Revenu mensuel",
+      "planned_vs_income": "Dépenses prévues / Revenu du cycle",
       "pct_of_income": "{{pct}} % du revenu",
       "open": "Ouvrir le plan"
     },
@@ -1096,8 +1109,8 @@
       "more": "+{{count}} de plus"
     },
     "setup": {
-      "title": "Plan budgétaire mensuel par défaut",
-      "description": "Définissez des groupes, des objectifs mensuels par défaut et le comportement de report. Utilisé comme référence chaque mois."
+      "title": "Plan budgétaire par défaut par cycle",
+      "description": "Définissez des groupes, des objectifs par défaut par cycle et le comportement de report. Utilisé comme référence à chaque cycle."
     },
     "categories": {
       "heading": "Catégories",

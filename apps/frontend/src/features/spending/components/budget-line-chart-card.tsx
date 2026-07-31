@@ -1,9 +1,4 @@
-import {
-  useMemo,
-  useRef,
-  type MouseEvent as ReactMouseEvent,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
@@ -18,9 +13,9 @@ import {
   budgetPeriodKeyForDate,
   budgetPeriodLabel,
   budgetPeriodParts,
-  compactMonthLabel,
 } from "../lib/month-period";
 import { calendarDaysBetweenInclusive } from "../lib/timezone";
+import type { BudgetCycleSettings } from "../types";
 import type { BudgetCategoryRow } from "../types/budget";
 import type { DayBucket } from "../types/report";
 
@@ -36,72 +31,6 @@ interface BudgetToday {
 }
 
 const MIN_HISTORICAL_PACE_MONTHS = 2;
-
-function useHorizontalDragScroll() {
-  const drag = useRef<{
-    pointerId: number;
-    startX: number;
-    startY: number;
-    scrollLeft: number;
-    dragging: boolean;
-  } | null>(null);
-  const blockNextClick = useRef(false);
-
-  const clear = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const state = drag.current;
-    if (!state || state.pointerId !== event.pointerId) return;
-    if (state.dragging) {
-      blockNextClick.current = true;
-      window.setTimeout(() => {
-        blockNextClick.current = false;
-      }, 0);
-    }
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    drag.current = null;
-  };
-
-  return {
-    onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (!event.isPrimary || event.pointerType === "mouse") return;
-      drag.current = {
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startY: event.clientY,
-        scrollLeft: event.currentTarget.scrollLeft,
-        dragging: false,
-      };
-      event.currentTarget.setPointerCapture(event.pointerId);
-    },
-    onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
-      const state = drag.current;
-      if (!state || state.pointerId !== event.pointerId) return;
-      const deltaX = event.clientX - state.startX;
-      const deltaY = event.clientY - state.startY;
-      if (!state.dragging) {
-        if (Math.abs(deltaX) < 6 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
-        state.dragging = true;
-      }
-      event.preventDefault();
-      event.currentTarget.scrollLeft = state.scrollLeft - deltaX;
-    },
-    onPointerUp: clear,
-    onPointerCancel: clear,
-    onClickCapture: (event: ReactMouseEvent<HTMLDivElement>) => {
-      if (!blockNextClick.current) return;
-      blockNextClick.current = false;
-      event.preventDefault();
-      event.stopPropagation();
-    },
-  };
-}
-
-function parseMonthKey(value: string | null | undefined): { year: number; month: number } | null {
-  if (!value || !/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) return null;
-  const [year, month] = value.split("-").map(Number);
-  return { year, month };
-}
 
 const STATUS_ACCENTS: Record<
   Status,
@@ -138,6 +67,7 @@ const STATUS_ACCENTS: Record<
 
 export function BudgetLineChartCard({
   monthKey,
+  cycle,
   today,
   isCurrentMonth,
   onPreviousMonth,
@@ -155,6 +85,7 @@ export function BudgetLineChartCard({
   historicalByDay,
 }: {
   monthKey: string;
+  cycle: BudgetCycleSettings;
   today: BudgetToday;
   isCurrentMonth: boolean;
   onPreviousMonth: () => void;
@@ -172,18 +103,13 @@ export function BudgetLineChartCard({
   historicalByDay: DayBucket[];
 }) {
   const { t } = useTranslation();
-  const ringScrollHandlers = useHorizontalDragScroll();
   // All hooks must run unconditionally — the `target <= 0` early return below
   // sits between hooks otherwise, which trips "Rendered more hooks than during
   // the previous render" when a target is added or cleared.
   const monthMeta = useMemo(() => {
-    const period = budgetPeriodParts(monthKey);
-    const fallback = parseMonthKey(monthKey) ?? today;
-    const start = period?.start ?? { ...fallback, day: 1 };
-    const end = period?.end ?? {
-      ...fallback,
-      day: new Date(fallback.year, fallback.month, 0).getDate(),
-    };
+    const period = budgetPeriodParts(monthKey, cycle);
+    const start = period?.start ?? today;
+    const end = period?.end ?? today;
     const daysInPeriod = calendarDaysBetweenInclusive(start, end);
     const todayIndex = calendarDaysBetweenInclusive(start, today);
     const dayOfPeriod = isCurrentMonth
@@ -193,18 +119,18 @@ export function BudgetLineChartCard({
       dayOfPeriod,
       daysInPeriod,
       daysRemaining: isCurrentMonth ? Math.max(0, daysInPeriod - dayOfPeriod) : 0,
-      monthLabel: budgetPeriodLabel(monthKey, "short").toUpperCase(),
-      shortLabel: compactMonthLabel(monthKey).toUpperCase(),
+      monthLabel: budgetPeriodLabel(monthKey, "short", undefined, cycle).toUpperCase(),
+      shortLabel: formatCycleEndpoint(start).toUpperCase(),
       startLabel: formatCycleEndpoint(start),
       endLabel: formatCycleEndpoint(end),
     };
-  }, [monthKey, isCurrentMonth, today]);
+  }, [monthKey, cycle, isCurrentMonth, today]);
   const { dayOfPeriod, daysInPeriod, daysRemaining, monthLabel } = monthMeta;
 
   const cumulative = useMemo(() => {
     const byDay = new Map<number, number>();
     for (const bucket of monthByDay) {
-      const day = budgetPeriodDayIndex(bucket.date, monthKey);
+      const day = budgetPeriodDayIndex(bucket.date, monthKey, cycle);
       if (day !== null) byDay.set(day, (byDay.get(day) ?? 0) + bucket.outflow);
     }
     let running = 0;
@@ -214,7 +140,7 @@ export function BudgetLineChartCard({
       out.push({ day, value: running });
     }
     return out;
-  }, [monthByDay, monthKey, dayOfPeriod]);
+  }, [monthByDay, monthKey, cycle, dayOfPeriod]);
 
   const rings = useMemo(() => {
     const spentByTop = new Map<string, number>();
@@ -268,8 +194,8 @@ export function BudgetLineChartCard({
   }, [cumulative, daysInPeriod, innerW, innerH, padL, padT, yMax]);
 
   const historicalPace = useMemo(
-    () => buildHistoricalPaceCurve(historicalByDay, daysInPeriod),
-    [historicalByDay, daysInPeriod],
+    () => buildHistoricalPaceCurve(historicalByDay, daysInPeriod, cycle),
+    [historicalByDay, daysInPeriod, cycle],
   );
 
   const targetPacePath = useMemo(() => {
@@ -308,14 +234,14 @@ export function BudgetLineChartCard({
   if (target <= 0) {
     return (
       <DashboardCard
-        title={t("spending:budgetChart.monthlyBudget")}
+        title={t("spending:budgetChart.cycleBudget")}
         subtitle={monthMeta.monthLabel}
         action={headerAction}
         className="text-center"
       >
         <p className="text-muted-foreground text-sm">{t("spending:budgetChart.noTarget")}</p>
         <Link
-          to={`/spending/budget?month=${monthKey}`}
+          to={`/spending/budget?period=${monthKey}`}
           className="text-foreground mt-2 inline-flex text-xs underline-offset-4 hover:underline"
         >
           {t("spending:budgetChart.setBudget")}
@@ -383,7 +309,7 @@ export function BudgetLineChartCard({
 
   return (
     <DashboardCard
-      title={t("spending:budgetChart.monthlyBudget")}
+      title={t("spending:budgetChart.cycleBudget")}
       subtitle={monthLabel}
       action={headerAction}
     >
@@ -415,7 +341,7 @@ export function BudgetLineChartCard({
               <PrivacyAmount value={remaining} currency={currency} />{" "}
               {t("spending:budgetChart.leftTodayOf")}{" "}
               <PrivacyAmount value={target} currency={currency} />{" "}
-              {t("spending:budgetChart.budgetedThisMonth")}
+              {t("spending:budgetChart.budgetedThisCycle")}
             </div>
           </>
         ) : !isCurrentMonth ? (
@@ -454,7 +380,7 @@ export function BudgetLineChartCard({
             <div className="text-muted-foreground/80 text-xs tabular-nums">
               {t("spending:budgetChart.ofLower")}{" "}
               <PrivacyAmount value={target} currency={currency} />{" "}
-              {t("spending:budgetChart.budgetedThisMonth")}
+              {t("spending:budgetChart.budgetedThisCycle")}
             </div>
           </>
         )}
@@ -609,16 +535,7 @@ export function BudgetLineChartCard({
             </Link>
           </div>
         ) : (
-          <div
-            data-no-swipe-drag
-            {...ringScrollHandlers}
-            className="-mx-1 flex min-w-0 cursor-grab touch-pan-y gap-3 overflow-x-auto overscroll-x-contain px-1 pb-1 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] active:cursor-grabbing [&::-webkit-scrollbar]:hidden"
-            style={{
-              maskImage: "linear-gradient(to right, black calc(100% - 32px), transparent 100%)",
-              WebkitMaskImage:
-                "linear-gradient(to right, black calc(100% - 32px), transparent 100%)",
-            }}
-          >
+          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(4rem,1fr))] gap-x-2 gap-y-3">
             {rings.map((r) => (
               <BudgetRing key={r.id} ring={r} currency={currency} activityRange={activityRange} />
             ))}
@@ -632,6 +549,7 @@ export function BudgetLineChartCard({
 function buildHistoricalPaceCurve(
   byDay: DayBucket[],
   currentDaysInPeriod: number,
+  cycle: BudgetCycleSettings,
 ): { points: PacePoint[]; pctByDay: number[] } | null {
   const periods = new Map<
     string,
@@ -641,9 +559,9 @@ function buildHistoricalPaceCurve(
   for (const bucket of byDay) {
     const parsed = parseDayBucketDate(bucket.date);
     if (!parsed) continue;
-    const periodKey = budgetPeriodKeyForDate(parsed);
-    const period = budgetPeriodParts(periodKey);
-    const day = budgetPeriodDayIndex(bucket.date, periodKey);
+    const periodKey = budgetPeriodKeyForDate(parsed, cycle);
+    const period = budgetPeriodParts(periodKey, cycle);
+    const day = budgetPeriodDayIndex(bucket.date, periodKey, cycle);
     if (!period || day === null) continue;
     const outflow = Number.isFinite(bucket.outflow) ? bucket.outflow : 0;
     const row = periods.get(periodKey) ?? {
@@ -748,7 +666,7 @@ function BudgetCardHeaderActions({
           type="button"
           onClick={onPreviousMonth}
           className="hover:bg-background flex h-6 w-6 items-center justify-center rounded-full transition-colors"
-          aria-label={t("spending:budgetChart.previousBudgetMonth")}
+          aria-label={t("spending:budgetChart.previousBudgetPeriod")}
         >
           <Icons.ChevronLeft className="h-3.5 w-3.5" />
         </button>
@@ -760,7 +678,7 @@ function BudgetCardHeaderActions({
           onClick={onNextMonth}
           disabled={!canGoNextMonth}
           className="hover:bg-background disabled:text-muted-foreground/40 flex h-6 w-6 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed"
-          aria-label={t("spending:budgetChart.nextBudgetMonth")}
+          aria-label={t("spending:budgetChart.nextBudgetPeriod")}
         >
           <Icons.ChevronRight className="h-3.5 w-3.5" />
         </button>
@@ -774,7 +692,7 @@ const BudgetManageLink = ({ monthKey }: { monthKey: string }) => {
   const { t } = useTranslation();
   return (
     <Link
-      to={`/spending/budget?month=${monthKey}`}
+      to={`/spending/budget?period=${monthKey}`}
       className="text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline"
     >
       {t("spending:budgetChart.manage")}
@@ -818,7 +736,7 @@ function BudgetRing({
       to={`/activities?tab=spending&category=${encodeURIComponent(ring.categoryId)}&from=${
         activityRange.from
       }&to=${activityRange.to}`}
-      className="hover:bg-muted/40 flex w-16 shrink-0 flex-col items-center gap-1 rounded-md px-1 py-1 transition-colors"
+      className="hover:bg-muted/40 flex min-w-0 flex-col items-center gap-1 rounded-md px-1 py-1 transition-colors"
       title={`${ring.name}: ${ring.spent.toFixed(2)} / ${ring.target.toFixed(2)}`}
     >
       <div className="relative" style={{ width: size, height: size }}>
@@ -850,7 +768,7 @@ function BudgetRing({
           <CategoryIcon icon={ring.icon} fallback={ring.name} className="h-5 w-5" />
         </div>
       </div>
-      <div className="text-foreground text-xs font-semibold tabular-nums">
+      <div className="text-foreground max-w-full truncate text-xs font-semibold tabular-nums">
         {isBalanceHidden ? "••••" : formatCompactAmount(displayAmount, currency)}
       </div>
       <div

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
+use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use std::str::FromStr;
 use uuid::Uuid;
@@ -16,6 +16,10 @@ use super::model::{
     BudgetTarget, BudgetTargetType, BudgetTotals, NewBudgetGroup, NewBudgetGroupAssignment,
     NewBudgetRolloverSetting, NewBudgetTarget, UpdateBudgetGroup,
 };
+use super::period::{
+    current_period_key, local_period_bounds_utc, period_for_key, period_key_for_datetime,
+    period_keys_between,
+};
 use super::traits::BudgetRepositoryTrait;
 use crate::activity_allocations::{
     allocations_for_taxonomy, group_assignments, group_splits, SplitsByActivity,
@@ -27,7 +31,7 @@ use crate::aggregate_eligibility::{
     filter_eligible_activity_rows, resolve_eligible_spending_accounts,
 };
 use crate::error::SpendingError;
-use crate::settings::SpendingSettingsService;
+use crate::settings::{BudgetCycleSettings, SpendingSettingsService};
 
 const SPENDING_TAXONOMY: &str = "spending_categories";
 const INCOME_TAXONOMY: &str = "income_sources";
@@ -235,10 +239,22 @@ impl BudgetService {
         currency: &str,
         timezone: &str,
     ) -> Result<BudgetSnapshot> {
-        let period_key = normalize_period_key(period_key, timezone)?;
         let settings = self.spending_settings.get().await?;
+        let cycle = settings.budget_cycle.clone();
+        let period_key = normalize_period_key(period_key, timezone, &cycle)?;
+        let period = (period_key != DEFAULT_PERIOD_KEY)
+            .then(|| period_for_key(&period_key, &cycle))
+            .transpose()?;
+        let period_start = period.as_ref().map(|value| value.start.to_string());
+        let period_end = period.as_ref().map(|value| value.end.to_string());
         if !settings.enabled {
-            return Ok(BudgetSnapshot::empty(period_key, currency.to_string()));
+            return Ok(BudgetSnapshot::empty(
+                period_key,
+                currency.to_string(),
+                cycle,
+                period_start,
+                period_end,
+            ));
         }
 
         self.ensure_system_groups().await?;
@@ -269,13 +285,14 @@ impl BudgetService {
                 .map(|s| s.start_month.clone())
                 .min()
                 .unwrap_or_else(|| period_key.clone());
-            self.actuals_by_month(
+            self.actuals_by_period(
                 &earliest_rollover_month,
                 &period_key,
                 &spending_category_meta,
                 &income_meta,
                 currency,
                 timezone,
+                &cycle,
             )
             .await?
         } else {
@@ -325,9 +342,10 @@ impl BudgetService {
                 .then(|| rollover_index.category(SPENDING_TAXONOMY, &category.id))
                 .flatten();
             let (rollover_in, rollover_out, remaining) = if let Some(setting) = rollover {
-                compute_rollover_for_month(
+                compute_rollover_for_period(
                     setting,
                     &period_key,
+                    &cycle,
                     |month| {
                         target_index.effective_category_decimal(
                             month,
@@ -344,7 +362,7 @@ impl BudgetService {
                             .copied()
                             .unwrap_or(Decimal::ZERO)
                     },
-                )
+                )?
             } else {
                 (Decimal::ZERO, Decimal::ZERO, target - actual)
             };
@@ -421,9 +439,10 @@ impl BudgetService {
                 .then(|| rollover_index.group(&group.id))
                 .flatten();
             let (rollover_in, rollover_out, remaining) = if let Some(setting) = rollover {
-                compute_rollover_for_month(
+                compute_rollover_for_period(
                     setting,
                     &period_key,
+                    &cycle,
                     |month| {
                         let child_total = category_ids
                             .iter()
@@ -451,7 +470,7 @@ impl BudgetService {
                             })
                             .sum::<Decimal>()
                     },
-                )
+                )?
             } else {
                 (
                     Decimal::ZERO,
@@ -541,13 +560,7 @@ impl BudgetService {
                     .filter(|c| c.overspent)
                     .count(),
         };
-        let fx_as_of = if is_month_view {
-            budget_period_end_date(&period_key)
-                .ok()
-                .map(|date| date.to_string())
-        } else {
-            None
-        };
+        let fx_as_of = period_end.clone();
 
         Ok(BudgetSnapshot {
             state: BudgetSnapshotState {
@@ -559,6 +572,9 @@ impl BudgetService {
             computed: BudgetSnapshotComputed {
                 currency: currency.to_string(),
                 period_key,
+                period_start,
+                period_end,
+                budget_cycle: cycle,
                 fx_as_of,
                 group_rows,
                 ungrouped_rows: vec![],
@@ -711,7 +727,8 @@ impl BudgetService {
         timezone: &str,
     ) -> Result<BudgetSnapshot> {
         self.reject_finance_v1_profile_changes().await?;
-        validate_period_key(&target.period_key)?;
+        let cycle = self.spending_settings.get().await?.budget_cycle;
+        validate_period_key(&target.period_key, &cycle)?;
         validate_budget_target(&target)?;
         self.repo.upsert_target(target).await?;
         self.get(period_key, currency, timezone).await
@@ -737,7 +754,8 @@ impl BudgetService {
         timezone: &str,
     ) -> Result<BudgetSnapshot> {
         self.reject_finance_v1_profile_changes().await?;
-        validate_month_key(&setting.start_month)?;
+        let cycle = self.spending_settings.get().await?.budget_cycle;
+        period_for_key(&setting.start_month, &cycle)?;
         validate_rollover_setting(&setting)?;
         match setting.target_type {
             BudgetRolloverTargetType::Group if setting.enabled => {
@@ -799,10 +817,13 @@ impl BudgetService {
         timezone: &str,
     ) -> Result<BudgetSnapshot> {
         self.reject_finance_v1_profile_changes().await?;
-        validate_period_key(source_period_key)?;
-        validate_month_key(target_period_key)?;
+        let cycle = self.spending_settings.get().await?.budget_cycle;
+        validate_period_key(source_period_key, &cycle)?;
+        period_for_key(target_period_key, &cycle)?;
         if source_period_key == target_period_key {
-            return Err(invalid_budget_input("Source and target months must differ"));
+            return Err(invalid_budget_input(
+                "Source and target periods must differ",
+            ));
         }
         self.repo
             .copy_period_targets(source_period_key, target_period_key, overwrite)
@@ -919,10 +940,9 @@ impl BudgetService {
     }
 
     /// `currency` is the FX target — every counted activity is converted at
-    /// `end_period`'s cycle end (the 24th of its ending month).
-    /// `timezone` (IANA name, may be empty) drives cycle bucketing. A period
-    /// key denotes its ending month: `2026-05` spans local Apr 25 through May 24.
-    async fn actuals_by_month(
+    /// the selected recurring period's end. `timezone` (IANA name, may be
+    /// empty) drives local-date bucketing from the configured anchor.
+    async fn actuals_by_period(
         &self,
         start_period: &str,
         end_period: &str,
@@ -930,23 +950,24 @@ impl BudgetService {
         income_meta: &HashMap<String, Category>,
         currency: &str,
         timezone: &str,
+        cycle: &BudgetCycleSettings,
     ) -> Result<HashMap<String, MonthActuals>> {
         let settings = self.spending_settings.get().await?;
         if !settings.enabled || settings.account_ids.is_empty() {
             return Ok(HashMap::new());
         }
-        let (_, end) = local_budget_period_bounds_utc(end_period, timezone)?;
+        let (_, end) = local_period_bounds_utc(end_period, timezone, cycle)?;
         let eligible_accounts = resolve_eligible_spending_accounts(
             self.account_repo.as_ref(),
             self.aggregate_eligibility_service.as_ref(),
             &settings.account_ids,
-            budget_period_end_date(end_period)?,
+            period_for_key(end_period, cycle)?.end,
         )
         .await?;
         if eligible_accounts.ids.is_empty() {
             return Ok(HashMap::new());
         }
-        let (start, _) = local_budget_period_bounds_utc(start_period, timezone)?;
+        let (start, _) = local_period_bounds_utc(start_period, timezone, cycle)?;
         let activities = self
             .activity_repo
             .get_activities_by_account_ids_in_date_range(&eligible_accounts.ids, start, end)
@@ -970,7 +991,7 @@ impl BudgetService {
             group_splits(self.split_repo.list_for_activities(&activity_ids).await?);
 
         // FX: one as_of date for the entire window (the latest cycle's end).
-        let fx_as_of = budget_period_end_date(end_period)?;
+        let fx_as_of = period_for_key(end_period, cycle)?.end;
         let fx = self.fx_service.as_ref();
         let mut actuals: HashMap<String, MonthActuals> = HashMap::new();
         for activity in activities {
@@ -984,8 +1005,8 @@ impl BudgetService {
             if spending_native == Decimal::ZERO && income_native == Decimal::ZERO {
                 continue;
             }
-            let month = period_key_for_date_in_tz(activity.activity_date, timezone);
-            let month_actuals = actuals.entry(month).or_default();
+            let period_key = period_key_for_datetime(activity.activity_date, timezone, cycle)?;
+            let month_actuals = actuals.entry(period_key).or_default();
             add_allocated_actuals(
                 month_actuals,
                 &activity.id,
@@ -1161,33 +1182,34 @@ impl<'a> RolloverIndex<'a> {
     }
 }
 
-fn compute_rollover_for_month(
+fn compute_rollover_for_period(
     setting: &BudgetRolloverSetting,
     period_key: &str,
-    target_for_month: impl Fn(&str) -> Decimal,
-    actual_for_month: impl Fn(&str) -> Decimal,
-) -> (Decimal, Decimal, Decimal) {
+    cycle: &BudgetCycleSettings,
+    target_for_period: impl Fn(&str) -> Decimal,
+    actual_for_period: impl Fn(&str) -> Decimal,
+) -> Result<(Decimal, Decimal, Decimal)> {
     if setting.start_month.as_str() > period_key {
-        let target = target_for_month(period_key);
-        let actual = actual_for_month(period_key);
-        return (Decimal::ZERO, Decimal::ZERO, target - actual);
+        let target = target_for_period(period_key);
+        let actual = actual_for_period(period_key);
+        return Ok((Decimal::ZERO, Decimal::ZERO, target - actual));
     }
     let mut carry = parse_amount(&setting.starting_balance);
-    for month in month_keys_between(&setting.start_month, period_key) {
+    for period in period_keys_between(&setting.start_month, period_key, cycle)? {
         let rollover_in = carry;
-        let target = target_for_month(&month);
-        let actual = actual_for_month(&month);
+        let target = target_for_period(&period);
+        let actual = actual_for_period(&period);
         let rollover_out = rollover_in + target - actual;
-        if month == period_key {
-            return (rollover_in, rollover_out, rollover_in + target - actual);
+        if period == period_key {
+            return Ok((rollover_in, rollover_out, rollover_in + target - actual));
         }
         carry = rollover_out;
     }
-    (
+    Ok((
         Decimal::ZERO,
         Decimal::ZERO,
-        target_for_month(period_key) - actual_for_month(period_key),
-    )
+        target_for_period(period_key) - actual_for_period(period_key),
+    ))
 }
 
 fn default_group_inputs() -> Vec<NewBudgetGroup> {
@@ -1304,26 +1326,26 @@ fn validate_decimal_amount(value: &str, field_name: &str) -> Result<()> {
         .map_err(|_| invalid_budget_input(&format!("Invalid {field_name} amount")))
 }
 
-fn normalize_period_key(period_key: Option<String>, timezone: &str) -> Result<String> {
+fn normalize_period_key(
+    period_key: Option<String>,
+    timezone: &str,
+    cycle: &BudgetCycleSettings,
+) -> Result<String> {
     match period_key {
         Some(key) if key == DEFAULT_PERIOD_KEY => Ok(key),
         Some(key) => {
-            validate_month_key(&key)?;
+            period_for_key(&key, cycle)?;
             Ok(key)
         }
-        None => Ok(current_period_key(Utc::now(), timezone)),
+        None => current_period_key(timezone, cycle),
     }
 }
 
-fn current_period_key(now: DateTime<Utc>, timezone: &str) -> String {
-    period_key_for_date_in_tz(now, timezone)
-}
-
-fn validate_period_key(period_key: &str) -> Result<()> {
+fn validate_period_key(period_key: &str, cycle: &BudgetCycleSettings) -> Result<()> {
     if period_key == DEFAULT_PERIOD_KEY {
         Ok(())
     } else {
-        validate_month_key(period_key)
+        period_for_key(period_key, cycle).map(|_| ())
     }
 }
 
@@ -1392,37 +1414,6 @@ fn invalid_budget_input(message: &str) -> anyhow::Error {
     .into()
 }
 
-fn validate_month_key(period_key: &str) -> Result<()> {
-    if period_key.len() != 7 {
-        return Err(invalid_budget_input("Invalid budget period key"));
-    }
-    if &period_key[4..5] != "-" {
-        return Err(invalid_budget_input("Invalid budget period key"));
-    }
-    let year = period_key[0..4]
-        .parse::<i32>()
-        .map_err(|_| invalid_budget_input("Invalid budget period key"))?;
-    let month = period_key[5..7]
-        .parse::<u32>()
-        .map_err(|_| invalid_budget_input("Invalid budget period key"))?;
-    if !(1..=12).contains(&month) {
-        return Err(invalid_budget_input("Invalid budget period key"));
-    }
-    NaiveDate::from_ymd_opt(year, month, 1)
-        .ok_or_else(|| invalid_budget_input("Invalid budget period key"))?;
-    Ok(())
-}
-
-fn period_key_for_date_in_tz(date: DateTime<Utc>, timezone: &str) -> String {
-    let d = wealthfolio_core::utils::time_utils::activity_date_in_user_timezone(date, timezone);
-    let (year, month) = if d.day() >= 25 {
-        next_month(d.year(), d.month())
-    } else {
-        (d.year(), d.month())
-    };
-    format!("{year:04}-{month:02}")
-}
-
 /// Convert a native amount to the budget's target currency at `as_of`.
 /// Mirrors `insight::service::fx_to_target` and `analytics::service::fx_to_target`
 /// — same convention (one rate per report, snapshot-date style) so all three
@@ -1454,85 +1445,12 @@ fn fx_to_target(
     }
 }
 
-fn next_month(year: i32, month: u32) -> (i32, u32) {
-    if month == 12 {
-        (year + 1, 1)
-    } else {
-        (year, month + 1)
-    }
-}
-
-fn previous_month(year: i32, month: u32) -> (i32, u32) {
-    if month == 1 {
-        (year - 1, 12)
-    } else {
-        (year, month - 1)
-    }
-}
-
-fn budget_period_end_date(period_key: &str) -> Result<NaiveDate> {
-    let (year, month) = parse_month(period_key)?;
-    NaiveDate::from_ymd_opt(year, month, 24)
-        .ok_or_else(|| invalid_budget_input("Invalid budget period key"))
-}
-
-fn local_budget_period_bounds_utc(
-    period_key: &str,
-    timezone: &str,
-) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
-    let (end_year, end_month) = parse_month(period_key)?;
-    let (start_year, start_month) = previous_month(end_year, end_month);
-    let tz = wealthfolio_core::utils::time_utils::parse_user_timezone_or_default(timezone);
-    let start = tz
-        .with_ymd_and_hms(start_year, start_month, 25, 0, 0, 0)
-        .earliest()
-        .ok_or_else(|| invalid_budget_input("Invalid budget period key"))?
-        .with_timezone(&Utc);
-    let next_start = tz
-        .with_ymd_and_hms(end_year, end_month, 25, 0, 0, 0)
-        .earliest()
-        .ok_or_else(|| invalid_budget_input("Invalid budget period key"))?
-        .with_timezone(&Utc);
-    Ok((start, next_start - chrono::Duration::nanoseconds(1)))
-}
-
-fn month_keys_between(start: &str, end: &str) -> Vec<String> {
-    let Ok((mut year, mut month)) = parse_month(start) else {
-        return Vec::new();
-    };
-    let Ok((end_year, end_month)) = parse_month(end) else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    while year < end_year || (year == end_year && month <= end_month) {
-        out.push(format!("{:04}-{:02}", year, month));
-        if month == 12 {
-            year += 1;
-            month = 1;
-        } else {
-            month += 1;
-        }
-    }
-    out
-}
-
-fn parse_month(period_key: &str) -> Result<(i32, u32)> {
-    validate_month_key(period_key)?;
-    let year = period_key[0..4]
-        .parse()
-        .map_err(|_| invalid_budget_input("Invalid budget period key"))?;
-    let month = period_key[5..7]
-        .parse()
-        .map_err(|_| invalid_budget_input("Invalid budget period key"))?;
-    Ok((year, month))
-}
-
 #[cfg(test)]
 mod tests {
     #![allow(clippy::type_complexity)]
 
     use async_trait::async_trait;
-    use chrono::{NaiveDate, NaiveDateTime};
+    use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
     use serde_json::Value;
     use std::sync::Mutex;
     use wealthfolio_core::accounts::{
@@ -1560,7 +1478,8 @@ mod tests {
     use crate::activity_assignments::{ActivityTaxonomyAssignment, NewActivityTaxonomyAssignment};
     use crate::activity_splits::{ActivitySplit, NewActivitySplit};
     use crate::settings::{
-        SpendingSettingsRepositoryTrait, SETTING_KEY_ACCOUNT_IDS, SETTING_KEY_ENABLED,
+        BudgetCadence, SpendingSettingsRepositoryTrait, SETTING_KEY_ACCOUNT_IDS,
+        SETTING_KEY_ENABLED,
     };
 
     fn ts() -> NaiveDateTime {
@@ -1802,6 +1721,10 @@ mod tests {
 
         async fn set_settings(&self, _: Vec<(String, String)>) -> Result<()> {
             unimplemented!()
+        }
+
+        async fn has_concrete_budget_records(&self) -> Result<bool> {
+            Ok(false)
         }
     }
 
@@ -2713,11 +2636,19 @@ mod tests {
         let meta = category_meta(&[category(SPENDING_TAXONOMY, "cat_groceries", None)]);
         let actuals = fixture
             .service
-            .actuals_by_month("2026-05", "2026-05", &meta, &HashMap::new(), "USD", "UTC")
+            .actuals_by_period(
+                "2026-04-25",
+                "2026-04-25",
+                &meta,
+                &HashMap::new(),
+                "USD",
+                "UTC",
+                &BudgetCycleSettings::default(),
+            )
             .await
             .unwrap();
         assert_eq!(
-            actuals["2026-05"][&(SPENDING_TAXONOMY.into(), "cat_groceries".into())],
+            actuals["2026-04-25"][&(SPENDING_TAXONOMY.into(), "cat_groceries".into())],
             Decimal::new(40, 0)
         );
         assert_eq!(
@@ -2791,13 +2722,14 @@ mod tests {
         let spending_meta = category_meta(&[category(SPENDING_TAXONOMY, "cat_groceries", None)]);
         let actuals = fixture
             .service
-            .actuals_by_month(
-                "2026-05",
-                "2026-05",
+            .actuals_by_period(
+                "2026-04-25",
+                "2026-04-25",
                 &spending_meta,
                 &HashMap::new(),
                 "USD",
                 "UTC",
+                &BudgetCycleSettings::default(),
             )
             .await
             .unwrap();
@@ -2844,7 +2776,7 @@ mod tests {
         );
         assert_eq!(
             actuals
-                .get("2026-05")
+                .get("2026-04-25")
                 .and_then(|month| month
                     .get(&(SPENDING_TAXONOMY.to_string(), "cat_groceries".to_string()))),
             Some(&Decimal::new(40, 0))
@@ -2876,20 +2808,66 @@ mod tests {
 
         let actuals = fixture
             .service
-            .actuals_by_month(
-                "2026-05",
-                "2026-06",
+            .actuals_by_period(
+                "2026-03-25",
+                "2026-04-25",
                 &spending_meta,
                 &HashMap::new(),
                 "USD",
                 "America/Toronto",
+                &BudgetCycleSettings::default(),
             )
             .await
             .unwrap();
 
         let key = (SPENDING_TAXONOMY.to_string(), "cat_groceries".to_string());
-        assert_eq!(actuals["2026-05"][&key], Decimal::new(20, 0));
-        assert_eq!(actuals["2026-06"][&key], Decimal::new(10, 0));
+        assert_eq!(actuals["2026-03-25"][&key], Decimal::new(10, 0));
+        assert_eq!(actuals["2026-04-25"][&key], Decimal::new(20, 0));
+    }
+
+    #[tokio::test]
+    async fn budget_actuals_bucket_weekly_cycle_boundaries() {
+        let row_ids = ["week-start", "week-end", "next-week"];
+        let mut activities = row_ids
+            .iter()
+            .map(|id| activity(id, "eligible-card", "WITHDRAWAL", 10))
+            .collect::<Vec<_>>();
+        activities[0].activity_date = Utc.with_ymd_and_hms(2026, 1, 7, 0, 0, 0).unwrap();
+        activities[1].activity_date = Utc.with_ymd_and_hms(2026, 1, 13, 23, 59, 59).unwrap();
+        activities[2].activity_date = Utc.with_ymd_and_hms(2026, 1, 14, 0, 0, 0).unwrap();
+        let fixture = budget_fixture(
+            activities,
+            row_ids
+                .iter()
+                .map(|id| assignment(id, "cat_groceries"))
+                .collect(),
+            Vec::new(),
+            &["eligible-card"],
+            &row_ids,
+        );
+        let spending_meta = category_meta(&[category(SPENDING_TAXONOMY, "cat_groceries", None)]);
+        let cycle = BudgetCycleSettings {
+            cadence: BudgetCadence::Weekly,
+            anchor_date: "2026-01-07".to_string(),
+        };
+
+        let actuals = fixture
+            .service
+            .actuals_by_period(
+                "2026-01-07",
+                "2026-01-14",
+                &spending_meta,
+                &HashMap::new(),
+                "USD",
+                "UTC",
+                &cycle,
+            )
+            .await
+            .unwrap();
+
+        let key = (SPENDING_TAXONOMY.to_string(), "cat_groceries".to_string());
+        assert_eq!(actuals["2026-01-07"][&key], Decimal::new(20, 0));
+        assert_eq!(actuals["2026-01-14"][&key], Decimal::new(10, 0));
     }
 
     #[tokio::test]
@@ -2921,13 +2899,14 @@ mod tests {
         let spending_meta = category_meta(&[category(SPENDING_TAXONOMY, "cat_groceries", None)]);
         let actuals = fixture
             .service
-            .actuals_by_month(
-                "2026-05",
-                "2026-05",
+            .actuals_by_period(
+                "2026-04-25",
+                "2026-04-25",
                 &spending_meta,
                 &HashMap::new(),
                 "USD",
                 "UTC",
+                &BudgetCycleSettings::default(),
             )
             .await
             .unwrap();
@@ -2969,13 +2948,14 @@ mod tests {
         let spending_meta = category_meta(&[category(SPENDING_TAXONOMY, "cat_groceries", None)]);
         let err = fixture
             .service
-            .actuals_by_month(
-                "2026-05",
-                "2026-05",
+            .actuals_by_period(
+                "2026-04-25",
+                "2026-04-25",
                 &spending_meta,
                 &HashMap::new(),
                 "USD",
                 "UTC",
+                &BudgetCycleSettings::default(),
             )
             .await
             .unwrap_err();
@@ -3002,7 +2982,7 @@ mod tests {
             );
             let snapshot = fixture
                 .service
-                .get(Some("2026-05".to_string()), "USD", "UTC")
+                .get(Some("2026-04-25".to_string()), "USD", "UTC")
                 .await
                 .unwrap();
             assert_eq!(snapshot.computed.totals.spending_actual, 0.0, "{row_id}");
@@ -3022,7 +3002,7 @@ mod tests {
         *fixture.eligibility.account_error.lock().unwrap() = true;
         let err = fixture
             .service
-            .get(Some("2026-05".to_string()), "USD", "UTC")
+            .get(Some("2026-04-25".to_string()), "USD", "UTC")
             .await
             .unwrap_err();
         assert!(err.to_string().contains("account policy failed"));
@@ -3046,7 +3026,7 @@ mod tests {
             );
             let snapshot = fixture
                 .service
-                .get(Some("2026-05".to_string()), "USD", "UTC")
+                .get(Some("2026-04-25".to_string()), "USD", "UTC")
                 .await
                 .unwrap();
             assert_eq!(
@@ -3230,7 +3210,7 @@ mod tests {
             category_id: Some("cat_groceries".to_string()),
             group_id: None,
             enabled: true,
-            start_month: "2026-01".to_string(),
+            start_month: "2025-12-25".to_string(),
             starting_balance: "bad-balance".to_string(),
         };
 
@@ -3238,7 +3218,7 @@ mod tests {
     }
 
     #[test]
-    fn target_index_uses_sparse_month_overrides_over_defaults() {
+    fn target_index_uses_sparse_period_overrides_over_defaults() {
         let targets = vec![
             target(
                 DEFAULT_PERIOD_KEY,
@@ -3249,7 +3229,7 @@ mod tests {
                 "200",
             ),
             target(
-                "2026-03",
+                "2026-02-25",
                 BudgetTargetType::Category,
                 Some(SPENDING_TAXONOMY),
                 Some("cat_groceries"),
@@ -3268,35 +3248,37 @@ mod tests {
         let index = TargetIndex::new(&targets);
 
         assert_eq!(
-            index.effective_category_decimal("2026-03", SPENDING_TAXONOMY, "cat_groceries"),
+            index.effective_category_decimal("2026-02-25", SPENDING_TAXONOMY, "cat_groceries",),
             Decimal::new(300, 0)
         );
         assert_eq!(
-            index.effective_category_decimal("2026-04", SPENDING_TAXONOMY, "cat_groceries"),
+            index.effective_category_decimal("2026-03-25", SPENDING_TAXONOMY, "cat_groceries",),
             Decimal::new(200, 0)
         );
         assert_eq!(
-            index.effective_category_decimal("2026-04", SPENDING_TAXONOMY, "cat_travel"),
+            index.effective_category_decimal("2026-03-25", SPENDING_TAXONOMY, "cat_travel"),
             Decimal::ZERO
         );
         assert_eq!(
-            index.effective_group_buffer_decimal("2026-04", BUDGET_GROUP_NEEDS_ID),
+            index.effective_group_buffer_decimal("2026-03-25", BUDGET_GROUP_NEEDS_ID),
             Decimal::new(500, 0)
         );
         assert!(index.has_default_category(SPENDING_TAXONOMY, "cat_groceries"));
-        assert!(index.has_month_category("2026-03", SPENDING_TAXONOMY, "cat_groceries"));
+        assert!(index.has_month_category("2026-02-25", SPENDING_TAXONOMY, "cat_groceries"));
     }
 
     #[test]
-    fn rollover_ignores_months_before_future_start_month() {
-        let setting = rollover_setting("2026-06", "25");
+    fn rollover_ignores_periods_before_future_start() {
+        let setting = rollover_setting("2026-05-25", "25");
 
-        let (rollover_in, rollover_out, remaining) = compute_rollover_for_month(
+        let (rollover_in, rollover_out, remaining) = compute_rollover_for_period(
             &setting,
-            "2026-05",
+            "2026-04-25",
+            &BudgetCycleSettings::default(),
             |_| Decimal::new(100, 0),
             |_| Decimal::new(40, 0),
-        );
+        )
+        .unwrap();
 
         assert_eq!(rollover_in, Decimal::ZERO);
         assert_eq!(rollover_out, Decimal::ZERO);
@@ -3304,19 +3286,21 @@ mod tests {
     }
 
     #[test]
-    fn rollover_recomputes_multi_year_chain_from_start_month() {
-        let setting = rollover_setting("2025-01", "10");
+    fn rollover_recomputes_multi_year_cycle_chain() {
+        let setting = rollover_setting("2024-12-25", "10");
 
-        let (rollover_in, rollover_out, remaining) = compute_rollover_for_month(
+        let (rollover_in, rollover_out, remaining) = compute_rollover_for_period(
             &setting,
-            "2026-05",
+            "2026-04-25",
+            &BudgetCycleSettings::default(),
             |_| Decimal::new(100, 0),
-            |month| match month {
-                "2025-01" => Decimal::new(25, 0),
-                "2026-05" => Decimal::new(40, 0),
+            |period| match period {
+                "2024-12-25" => Decimal::new(25, 0),
+                "2026-04-25" => Decimal::new(40, 0),
                 _ => Decimal::ZERO,
             },
-        );
+        )
+        .unwrap();
 
         assert_eq!(rollover_in, Decimal::new(1585, 0));
         assert_eq!(rollover_out, Decimal::new(1645, 0));
@@ -3325,14 +3309,16 @@ mod tests {
 
     #[test]
     fn missing_target_with_spending_creates_negative_remaining() {
-        let setting = rollover_setting("2026-05", "0");
+        let setting = rollover_setting("2026-04-25", "0");
 
-        let (rollover_in, rollover_out, remaining) = compute_rollover_for_month(
+        let (rollover_in, rollover_out, remaining) = compute_rollover_for_period(
             &setting,
-            "2026-05",
+            "2026-04-25",
+            &BudgetCycleSettings::default(),
             |_| Decimal::ZERO,
             |_| Decimal::new(30, 0),
-        );
+        )
+        .unwrap();
 
         assert_eq!(rollover_in, Decimal::ZERO);
         assert_eq!(rollover_out, Decimal::new(-30, 0));
@@ -3340,15 +3326,17 @@ mod tests {
     }
 
     #[test]
-    fn refund_month_increases_remaining() {
-        let setting = rollover_setting("2026-05", "0");
+    fn refund_period_increases_remaining() {
+        let setting = rollover_setting("2026-04-25", "0");
 
-        let (rollover_in, rollover_out, remaining) = compute_rollover_for_month(
+        let (rollover_in, rollover_out, remaining) = compute_rollover_for_period(
             &setting,
-            "2026-05",
+            "2026-04-25",
+            &BudgetCycleSettings::default(),
             |_| Decimal::new(100, 0),
             |_| Decimal::new(-25, 0),
-        );
+        )
+        .unwrap();
 
         assert_eq!(rollover_in, Decimal::ZERO);
         assert_eq!(rollover_out, Decimal::new(125, 0));
@@ -3356,72 +3344,18 @@ mod tests {
     }
 
     #[test]
-    fn month_keys_are_strictly_validated() {
-        assert!(validate_period_key(DEFAULT_PERIOD_KEY).is_ok());
-        assert!(validate_period_key("2026-05").is_ok());
-        assert!(validate_period_key("2026-13").is_err());
-        assert!(validate_period_key("2026-5").is_err());
-    }
-
-    #[test]
-    fn budget_period_bounds_use_local_day_25_and_handle_dst() {
-        let (start, end) = local_budget_period_bounds_utc("2026-03", "America/Toronto").unwrap();
-
-        assert_eq!(start.to_rfc3339(), "2026-02-25T05:00:00+00:00");
-        assert_eq!(end.to_rfc3339(), "2026-03-25T03:59:59.999999999+00:00");
-        assert_eq!(
-            period_key_for_date_in_tz(start - chrono::Duration::nanoseconds(1), "America/Toronto"),
-            "2026-02"
-        );
-        assert_eq!(
-            period_key_for_date_in_tz(start, "America/Toronto"),
-            "2026-03"
-        );
-        assert_eq!(period_key_for_date_in_tz(end, "America/Toronto"), "2026-03");
-        assert_eq!(
-            period_key_for_date_in_tz(end + chrono::Duration::nanoseconds(1), "America/Toronto"),
-            "2026-04"
-        );
-    }
-
-    #[test]
-    fn budget_period_key_handles_day_24_day_25_and_year_boundary() {
-        assert_eq!(
-            period_key_for_date_in_tz(
-                Utc.with_ymd_and_hms(2026, 12, 24, 23, 59, 59).unwrap(),
-                "UTC"
-            ),
-            "2026-12"
-        );
-        assert_eq!(
-            period_key_for_date_in_tz(Utc.with_ymd_and_hms(2026, 12, 25, 0, 0, 0).unwrap(), "UTC"),
-            "2027-01"
-        );
-        assert_eq!(
-            current_period_key(
-                Utc.with_ymd_and_hms(2026, 12, 25, 9, 59, 59).unwrap(),
-                "Pacific/Kiritimati"
-            ),
-            "2027-01"
-        );
-    }
-
-    #[test]
-    fn budget_period_end_and_fx_as_of_are_day_24() {
-        assert_eq!(
-            budget_period_end_date("2026-05").unwrap(),
-            NaiveDate::from_ymd_opt(2026, 5, 24).unwrap()
-        );
-        assert_eq!(
-            budget_period_end_date("2027-01").unwrap(),
-            NaiveDate::from_ymd_opt(2027, 1, 24).unwrap()
-        );
+    fn period_keys_are_strictly_validated_against_the_cycle() {
+        let cycle = BudgetCycleSettings::default();
+        assert!(validate_period_key(DEFAULT_PERIOD_KEY, &cycle).is_ok());
+        assert!(validate_period_key("2026-04-25", &cycle).is_ok());
+        assert!(validate_period_key("2026-04-24", &cycle).is_err());
+        assert!(validate_period_key("2026-13-25", &cycle).is_err());
     }
 
     #[test]
     fn planned_budget_targets_remain_independent_of_actual_activity_filtering() {
         let targets = vec![target(
-            "2026-05",
+            "2026-04-25",
             BudgetTargetType::Category,
             Some(SPENDING_TAXONOMY),
             Some("cat_groceries"),
@@ -3431,7 +3365,7 @@ mod tests {
         let index = TargetIndex::new(&targets);
 
         assert_eq!(
-            index.effective_category_decimal("2026-05", SPENDING_TAXONOMY, "cat_groceries"),
+            index.effective_category_decimal("2026-04-25", SPENDING_TAXONOMY, "cat_groceries",),
             Decimal::new(125, 0)
         );
     }

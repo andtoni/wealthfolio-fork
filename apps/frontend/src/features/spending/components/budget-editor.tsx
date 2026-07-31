@@ -46,7 +46,13 @@ import { Switch } from "@wealthfolio/ui/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 import { useBudget, useBudgetMutations } from "../hooks/use-budget";
+import {
+  budgetPeriodKeyForDate,
+  currentBudgetPeriodKey,
+  shiftBudgetPeriodKey,
+} from "../lib/month-period";
 import { FOREST_THEME } from "../lib/theme";
+import type { BudgetCycleSettings } from "../types";
 import type {
   BudgetCategoryRow,
   BudgetGroup,
@@ -62,18 +68,14 @@ import { EXTENDED_PALETTE } from "./color-picker";
 import { IconPicker } from "./icon-picker";
 
 const SPENDING_TAXONOMY = "spending_categories";
-const CARD_CLASS = "border-border/60 bg-card/40 shadow-xs rounded-xl border backdrop-blur-xl";
+const CARD_CLASS =
+  "border-border/60 bg-card/40 shadow-xs min-w-0 max-w-full rounded-xl border backdrop-blur-xl";
 
-export type BudgetEditorMode = "setup" | "monthly";
+export type BudgetEditorMode = "setup" | "period";
 
 interface BudgetEditorProps {
   mode: BudgetEditorMode;
   periodKey: string;
-}
-
-function currentMonthKey() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
 export function BudgetEditor({ mode, periodKey }: BudgetEditorProps) {
@@ -82,7 +84,7 @@ export function BudgetEditor({ mode, periodKey }: BudgetEditorProps) {
   const mutations = useBudgetMutations(periodKey);
 
   const periodForWrite = periodKey || "default";
-  const monthMode = mode === "monthly";
+  const monthMode = mode === "period";
   const currency = budget?.computed.currency ?? "USD";
   const targets = budget?.state.targets ?? [];
   const rolloverSettings = budget?.state.rolloverSettings ?? [];
@@ -177,7 +179,9 @@ export function BudgetEditor({ mode, periodKey }: BudgetEditorProps) {
               targetType: "group",
               groupId: row.group.id,
               enabled,
-              startMonth: monthMode ? periodForWrite : currentMonthKey(),
+              startMonth: monthMode
+                ? periodForWrite
+                : currentBudgetPeriodKey(undefined, budget.computed.budgetCycle),
               startingBalance:
                 startingBalance ??
                 findGroupRollover(rolloverSettings, row.group.id)?.startingBalance ??
@@ -190,7 +194,9 @@ export function BudgetEditor({ mode, periodKey }: BudgetEditorProps) {
               taxonomyId: SPENDING_TAXONOMY,
               categoryId: category.categoryId,
               enabled,
-              startMonth: monthMode ? periodForWrite : currentMonthKey(),
+              startMonth: monthMode
+                ? periodForWrite
+                : currentBudgetPeriodKey(undefined, budget.computed.budgetCycle),
               startingBalance:
                 findCategoryRollover(rolloverSettings, category.categoryId)?.startingBalance ?? "0",
             })
@@ -242,18 +248,20 @@ export function BudgetEditor({ mode, periodKey }: BudgetEditorProps) {
     />
   );
 
-  if (mode === "monthly") {
+  if (mode === "period") {
     return (
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-4">
+      <div className="grid w-full min-w-0 max-w-full gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0 space-y-4">
           <BudgetSummary budget={budget} currency={currency} mode={mode} />
           <BudgetFxNote budget={budget} currency={currency} />
           {groupSection}
         </div>
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           {incomePanel}
-          <CopyFromMonthRow
+          <CopyFromPeriodRow
+            key={`${periodForWrite}:${budget.computed.budgetCycle.cadence}:${budget.computed.budgetCycle.anchorDate}`}
             currentPeriodKey={periodForWrite}
+            cycle={budget.computed.budgetCycle}
             onCopy={(sourcePeriodKey, overwrite) =>
               mutations.copyFromMonth.mutate({ sourcePeriodKey, overwrite })
             }
@@ -301,8 +309,8 @@ function BudgetSummary({
   const { t } = useTranslation();
   const headingLabel =
     mode === "setup"
-      ? t("spending:budgetEditor.defaultMonthlyPlan")
-      : t("spending:budgetEditor.monthlyPlan");
+      ? t("spending:budgetEditor.defaultCyclePlan")
+      : t("spending:budgetEditor.cyclePlan");
 
   return (
     <section className={cn(CARD_CLASS, "overflow-hidden p-3 sm:p-4")}>
@@ -490,8 +498,8 @@ function GroupBudgetSection({
   const spentPct = safePercent(Math.max(0, row.actual), row.plannedTotal);
   const totalSuffix =
     mode === "setup"
-      ? t("spending:budgetEditor.perDefaultMonth")
-      : t("spending:budgetEditor.perMonth");
+      ? t("spending:budgetEditor.perDefaultCycle")
+      : t("spending:budgetEditor.perCycle");
 
   return (
     <section className={cn(CARD_CLASS, "overflow-hidden")}>
@@ -1029,7 +1037,7 @@ function GroupEditDialogBody({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 space-y-0.5">
               <div className="text-foreground text-sm font-medium">
-                {t("spending:budgetEditor.monthlyRollover")}
+                {t("spending:budgetEditor.cycleRollover")}
               </div>
               <p className="text-muted-foreground text-[11px] leading-snug">
                 {t("spending:budgetEditor.rolloverDesc")}
@@ -1229,7 +1237,7 @@ function BudgetCategoryLine({
                 className="text-warning text-xs"
               >
                 <Icons.X className="mr-2 h-3.5 w-3.5" />
-                {t("spending:budgetEditor.revertMonthOverride")}
+                {t("spending:budgetEditor.revertPeriodOverride")}
               </DropdownMenuItem>
             </>
           )}
@@ -1325,7 +1333,7 @@ function IncomeSourcesPanel({
   const { t } = useTranslation();
   const title =
     mode === "setup" ? t("spending:budgetEditor.incomeDefaults") : t("spending:cashFlow.income");
-  const isMonthly = mode === "monthly";
+  const isMonthly = mode === "period";
   const [showAll, setShowAll] = useState(false);
 
   const { total, nonZeroRows, hiddenCount } = useMemo(() => {
@@ -1353,7 +1361,7 @@ function IncomeSourcesPanel({
         {rows.length === 0 ? (
           <EmptyPanelLine>{t("spending:budgetEditor.noIncomeCategories")}</EmptyPanelLine>
         ) : visibleRows.length === 0 ? (
-          <EmptyPanelLine>{t("spending:budgetEditor.noIncomeThisMonth")}</EmptyPanelLine>
+          <EmptyPanelLine>{t("spending:budgetEditor.noIncomeThisPeriod")}</EmptyPanelLine>
         ) : (
           visibleRows.map((row) => {
             const target = findCategoryTarget(targets, periodKey, row.taxonomyId, row.categoryId);
@@ -1593,24 +1601,29 @@ function OverridesSummary({
   );
 }
 
-function CopyFromMonthRow({
+function CopyFromPeriodRow({
   currentPeriodKey,
+  cycle,
   onCopy,
   pending,
 }: {
   currentPeriodKey: string;
+  cycle: BudgetCycleSettings;
   onCopy: (sourcePeriodKey: string, overwrite: boolean) => void;
   pending: boolean;
 }) {
-  const previousMonth = useMemo(() => {
-    const [year, month] = currentPeriodKey.split("-").map(Number);
-    if (!Number.isFinite(year) || !Number.isFinite(month)) return currentPeriodKey;
-    const date = new Date(year, (month ?? 1) - 2, 1);
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-  }, [currentPeriodKey]);
+  const previousPeriod = useMemo(
+    () => shiftBudgetPeriodKey(currentPeriodKey, -1, cycle),
+    [currentPeriodKey, cycle],
+  );
   const { t } = useTranslation();
-  const [sourceMonth, setSourceMonth] = useState(previousMonth);
+  const [sourcePeriod, setSourcePeriod] = useState(previousPeriod);
   const [overwrite, setOverwrite] = useState(false);
+  const selectDate = (value: string) => {
+    const [year, month, day] = value.split("-").map(Number);
+    if (!year || !month || !day) return;
+    setSourcePeriod(budgetPeriodKeyForDate({ year, month, day }, cycle));
+  };
 
   return (
     <section className={cn(CARD_CLASS, "p-3 sm:p-4")}>
@@ -1628,11 +1641,12 @@ function CopyFromMonthRow({
         <div className="bg-background border-input flex items-center rounded-md border px-2">
           <Icons.Calendar className="text-muted-foreground h-3.5 w-3.5" />
           <input
-            type="month"
-            value={sourceMonth}
+            type="date"
+            value={sourcePeriod}
             max={currentPeriodKey}
-            onChange={(event) => setSourceMonth(event.target.value || previousMonth)}
-            className="text-foreground h-7 w-[120px] bg-transparent px-2 text-xs outline-none"
+            aria-label={t("spending:budgetEditor.sourcePeriod")}
+            onChange={(event) => selectDate(event.target.value)}
+            className="text-foreground h-7 w-[132px] bg-transparent px-2 text-xs outline-none"
           />
         </div>
         <label className="text-muted-foreground inline-flex items-center gap-1.5 text-[11px]">
@@ -1647,8 +1661,8 @@ function CopyFromMonthRow({
         <Button
           size="sm"
           variant="outline"
-          disabled={!sourceMonth || sourceMonth === currentPeriodKey || pending}
-          onClick={() => onCopy(sourceMonth, overwrite)}
+          disabled={!sourcePeriod || sourcePeriod === currentPeriodKey || pending}
+          onClick={() => onCopy(sourcePeriod, overwrite)}
           className="ml-auto h-7 px-3 text-xs"
         >
           {pending ? t("spending:budgetEditor.copying") : t("spending:budgetEditor.copyPlan")}
@@ -1739,7 +1753,7 @@ function PanelHeader({ title, icon }: { title: string; icon: ReactNode }) {
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-muted-foreground">{icon}</span>
-      <h2 className="text-muted-foreground text-[11px] font-semibold uppercase tracking-[0.08em]">
+      <h2 className="text-muted-foreground min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.08em]">
         {title}
       </h2>
     </div>

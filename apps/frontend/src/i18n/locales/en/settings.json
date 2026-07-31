@@ -977,7 +977,7 @@
     "section_sources": "Sources",
     "section_sources_meta": "Which accounts feed the tracker",
     "section_budgets": "Budgets",
-    "section_budgets_meta": "Default monthly plan and rollover behavior",
+    "section_budgets_meta": "Recurring cycle and per-cycle plan",
     "section_taxonomy": "Taxonomy",
     "section_taxonomy_meta": "How transactions are classified",
     "section_automation": "Automation",
@@ -1025,14 +1025,27 @@
       "stop_tracking_aria": "Stop tracking {{name}}",
       "mixed_warning": "Credit card payments from tracked cash accounts should be linked as transfers. Unlinked payments can make both the card charge and cash payment count as spending."
     },
+    "budget_cycle": {
+      "title": "Budget cycle",
+      "description": "Choose how often the budget resets and the anchor date that all periods repeat from.",
+      "frequency": "Frequency",
+      "anchor_date": "Starting on",
+      "weekly": "Every week",
+      "biweekly": "Every two weeks",
+      "monthly": "Every month",
+      "current_period": "Current period",
+      "history_note": "Changing the cycle re-buckets actuals across budget history. Default amounts apply to each cycle. Remove any cycle-specific overrides before changing this setting.",
+      "save": "Save cycle",
+      "saving": "Saving…"
+    },
     "budget_overview": {
-      "title": "Default monthly plan",
-      "empty_description": "Define groups and default targets to use as the baseline each month.",
+      "title": "Default cycle plan",
+      "empty_description": "Define groups and default targets to use as the baseline each cycle.",
       "setup_cta": "Set up budget",
       "open_aria": "Open budget setup",
-      "description": "Baseline group targets used every month until you change them.",
+      "description": "Baseline group targets used every cycle until you change them.",
       "planned_spending": "Planned spending",
-      "planned_vs_income": "Planned spending / Monthly income",
+      "planned_vs_income": "Planned spending / Cycle income",
       "pct_of_income": "{{pct}}% of income",
       "open": "Open plan"
     },
@@ -1094,8 +1107,8 @@
       "more": "+{{count}} more"
     },
     "setup": {
-      "title": "Default monthly budget plan",
-      "description": "Define groups, default monthly targets, and rollover behavior. Used as the baseline for every month."
+      "title": "Default cycle budget plan",
+      "description": "Define groups and default per-cycle targets. Used as the baseline for every budget cycle."
     },
     "categories": {
       "heading": "Categories",

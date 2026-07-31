@@ -66,4 +66,18 @@ impl SpendingSettingsRepositoryTrait for SpendingSettingsRepository {
             .map_err(|e| anyhow::anyhow!(e))?;
         Ok(())
     }
+
+    async fn has_concrete_budget_records(&self) -> Result<bool> {
+        let mut conn = get_connection(&self.pool).map_err(|e| anyhow::anyhow!(e))?;
+        let target_count = crate::schema::budget_targets::table
+            .filter(crate::schema::budget_targets::period_key.ne("default"))
+            .count()
+            .get_result::<i64>(&mut conn)
+            .map_err(StorageError::from)?;
+        let rollover_count = crate::schema::budget_rollover_settings::table
+            .count()
+            .get_result::<i64>(&mut conn)
+            .map_err(StorageError::from)?;
+        Ok(target_count > 0 || rollover_count > 0)
+    }
 }

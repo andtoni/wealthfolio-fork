@@ -1,12 +1,21 @@
-// Spending settings (toggle + opted-in account list)
+export type BudgetCadence = "weekly" | "biweekly" | "monthly";
+
+export interface BudgetCycleSettings {
+  cadence: BudgetCadence;
+  anchorDate: string;
+}
+
+// Spending settings (toggle, opted-in accounts, and recurring budget cycle)
 export interface SpendingSettings {
   enabled: boolean;
   accountIds: string[];
+  budgetCycle: BudgetCycleSettings;
 }
 
 export interface SpendingSettingsUpdate {
   enabled?: boolean;
   accountIds?: string[];
+  budgetCycle?: BudgetCycleSettings;
 }
 
 // SpendingSummary — multi-period rollup consumed by the spending overview UI

@@ -67,9 +67,11 @@ function mockSettings(accountIds: string[]) {
     settings: {
       enabled: true,
       accountIds,
+      budgetCycle: { cadence: "monthly", anchorDate: "2026-07-25" },
     },
     isEnabled: true,
     accountIds,
+    budgetCycle: { cadence: "monthly", anchorDate: "2026-07-25" },
     isLoading: false,
     error: null,
   });

@@ -6,6 +6,7 @@ import { Button, Icons } from "@wealthfolio/ui";
 import { useSpendingSettings } from "@/features/spending/hooks/use-spending-settings";
 
 import { AccountsCard } from "./components/accounts-card";
+import { BudgetCycleCard } from "./components/budget-cycle-card";
 import { BudgetOverviewCard } from "./components/budget-overview-card";
 import { CategoriesOverviewCard } from "./components/categories-overview-card";
 import { EventTypesOverviewCard } from "./components/event-types-overview-card";
@@ -79,6 +80,7 @@ export default function SpendingSettingsPage() {
             title={t("settings:spending.section_budgets")}
             meta={t("settings:spending.section_budgets_meta")}
           >
+            <BudgetCycleCard />
             <BudgetOverviewCard />
           </Section>
 
