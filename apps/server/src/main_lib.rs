@@ -426,9 +426,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
     let activity_taxonomy_assignment_service = Arc::new(
         wealthfolio_spending::activity_assignments::ActivityTaxonomyAssignmentService::new(
             activity_assignments_repo.clone(),
-        )
-        .with_budget_repository(budget_repo.clone())
-        .with_taxonomy_service(taxonomy_service.clone()),
+        ),
     );
 
     let asset_service = Arc::new(
@@ -805,7 +803,6 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         portfolio_service.clone(),
         net_worth_service.clone(),
         limits_service.clone(),
-        budget_service.clone(),
         cash_activity_service.clone(),
         activity_taxonomy_assignment_service.clone(),
         categorization_rules_service.clone(),

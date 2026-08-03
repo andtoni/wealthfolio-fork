@@ -155,9 +155,9 @@ impl CategorizationRulesService {
         }
 
         let rules = self.repo.list().await?;
-        let configured_rule_pairs = self
+        let existing_rule_pairs = self
             .assignment_service
-            .filter_configured_category_pairs(
+            .filter_existing_category_pairs(
                 &rules
                     .iter()
                     .filter_map(|rule| Some((rule.taxonomy_id.clone()?, rule.category_id.clone()?)))
@@ -188,7 +188,7 @@ impl CategorizationRulesService {
                         return false;
                     };
                     bucket.accepts_taxonomy(taxonomy_id)
-                        && configured_rule_pairs
+                        && existing_rule_pairs
                             .contains(&(taxonomy_id.to_string(), category_id.to_string()))
                 },
             ) else {

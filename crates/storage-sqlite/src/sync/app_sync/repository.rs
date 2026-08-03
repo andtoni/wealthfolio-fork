@@ -160,11 +160,13 @@ enum SyncRowFilter {
     UserSyncableActivities,
     SpendingSettings,
     UserTaxonomies,
-    SyncableTaxonomyCategories,
+    SnapshotTaxonomyCategories,
     UserModifiedBudgetGroups,
+    SnapshotBudgetGroups,
     UserModifiedBudgetGroupAssignments,
     BudgetGroupAssignmentsWithExistingDependencies,
     BudgetTargetsWithExistingDependencies,
+    SnapshotBudgetTargets,
     BudgetRolloverSettingsWithExistingDependencies,
     OverwriteRiskAccounts,
     ValidPortfolioAccounts,
@@ -193,27 +195,33 @@ impl SyncRowFilter {
                 "setting_key IN ('spending.enabled', 'spending.account_ids', 'spending.budget_cycle')"
             }
             Self::UserTaxonomies => "is_system = 0",
-            // Spending/income seed category IDs use the `cat_` prefix; user-created rows use UUIDs.
-            Self::SyncableTaxonomyCategories => {
+            // Snapshot restore must carry the complete editable category set. A fresh device
+            // starts with migration seeds, so excluding unchanged `cat_*` rows would make a
+            // deleted or renamed native category reappear after bootstrap.
+            Self::SnapshotTaxonomyCategories => {
                 "(taxonomy_id = 'custom_groups' \
                   OR taxonomy_id IN (SELECT id FROM taxonomies WHERE is_system = 0) \
-                  OR (taxonomy_id IN ('spending_categories', 'income_sources', 'savings_categories') AND id NOT LIKE 'cat_%')) \
-                 AND id NOT IN (SELECT object_id FROM finance_v1_locked_budget_objects WHERE object_type = 'category')"
+                  OR taxonomy_id IN ('spending_categories', 'income_sources', 'savings_categories'))"
             }
             Self::UserModifiedBudgetGroups => "is_system = 0 OR updated_at != created_at",
+            // Snapshot restore uses the complete current group set so deleted seeded groups
+            // stay deleted and edited seeded rows replace the migration copy cleanly.
+            Self::SnapshotBudgetGroups => "1 = 1",
             Self::UserModifiedBudgetGroupAssignments => {
-                "(is_system = 0 OR updated_at != created_at) \
-                 AND id NOT IN (SELECT object_id FROM finance_v1_locked_budget_objects WHERE object_type = 'assignment')"
+                "is_system = 0 OR updated_at != created_at"
             }
             Self::BudgetGroupAssignmentsWithExistingDependencies => {
                 "group_id IN (SELECT id FROM budget_groups) \
-                 AND id NOT IN (SELECT object_id FROM finance_v1_locked_budget_objects WHERE object_type = 'assignment') \
                  AND EXISTS (
                      SELECT 1 FROM taxonomy_categories AS tc
                      WHERE tc.taxonomy_id = budget_group_assignments.taxonomy_id
                        AND tc.id = budget_group_assignments.category_id
                  )"
             }
+            // Finance-v1 targets are ordinary editable rows after the native
+            // normalization migration. Keep an untouched initial seed out of
+            // overwrite-risk summaries; a user edit changes updated_at and makes
+            // the target syncable like any other budget row.
             Self::BudgetTargetsWithExistingDependencies => {
                 "((target_type = 'category' \
                      AND taxonomy_id IS NOT NULL \
@@ -225,7 +233,21 @@ impl SyncRowFilter {
                      )) \
                    OR (target_type = 'group_buffer' \
                        AND group_id IN (SELECT id FROM budget_groups))) \
-                 AND id NOT IN (SELECT object_id FROM finance_v1_locked_budget_objects WHERE object_type = 'target')"
+                 AND NOT (id LIKE 'finance_v1_target_%' AND updated_at = created_at)"
+            }
+            // Snapshot restore must include every valid target. Absence in the exported
+            // snapshot is the only deletion representation for seeded target rows.
+            Self::SnapshotBudgetTargets => {
+                "((target_type = 'category' \
+                     AND taxonomy_id IS NOT NULL \
+                     AND category_id IS NOT NULL \
+                     AND EXISTS (
+                         SELECT 1 FROM taxonomy_categories AS tc
+                         WHERE tc.taxonomy_id = budget_targets.taxonomy_id
+                           AND tc.id = budget_targets.category_id
+                     )) \
+                   OR (target_type = 'group_buffer' \
+                       AND group_id IN (SELECT id FROM budget_groups)))"
             }
             Self::BudgetRolloverSettingsWithExistingDependencies => {
                 "(target_type = 'category' \
@@ -642,10 +664,11 @@ const SYNC_TABLE_SNAPSHOT_COPY_FILTERS: &[SyncTableFilterSpec] = &[
         table: "taxonomies",
         filter: SyncRowFilter::UserTaxonomies,
     },
-    // Only export user-created categories under syncable system taxonomies.
+    // Export the complete editable category set. Native categories are user-editable after
+    // the native-budget migration, so snapshot omission cannot represent deletion safely.
     SyncTableFilterSpec {
         table: "taxonomy_categories",
-        filter: SyncRowFilter::SyncableTaxonomyCategories,
+        filter: SyncRowFilter::SnapshotTaxonomyCategories,
     },
     // Only export user-initiated import runs (CSV/manual), matching the outbox policy.
     SyncTableFilterSpec {
@@ -671,17 +694,21 @@ const SYNC_TABLE_SNAPSHOT_COPY_FILTERS: &[SyncTableFilterSpec] = &[
         table: "app_settings",
         filter: SyncRowFilter::SpendingSettings,
     },
+    // Snapshot restore uses the complete current group set so deleted seeded groups
+    // stay deleted and edited seeded rows replace the migration copy cleanly.
     SyncTableFilterSpec {
         table: "budget_groups",
-        filter: SyncRowFilter::UserModifiedBudgetGroups,
+        filter: SyncRowFilter::SnapshotBudgetGroups,
     },
     SyncTableFilterSpec {
         table: "budget_group_assignments",
         filter: SyncRowFilter::BudgetGroupAssignmentsWithExistingDependencies,
     },
+    // Snapshot restore must include every valid target. Absence in the exported
+    // snapshot is the only deletion representation for seeded target rows.
     SyncTableFilterSpec {
         table: "budget_targets",
-        filter: SyncRowFilter::BudgetTargetsWithExistingDependencies,
+        filter: SyncRowFilter::SnapshotBudgetTargets,
     },
     SyncTableFilterSpec {
         table: "budget_rollover_settings",
@@ -714,7 +741,7 @@ const SYNC_TABLE_SNAPSHOT_CLEAR_FILTERS: &[SyncTableFilterSpec] = &[
     },
     SyncTableFilterSpec {
         table: "taxonomy_categories",
-        filter: SyncRowFilter::SyncableTaxonomyCategories,
+        filter: SyncRowFilter::SnapshotTaxonomyCategories,
     },
     SyncTableFilterSpec {
         table: "import_runs",
@@ -738,7 +765,7 @@ const SYNC_TABLE_SNAPSHOT_CLEAR_FILTERS: &[SyncTableFilterSpec] = &[
     },
     SyncTableFilterSpec {
         table: "budget_groups",
-        filter: SyncRowFilter::UserModifiedBudgetGroups,
+        filter: SyncRowFilter::SnapshotBudgetGroups,
     },
     SyncTableFilterSpec {
         table: "budget_group_assignments",
@@ -746,7 +773,7 @@ const SYNC_TABLE_SNAPSHOT_CLEAR_FILTERS: &[SyncTableFilterSpec] = &[
     },
     SyncTableFilterSpec {
         table: "budget_targets",
-        filter: SyncRowFilter::BudgetTargetsWithExistingDependencies,
+        filter: SyncRowFilter::SnapshotBudgetTargets,
     },
     SyncTableFilterSpec {
         table: "budget_rollover_settings",
@@ -1751,8 +1778,7 @@ fn apply_custom_taxonomy_event(
             )?;
             let sql = if is_syncable_system_taxonomy_id(taxonomy_id) {
                 format!(
-                    "DELETE FROM \"taxonomy_categories\" WHERE \"taxonomy_id\" = '{}' \
-                     AND \"id\" NOT IN (SELECT object_id FROM finance_v1_locked_budget_objects WHERE object_type = 'category')",
+                    "DELETE FROM \"taxonomy_categories\" WHERE \"taxonomy_id\" = '{}'",
                     escape_sqlite_str(taxonomy_id)
                 )
             } else {
@@ -1832,8 +1858,7 @@ fn apply_custom_taxonomy_event(
                     seq,
                 )?;
                 let sql = format!(
-                    "DELETE FROM \"taxonomy_categories\" WHERE \"taxonomy_id\" = '{}' \
-                     AND \"id\" NOT IN (SELECT object_id FROM finance_v1_locked_budget_objects WHERE object_type = 'category')",
+                    "DELETE FROM \"taxonomy_categories\" WHERE \"taxonomy_id\" = '{}'",
                     escape_sqlite_str(taxonomy_id)
                 );
                 diesel::sql_query(sql)
@@ -1851,8 +1876,7 @@ fn apply_custom_taxonomy_event(
                     seq,
                 )?;
                 let sql = format!(
-                    "DELETE FROM \"taxonomy_categories\" WHERE \"taxonomy_id\" = '{}' AND \"id\" NOT IN ({}) \
-                     AND \"id\" NOT IN (SELECT object_id FROM finance_v1_locked_budget_objects WHERE object_type = 'category')",
+                    "DELETE FROM \"taxonomy_categories\" WHERE \"taxonomy_id\" = '{}' AND \"id\" NOT IN ({})",
                     escape_sqlite_str(taxonomy_id),
                     placeholders
                 );
@@ -3413,7 +3437,7 @@ mod tests {
     }
 
     #[test]
-    fn taxonomy_category_snapshot_filter_includes_user_category_taxonomies() {
+    fn taxonomy_category_snapshot_filter_includes_all_editable_category_taxonomies() {
         let filter = snapshot_copy_filter_for_table("taxonomy_categories").expect("filter");
 
         assert!(filter.contains("custom_groups"));
@@ -3421,7 +3445,21 @@ mod tests {
         assert!(filter.contains("spending_categories"));
         assert!(filter.contains("income_sources"));
         assert!(filter.contains("savings_categories"));
-        assert!(filter.contains("id NOT LIKE 'cat_%'"));
+        assert!(!filter.contains("id NOT LIKE 'cat_%'"));
+    }
+
+    #[test]
+    fn budget_snapshot_filters_include_seeded_editable_rows() {
+        assert_eq!(
+            snapshot_copy_filter_for_table("budget_groups"),
+            Some("1 = 1")
+        );
+        assert!(snapshot_copy_filter_for_table("budget_targets")
+            .expect("target filter")
+            .contains("target_type = 'category'"));
+        assert!(!snapshot_copy_filter_for_table("budget_targets")
+            .expect("target filter")
+            .contains("updated_at = created_at"));
     }
 
     #[tokio::test]
@@ -7537,6 +7575,15 @@ mod tests {
         let exported_dir = tempdir().expect("tempdir");
         let exported_path = exported_dir.path().join("budget-snapshot.db");
         std::fs::write(&exported_path, payload).expect("write snapshot db");
+        // Model an older/incomplete snapshot whose budget rows reference a
+        // category that is not present in the restored taxonomy table.
+        let mut snapshot_conn =
+            SqliteConnection::establish(exported_path.to_string_lossy().as_ref())
+                .expect("open exported snapshot");
+        diesel::sql_query("DELETE FROM taxonomy_categories WHERE id = 'cat_future_budget'")
+            .execute(&mut snapshot_conn)
+            .expect("remove missing snapshot category");
+        drop(snapshot_conn);
 
         let (restore_pool, restore_writer) = setup_db();
         let restore_repo = AppSyncRepository::new(restore_pool.clone(), restore_writer);

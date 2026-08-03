@@ -115,8 +115,8 @@ const PROPOSE_CATEGORIES_DESCRIPTION: &str =
      examples, and the unproposed rows. If `needsAiJudgement` is 0 and total is > 0, \
      still call this tool with `aiProposals: []` so the rule/history draft proposals \
      appear in the review widget. Otherwise reason about each unproposed row, then \
-     call this tool with `aiProposals` filled in. Use only the budget-configured categories \
-     present in the context taxonomies (selected by budget groups or targets). Each proposal \
+     call this tool with `aiProposals` filled in. Use only the categories \
+     present in the live activity taxonomies. Each proposal \
      must use the taxonomy matching the \
      row's canonical `cashFlowBucket`; cross-bucket choices are discarded. \
      The tool runs deterministic rule + same-payee history matches, merges your \
@@ -261,7 +261,7 @@ impl AgentTool for ProposeCategories {
                 },
                 "aiProposals": {
                     "type": "array",
-                    "description": "Your inferred categories for the rows returned as `unproposed` from `list_categorization_context`. Pass [] only when that context result returned needsAiJudgement = 0. Use only the budget-configured category choices in that context (selected by budget groups or targets) and the taxonomy matching each row's cashFlowBucket (spending_categories, income_sources, or savings_categories). Each entry: { activityId, taxonomyId, categoryKey, confidence (0–1), reason }.",
+                    "description": "Your inferred categories for the rows returned as `unproposed` from `list_categorization_context`. Pass [] only when that context result returned needsAiJudgement = 0. Use only the live activity-taxonomy choices in that context and the taxonomy matching each row's cashFlowBucket (spending_categories, income_sources, or savings_categories). Each entry: { activityId, taxonomyId, categoryKey, confidence (0–1), reason }.",
                     "items": {
                         "type": "object",
                         "properties": {

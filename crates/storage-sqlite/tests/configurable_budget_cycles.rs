@@ -2,7 +2,7 @@ use rusqlite::Connection;
 use wealthfolio_storage_sqlite::db;
 
 #[test]
-fn migrations_seed_configurable_cycle_without_weakening_locked_policy() {
+fn migrations_seed_configurable_cycle_and_restore_native_editing() {
     let dir = tempfile::tempdir().unwrap();
     let path = db::init(dir.path().to_str().unwrap()).unwrap();
     db::run_migrations(&path).unwrap();
@@ -20,16 +20,14 @@ fn migrations_seed_configurable_cycle_without_weakening_locked_policy() {
         serde_json::json!({"cadence": "monthly", "anchorDate": "2026-07-25"})
     );
 
-    let policy_columns = connection
-        .prepare("PRAGMA table_info(finance_v1_budget_policy)")
-        .unwrap()
-        .query_map([], |row| row.get::<_, String>(1))
-        .unwrap()
-        .collect::<Result<Vec<_>, _>>()
+    let finance_policy_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('finance_v1_budget_policy', 'finance_v1_locked_budget_objects')",
+            [],
+            |row| row.get(0),
+        )
         .unwrap();
-    assert!(!policy_columns.contains(&"cycle_start_day".to_string()));
-    assert!(!policy_columns.contains(&"cycle_end_day".to_string()));
-    assert!(policy_columns.contains(&"transfers_excluded".to_string()));
+    assert_eq!(finance_policy_count, 0);
 
     connection
         .execute(
@@ -52,10 +50,34 @@ fn migrations_seed_configurable_cycle_without_weakening_locked_policy() {
             .is_err());
     }
 
-    assert!(connection
+    connection
         .execute(
             "INSERT INTO budget_rollover_settings(id,target_type,taxonomy_id,category_id,enabled,start_month,starting_balance) VALUES('rollover','category','spending_categories','cat_groceries',1,'2026-07-25','0')",
             [],
         )
-        .is_err());
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE budget_targets SET amount='2' WHERE id='finance_v1_target_groceries'",
+            [],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE taxonomy_categories SET name='Insurance edited' WHERE id='finance_v1_cat_insurance'",
+            [],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE budget_groups SET name='Needs edited' WHERE id='032ecb02-5912-42e8-9724-2cd566fc08d5'",
+            [],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE budget_group_assignments SET group_id='8cbd26c8-e3b2-4176-8c61-e5c11e10b808' WHERE id='finance_v1_assign_insurance'",
+            [],
+        )
+        .unwrap();
 }

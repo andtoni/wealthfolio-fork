@@ -85,13 +85,6 @@ pub trait AgentEnvironment: Send + Sync {
     /// Get the cash-activity service for spending-tracker reads.
     fn cash_activity_service(&self) -> Arc<dyn CashActivityServiceTrait>;
 
-    /// Get the budget service when the host exposes the user's configured
-    /// category targets. Hosts without budgeting return `None`, in which case
-    /// categorization falls back to the full live activity taxonomy.
-    fn budget_service(&self) -> Option<Arc<wealthfolio_spending::budget::BudgetService>> {
-        None
-    }
-
     /// Get the categorization-rules service for the rules-first pass in category proposals.
     fn categorization_rules_service(&self) -> Arc<dyn CategorizationRulesServiceTrait>;
 

@@ -244,17 +244,6 @@ pub async fn compute_categorization_state(
         .into_iter()
         .filter(|t| t.taxonomy.scope == "activity")
         .collect();
-    let configured_category_pairs = if let Some(budget) = env.budget_service() {
-        Some(
-            budget
-                .configured_category_pairs()
-                .await
-                .map_err(|e| AgentToolError::ExecutionFailed(e.to_string()))?,
-        )
-    } else {
-        None
-    };
-
     // (taxonomy_id, category_id) -> (taxonomy_id, taxonomy_name, category_name, path, color)
     let mut category_lookup: CategoryLookup = HashMap::new();
     let mut key_lookup: HashMap<(String, String), (String, String, String)> = HashMap::new();
@@ -267,12 +256,6 @@ pub async fn compute_categorization_state(
             .collect();
         let mut options = Vec::with_capacity(entry.categories.len());
         for cat in &entry.categories {
-            if configured_category_pairs
-                .as_ref()
-                .is_some_and(|pairs| !pairs.contains(&(entry.taxonomy.id.clone(), cat.id.clone())))
-            {
-                continue;
-            }
             let path = build_category_path(cat, &cats_by_id);
             category_lookup.insert(
                 category_lookup_key(&entry.taxonomy.id, &cat.id),
@@ -905,9 +888,8 @@ impl AgentTool for ListCategorizationContext {
          widget whenever `summary.total > 0`. If `unproposed` is empty / \
          `needsAiJudgement` is 0, call it with `aiProposals: []`; otherwise infer the best \
          `taxonomyId` + `categoryKey` pair for each `unproposed` row from `taxonomies` \
-         using `examples` + merchant-name knowledge. `taxonomies` is limited to categories \
-         selected by configured budget groups or targets when a budget plan exists. Each row \
-         includes its \
+         using `examples` + merchant-name knowledge. `taxonomies` contains the live editable \
+         activity categories. Each row \
          canonical `cashFlowBucket`; choose only `spending_categories` for spending, `income_sources` \
          for income, and `savings_categories` for saving. Never infer or change the bucket \
          from amount or merchant text. Then pass those choices as `aiProposals`. \

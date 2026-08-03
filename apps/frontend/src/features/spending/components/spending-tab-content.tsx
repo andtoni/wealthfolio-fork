@@ -255,6 +255,10 @@ function selectionData(selection: SpendingSelection, timezone?: string | null) {
   };
 }
 
+function calendarDateKey(date: { year: number; month: number; day: number }): string {
+  return `${date.year}-${String(date.month).padStart(2, "0")}-${String(date.day).padStart(2, "0")}`;
+}
+
 function previousFullMonthRange(range: DateRange): DateRange | undefined {
   if (!range.from) return undefined;
   const start = localDateParts(range.from);
@@ -262,18 +266,12 @@ function previousFullMonthRange(range: DateRange): DateRange | undefined {
   return monthRange(monthKeyFromParts(priorMonth));
 }
 
-function usesCalendarMonthComparison(selection: SpendingSelection) {
-  return (
-    selection.kind === "month" || (selection.kind === "period" && selection.code === "LAST_MONTH")
-  );
-}
-
 function priorRange(
   range: DateRange | undefined,
   selection?: SpendingSelection,
 ): DateRange | undefined {
   if (!range?.from || !range?.to) return undefined;
-  if (selection && usesCalendarMonthComparison(selection)) {
+  if (selection?.kind === "month" || selection?.code === "LAST_MONTH") {
     return previousFullMonthRange(range);
   }
   const start = localDateParts(range.from);
@@ -446,12 +444,13 @@ export default function SpendingTabContent() {
     reportErrored || activitiesErrored || budgetErrored || budgetCardBudgetErrored;
   const hasNoIncludedAccounts = !spendingSettingsLoading && spendingAccountIds.length === 0;
 
-  const budgetMonthRange = useMemo(() => {
-    const range = budgetPeriodRange(budgetMonthKey, budgetCycle);
-    return budgetMonthKey === currentBudgetMonthKey
-      ? { ...range, to: localDateFromParts(todayParts) }
-      : range;
-  }, [budgetMonthKey, currentBudgetMonthKey, todayParts, budgetCycle]);
+  // Use the complete budget-cycle bounds for this report. The analytics
+  // service snapshots FX at the requested end date, so clamping the active
+  // cycle to today would make its amounts differ from BudgetService actuals.
+  const budgetMonthRange = useMemo(
+    () => budgetPeriodRange(budgetMonthKey, budgetCycle),
+    [budgetMonthKey, budgetCycle],
+  );
   const monthReportReq = useMemo(
     () => rangeToReportRequest(budgetMonthRange, appTimezone),
     [budgetMonthRange, appTimezone],
@@ -484,11 +483,21 @@ export default function SpendingTabContent() {
       end: addCalendarDays(selected.start, -1),
     };
   }, [budgetMonthKey, budgetCycle]);
+  const budgetHistoryDateBounds = useMemo(() => {
+    if (!budgetHistoryRange) return null;
+    return {
+      from: calendarDateKey(budgetHistoryRange.start),
+      to: calendarDateKey(budgetHistoryRange.end),
+    };
+  }, [budgetHistoryRange]);
   const historyReportReq = useMemo(() => {
     const range = budgetHistoryRange;
     const fallback = budgetPeriodParts(budgetMonthKey, budgetCycle);
     const start = range?.start ?? fallback?.start ?? todayParts;
-    const end = range?.end ?? fallback?.end ?? todayParts;
+    // Include the selected cycle in the request so analytics uses the same
+    // FX snapshot date as BudgetService. The pace reducers below keep only
+    // dates before the selected cycle.
+    const end = fallback?.end ?? range?.end ?? todayParts;
     return {
       startDate: zonedCalendarDateBoundaryToDate(start, "start", appTimezone).toISOString(),
       endDate: zonedCalendarDateBoundaryToDate(end, "end", appTimezone).toISOString(),
@@ -497,20 +506,69 @@ export default function SpendingTabContent() {
   const { data: historyReport } = useSpendingReport(historyReportReq);
 
   const historicalDailyAvg = useMemo(() => {
-    const total = historyReport?.current.outflow ?? 0;
+    const total = (historyReport?.byDayByCategory ?? [])
+      .filter(
+        (row) =>
+          row.taxonomyId === SPENDING_TAXONOMY &&
+          row.categoryId !== "__uncategorized__" &&
+          budgetHistoryDateBounds !== null &&
+          row.date >= budgetHistoryDateBounds.from &&
+          row.date <= budgetHistoryDateBounds.to,
+      )
+      .reduce((sum, row) => sum + row.amount, 0);
     if (total <= 0 || !budgetHistoryRange) return 0;
     const days = Math.max(
       1,
       calendarDaysBetweenInclusive(budgetHistoryRange.start, budgetHistoryRange.end),
     );
     return total / days;
-  }, [historyReport?.current.outflow, budgetHistoryRange]);
+  }, [historyReport?.byDayByCategory, budgetHistoryDateBounds, budgetHistoryRange]);
 
   // Always render in the user's base currency. The backend FX-converts every
   // activity in `report` to base at period end, so labeling by the first
   // activity's currency (the pre-FX behavior) would mislabel multi-currency
   // accounts. Single-currency users see the same number either way.
   const currency = baseCurrency;
+  const budgetSpendingBreakdown = useMemo(
+    () =>
+      (budgetCardBudget?.computed.groupRows ?? [])
+        .flatMap((row) => row.categories)
+        .filter((row) => row.actual !== 0)
+        .map((row) => ({
+          taxonomyId: row.taxonomyId,
+          categoryId: row.categoryId,
+          amount: row.actual,
+          count: 0,
+        })),
+    [budgetCardBudget?.computed.groupRows],
+  );
+  const budgetMonthByDay = useMemo(() => {
+    const byDay = new Map<string, number>();
+    for (const row of monthReport?.byDayByCategory ?? []) {
+      if (row.taxonomyId !== SPENDING_TAXONOMY || row.categoryId === "__uncategorized__") {
+        continue;
+      }
+      byDay.set(row.date, (byDay.get(row.date) ?? 0) + row.amount);
+    }
+    return Array.from(byDay, ([date, outflow]) => ({ date, income: 0, outflow }));
+  }, [monthReport?.byDayByCategory]);
+  const budgetHistoricalByDay = useMemo(() => {
+    const byDay = new Map<string, number>();
+    for (const row of historyReport?.byDayByCategory ?? []) {
+      if (
+        row.taxonomyId !== SPENDING_TAXONOMY ||
+        row.categoryId === "__uncategorized__" ||
+        budgetHistoryDateBounds === null ||
+        row.date < budgetHistoryDateBounds.from ||
+        row.date > budgetHistoryDateBounds.to
+      ) {
+        continue;
+      }
+      byDay.set(row.date, (byDay.get(row.date) ?? 0) + row.amount);
+    }
+    return Array.from(byDay, ([date, outflow]) => ({ date, income: 0, outflow }));
+  }, [historyReport?.byDayByCategory, budgetHistoryDateBounds]);
+  const budgetActual = budgetCardBudget?.computed.totals.spendingActual ?? 0;
   const dashboardInsightHref = useMemo(() => {
     const preferDashboardPeriod = shouldPreferDashboardPeriod({
       persistedInsightPeriod,
@@ -576,7 +634,7 @@ export default function SpendingTabContent() {
       { replace: true },
     );
     if (code === "LAST_MONTH") {
-      setBudgetMonthKey(addMonthsToMonthKey(currentBudgetMonthKey, -1));
+      setBudgetMonthKey(shiftBudgetPeriodKey(currentBudgetMonthKey, -1, budgetCycle));
       setBudgetMonthTouched(true);
     } else {
       setBudgetMonthKey(currentBudgetMonthKey);
@@ -601,8 +659,10 @@ export default function SpendingTabContent() {
       },
       { replace: true },
     );
-    if (monthKey && monthKey <= currentBudgetMonthKey) {
-      setBudgetMonthKey(monthKey);
+    const month = monthKey ? parseMonthKey(monthKey) : null;
+    const periodKey = month ? budgetPeriodKeyForDate({ ...month, day: 1 }, budgetCycle) : null;
+    if (periodKey && periodKey <= currentBudgetMonthKey) {
+      setBudgetMonthKey(periodKey);
       setBudgetMonthTouched(true);
     } else {
       setBudgetMonthKey(currentBudgetMonthKey);
@@ -1153,16 +1213,16 @@ export default function SpendingTabContent() {
                   canGoNextMonth={budgetMonthKey < currentBudgetMonthKey}
                   activityRange={budgetMonthActivityRange}
                   target={budgetCardBudget?.computed.totals.spendingPlanned ?? 0}
-                  spent={monthReport?.current.outflow ?? 0}
+                  spent={budgetActual}
                   currency={budgetCardBudget?.computed.currency ?? currency}
                   historicalDailyAvg={historicalDailyAvg}
                   allocations={
                     budgetCardBudget?.computed.groupRows.flatMap((row) => row.categories) ?? []
                   }
-                  spendingBreakdown={monthReport?.spendingBreakdown ?? []}
+                  spendingBreakdown={budgetSpendingBreakdown}
                   categoriesMeta={categoriesMeta}
-                  monthByDay={monthReport?.byDay ?? []}
-                  historicalByDay={historyReport?.byDay ?? []}
+                  monthByDay={budgetMonthByDay}
+                  historicalByDay={budgetHistoricalByDay}
                 />
               </div>
 

@@ -474,20 +474,39 @@ mod migration_tests {
         assert_eq!(
             count(
                 &mut conn,
-                "SELECT COUNT(*) AS count FROM finance_v1_budget_policy
-                 WHERE currency='ZAR' AND rollover_enabled=0 AND transfers_excluded=1",
+                "SELECT COUNT(*) AS count FROM sqlite_master
+                 WHERE type='table' AND name IN ('finance_v1_budget_policy','finance_v1_locked_budget_objects')",
             ),
-            1
+            0
         );
-        let locked = conn
-            .batch_execute(
-                "UPDATE budget_targets SET amount='0' WHERE id='finance_v1_target_salary';",
-            )
+        conn.batch_execute(
+            "UPDATE budget_targets SET amount='0' WHERE id='finance_v1_target_salary';",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn native_budget_editing_migration_cannot_be_reverted() {
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        migrate_until(&mut conn, "20260803000001");
+        let applied_version = latest_version(&mut conn);
+
+        let error = conn
+            .revert_last_migration(MIGRATIONS)
             .unwrap_err()
             .to_string();
         assert!(
-            locked.contains("Finance v1 budget target is locked"),
-            "{locked}"
+            error.contains("Restoring native budget editing is irreversible"),
+            "{error}"
+        );
+        assert_eq!(latest_version(&mut conn), applied_version);
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM sqlite_master
+                 WHERE type='trigger' AND name='restore_native_budget_editing_down_abort'",
+            ),
+            0
         );
     }
 

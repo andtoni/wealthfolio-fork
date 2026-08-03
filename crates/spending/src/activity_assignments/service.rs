@@ -5,37 +5,15 @@ use anyhow::Result;
 
 use super::model::{ActivityTaxonomyAssignment, NewActivityTaxonomyAssignment};
 use super::traits::ActivityTaxonomyAssignmentRepositoryTrait;
-use crate::budget::{BudgetRepositoryTrait, BudgetService};
-use crate::cash_activities::INCOME_TAXONOMY;
 use crate::error::SpendingError;
-use wealthfolio_core::taxonomies::TaxonomyServiceTrait;
 
 pub struct ActivityTaxonomyAssignmentService {
     repo: Arc<dyn ActivityTaxonomyAssignmentRepositoryTrait>,
-    budget_repo: Option<Arc<dyn BudgetRepositoryTrait>>,
-    taxonomy_service: Option<Arc<dyn TaxonomyServiceTrait>>,
 }
 
 impl ActivityTaxonomyAssignmentService {
     pub fn new(repo: Arc<dyn ActivityTaxonomyAssignmentRepositoryTrait>) -> Self {
-        Self {
-            repo,
-            budget_repo: None,
-            taxonomy_service: None,
-        }
-    }
-
-    pub fn with_budget_repository(mut self, budget_repo: Arc<dyn BudgetRepositoryTrait>) -> Self {
-        self.budget_repo = Some(budget_repo);
-        self
-    }
-
-    pub fn with_taxonomy_service(
-        mut self,
-        taxonomy_service: Arc<dyn TaxonomyServiceTrait>,
-    ) -> Self {
-        self.taxonomy_service = Some(taxonomy_service);
-        self
+        Self { repo }
     }
 
     pub async fn list_for_activity(
@@ -73,63 +51,28 @@ impl ActivityTaxonomyAssignmentService {
             }
         }
 
-        let Some(configured) = self.configured_category_pairs().await? else {
-            return Ok(());
-        };
-        if pairs.iter().any(|(taxonomy_id, category_id)| {
-            taxonomy_id != INCOME_TAXONOMY
-                && !configured.contains(&(taxonomy_id.clone(), category_id.clone()))
-        }) {
-            return Err(SpendingError::InvalidInput {
-                message: "Category is not configured in the budget plan".to_string(),
-            }
-            .into());
-        }
         Ok(())
     }
 
-    /// Return category pairs that are valid for a rule or proposal.
+    /// Return category pairs that still exist in their referenced taxonomies.
     ///
-    /// Unlike [`ensure_category_pairs`], invalid pairs are omitted instead of
-    /// failing the whole operation. This lets reruns skip stale rules while
-    /// still applying lower-priority compatible rules and unrelated valid rows.
-    pub(crate) async fn filter_configured_category_pairs(
+    /// Rules and other durable metadata can outlive a deleted category. Callers
+    /// use this to skip stale rows while retaining valid lower-priority matches.
+    pub(crate) async fn filter_existing_category_pairs(
         &self,
         pairs: &[(String, String)],
     ) -> Result<HashSet<(String, String)>> {
-        let configured = self.configured_category_pairs().await?;
         let mut valid = HashSet::new();
         for (taxonomy_id, category_id) in pairs {
-            if !self
+            if self
                 .repo
                 .categories_belong_to_taxonomy(taxonomy_id, &[category_id.clone()])
                 .await?
             {
-                continue;
+                valid.insert((taxonomy_id.clone(), category_id.clone()));
             }
-            if configured.as_ref().is_some_and(|configured| {
-                taxonomy_id != INCOME_TAXONOMY
-                    && !configured.contains(&(taxonomy_id.clone(), category_id.clone()))
-            }) {
-                continue;
-            }
-            valid.insert((taxonomy_id.clone(), category_id.clone()));
         }
         Ok(valid)
-    }
-
-    async fn configured_category_pairs(&self) -> Result<Option<HashSet<(String, String)>>> {
-        let Some(budget_repo) = &self.budget_repo else {
-            return Ok(None);
-        };
-
-        Ok(Some(
-            BudgetService::configured_category_pairs_from_repository(
-                budget_repo.as_ref(),
-                self.taxonomy_service.as_deref(),
-            )
-            .await?,
-        ))
     }
 
     /// Set the (single) category for `activity_id` in `taxonomy_id`.
