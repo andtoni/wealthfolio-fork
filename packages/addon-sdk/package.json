@@ -87,8 +87,8 @@
   },
   "devDependencies": {
     "@tanstack/react-query": "^5.90.20",
-    "@types/react": "^19.2.13",
-    "@types/react-dom": "^19.2.3",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3"
   },
