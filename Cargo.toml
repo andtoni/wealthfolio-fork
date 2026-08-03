@@ -19,52 +19,52 @@ all = "warn"
 
 [workspace.dependencies]
 # Async runtime
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+tokio = { version = "=1.52.3", features = ["rt-multi-thread", "macros", "sync"] }
 
 # Serialization
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.150"
 
 # Database
-diesel = { version = "2.2", features = ["sqlite", "chrono", "r2d2", "numeric", "returning_clauses_for_sqlite_3_35"] }
-diesel_migrations = { version = "2.2", features = ["sqlite"] }
-rusqlite = { version = "0.34", features = ["bundled"] }
-r2d2 = "0.8"
+diesel = { version = "=2.3.10", features = ["sqlite", "chrono", "r2d2", "numeric", "returning_clauses_for_sqlite_3_35"] }
+diesel_migrations = { version = "=2.3.2", features = ["sqlite"] }
+rusqlite = { version = "=0.34.0", features = ["bundled"] }
+r2d2 = "=0.8.10"
 
 # Time
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { version = "=0.4.45", features = ["serde"] }
 
 # HTTP
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+reqwest = { version = "=0.12.28", default-features = false, features = ["json", "rustls-tls", "stream"] }
 
 # Error handling
-thiserror = "1"
-anyhow = "1"
+thiserror = "=1.0.69"
+anyhow = "=1.0.102"
 
 # IDs
-uuid = { version = "1", features = ["v4", "v7", "serde"] }
+uuid = { version = "=1.23.2", features = ["v4", "v7", "serde"] }
 
 # Numbers
-rust_decimal = { version = "1.39", features = ["maths", "serde-float"] }
-rust_decimal_macros = "1.39"
-num-traits = "0.2"
+rust_decimal = { version = "=1.42.0", features = ["maths", "serde-float"] }
+rust_decimal_macros = "=1.40.0"
+num-traits = "=0.2.19"
 
 # Async
-async-trait = "0.1"
-futures = "0.3"
+async-trait = "=0.1.89"
+futures = "=0.3.32"
 
 # MCP (Model Context Protocol)
-rmcp = { version = "1.7", default-features = false, features = ["server", "transport-streamable-http-server"] }
+rmcp = { version = "=1.8.0", default-features = false, features = ["server", "transport-streamable-http-server"] }
 
 # Logging
-log = "0.4"
+log = "=0.4.32"
 
 # Crypto
-chacha20poly1305 = { version = "0.10", features = ["std"] }
-x25519-dalek = { version = "2", features = ["static_secrets"] }
-hkdf = "0.12"
-sha2 = "0.10"
-rand = "0.8"
+chacha20poly1305 = { version = "=0.10.1", features = ["std"] }
+x25519-dalek = { version = "=2.0.1", features = ["static_secrets"] }
+hkdf = "=0.12.4"
+sha2 = "=0.10.9"
+rand = "=0.8.6"
 
 # Internal crates
 wealthfolio-market-data = { path = "crates/market-data" }

@@ -38,4 +38,4 @@ rusqlite = { workspace = true }
 r2d2 = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = "=3.27.0"

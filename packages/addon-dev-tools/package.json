@@ -40,12 +40,12 @@
     "test": "echo \"No tests yet\" && exit 0"
   },
   "dependencies": {
-    "chokidar": "^4.0.3",
-    "commander": "^14.0.3",
-    "cors": "^2.8.6",
-    "express": "^4.22.1"
+    "chokidar": "4.0.3",
+    "commander": "14.0.3",
+    "cors": "2.8.6",
+    "express": "4.22.1"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": "v26.5.1"
   }
 }
