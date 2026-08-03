@@ -322,6 +322,24 @@ async fn current_state_cash_and_positive_liability_are_atomic_and_retry_bound() 
     stale_provider.semantic_hash = Some(current_state_semantic_hash(stale_state));
     assert!(store.commit(stale_provider).await.is_err());
 
+    let mut superseded =
+        current_state_operation("current-state-superseded", generation, "140", "25");
+    let superseded_state = superseded.current_state.as_mut().unwrap();
+    superseded_state.provider_generation = 2;
+    superseded_state.observed_at = "2026-07-18T12:30:00Z".into();
+    superseded_state.revision = 1;
+    superseded.semantic_hash = Some(current_state_semantic_hash(superseded_state));
+    let superseded_receipt = store.commit(superseded).await.unwrap();
+    assert_eq!(superseded_receipt.outcome, ReceiptOutcome::Accepted);
+    let persisted_cash: String = connection
+        .query_row(
+            "SELECT cash_total_account_currency FROM holdings_snapshots WHERE account_id='a1' AND snapshot_date='2026-07-18'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(persisted_cash, "130");
+
     let altered = current_state_operation("current-state", generation, "126", "25");
     assert!(matches!(
         store.commit(altered).await,

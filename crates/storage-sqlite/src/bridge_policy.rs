@@ -745,6 +745,72 @@ struct AssetIdRow {
     id: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SnapshotProvenance {
+    provider_connection_id: String,
+    provider_incarnation_id: String,
+    provider_generation: i64,
+    observed_at: String,
+    revision: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CurrentStateWriteDecision {
+    Apply,
+    Superseded,
+    Reject,
+}
+
+fn current_state_write_decision(
+    c: &mut SqliteConnection,
+    state: &CurrentStatePayload,
+) -> std::result::Result<CurrentStateWriteDecision, diesel::result::Error> {
+    let snapshot_id = wealthfolio_core::portfolio::snapshot::AccountStateSnapshot::stable_id(
+        &state.account_id,
+        chrono::NaiveDate::parse_from_str(&state.as_of_date, "%Y-%m-%d").expect("validated date"),
+    );
+    let Some(existing) = sql_query("SELECT snapshot.source, provenance.source_record_id FROM holdings_snapshots snapshot LEFT JOIN provenance_records provenance ON provenance.entity_type='snapshot' AND provenance.entity_id=snapshot.id WHERE snapshot.id=?")
+        .bind::<Text, _>(&snapshot_id)
+        .get_result::<ExistingSnapshot>(c)
+        .optional()?
+    else {
+        return Ok(CurrentStateWriteDecision::Apply);
+    };
+    let Some(prior) = existing
+        .source_record_id
+        .as_deref()
+        .and_then(|value| serde_json::from_str::<SnapshotProvenance>(value).ok())
+    else {
+        return Ok(CurrentStateWriteDecision::Reject);
+    };
+    if existing.source != "BROKER_IMPORTED"
+        || prior.provider_connection_id != state.provider_connection_id
+        || prior.provider_incarnation_id != state.provider_incarnation_id
+        || state.provider_generation < prior.provider_generation
+    {
+        return Ok(CurrentStateWriteDecision::Reject);
+    }
+    let incoming_observed =
+        chrono::DateTime::parse_from_rfc3339(&state.observed_at).expect("validated observation");
+    let Ok(prior_observed) = chrono::DateTime::parse_from_rfc3339(&prior.observed_at) else {
+        return Ok(CurrentStateWriteDecision::Reject);
+    };
+    if (incoming_observed, state.revision) > (prior_observed, prior.revision) {
+        Ok(CurrentStateWriteDecision::Apply)
+    } else {
+        Ok(CurrentStateWriteDecision::Superseded)
+    }
+}
+
+#[derive(QueryableByName)]
+struct ExistingSnapshot {
+    #[diesel(sql_type = Text)]
+    source: String,
+    #[diesel(sql_type = Nullable<Text>)]
+    source_record_id: Option<String>,
+}
+
 fn resolve_current_state_assets(
     c: &mut SqliteConnection,
     state: &CurrentStatePayload,
@@ -785,46 +851,11 @@ fn persist_current_state(
     );
     let now = chrono::Utc::now();
 
-    #[derive(QueryableByName)]
-    struct ExistingSnapshot {
-        #[diesel(sql_type = Text)]
-        source: String,
-        #[diesel(sql_type = Nullable<Text>)]
-        source_record_id: Option<String>,
-    }
-    if let Some(existing) = sql_query("SELECT snapshot.source, provenance.source_record_id FROM holdings_snapshots snapshot LEFT JOIN provenance_records provenance ON provenance.entity_type='snapshot' AND provenance.entity_id=snapshot.id WHERE snapshot.id=?")
-        .bind::<Text, _>(&snapshot_id)
-        .get_result::<ExistingSnapshot>(c)
-        .optional()?
-    {
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct SnapshotProvenance {
-            provider_connection_id: String,
-            provider_incarnation_id: String,
-            provider_generation: i64,
-            observed_at: String,
-            revision: i64,
-        }
-        let prior = existing
-            .source_record_id
-            .as_deref()
-            .and_then(|value| serde_json::from_str::<SnapshotProvenance>(value).ok());
-        let incoming_observed = chrono::DateTime::parse_from_rfc3339(&state.observed_at)
-            .expect("validated observation");
-        let replaceable = existing.source == "BROKER_IMPORTED"
-            && prior.as_ref().is_some_and(|prior| {
-                prior.provider_connection_id == state.provider_connection_id
-                    && prior.provider_incarnation_id == state.provider_incarnation_id
-                    && state.provider_generation >= prior.provider_generation
-                    && chrono::DateTime::parse_from_rfc3339(&prior.observed_at)
-                        .is_ok_and(|observed| {
-                            (incoming_observed, state.revision) > (observed, prior.revision)
-                        })
-            });
-        if !replaceable {
-            return Err(diesel::result::Error::RollbackTransaction);
-        }
+    if !matches!(
+        current_state_write_decision(c, state)?,
+        CurrentStateWriteDecision::Apply
+    ) {
+        return Err(diesel::result::Error::RollbackTransaction);
     }
 
     // Provider current state owns its account/date. A generated duplicate can
@@ -1080,8 +1111,30 @@ impl BridgePolicyStore {
                     return Ok(Err(BridgePolicyError::AccessDenied));
                 }
 
-                let resolved_current_state_assets = if let Some(state) = op.current_state.as_ref() {
-                    match resolve_current_state_assets(c, state) {
+                // Concurrent projection workers can deliver an older same-generation
+                // snapshot after a newer one. Treat that already-superseded state as
+                // an accepted no-op so an idempotent outbox row cannot dead-letter
+                // the entire provider cycle.
+                let current_state_decision = if let Some(state) = op.current_state.as_ref() {
+                    match current_state_write_decision(c, state)? {
+                        CurrentStateWriteDecision::Apply => Some(CurrentStateWriteDecision::Apply),
+                        CurrentStateWriteDecision::Superseded => {
+                            Some(CurrentStateWriteDecision::Superseded)
+                        }
+                        CurrentStateWriteDecision::Reject => {
+                            return Err(diesel::result::Error::RollbackTransaction.into());
+                        }
+                    }
+                } else {
+                    None
+                };
+                let resolved_current_state_assets = if current_state_decision
+                    == Some(CurrentStateWriteDecision::Apply)
+                {
+                    match resolve_current_state_assets(
+                        c,
+                        op.current_state.as_ref().expect("validated current state"),
+                    ) {
                         Ok(value) => value,
                         Err(error) => return Ok(Err(error)),
                     }
@@ -1165,6 +1218,8 @@ impl BridgePolicyStore {
                         do_delete_activity(c, &op, &d)?;
                     }
                     DisclosureKind::ProjectionFence => {}
+                    DisclosureKind::CurrentStateUpsert
+                        if current_state_decision == Some(CurrentStateWriteDecision::Superseded) => {}
                     DisclosureKind::CurrentStateUpsert => {
                         persist_current_state(c, &op, &resolved_current_state_assets)?;
                     }
