@@ -22,6 +22,11 @@ import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { memo, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useRuntimeContext } from "../../hooks/use-runtime-context";
+import {
+  categoryMatchesCashFlowBucket,
+  categoryScopeForCashFlowBucket,
+} from "../../lib/categorization-buckets";
+import type { CashFlowBucket } from "@/features/spending/types/cash-activity";
 import type {
   ProposeCategoriesArgs,
   ProposeCategoriesOutput,
@@ -41,6 +46,7 @@ interface RowDraft {
   amount: number;
   currency: string;
   notes: string | null;
+  cashFlowBucket?: CashFlowBucket;
   taxonomyId: string;
   categoryId: string;
   categoryPath: string;
@@ -81,7 +87,7 @@ function ProposalsLoadingState() {
   );
 }
 
-function CategorizationProposalsContentImpl({
+export function CategorizationProposalsContentImpl({
   result,
   status,
   toolCallId,
@@ -94,6 +100,12 @@ function CategorizationProposalsContentImpl({
   const threadId = runtime.currentThreadId;
   const amountFormatter = useMemo(() => createActivityAmountFormatter(), []);
   const bulkAssign = useBulkAssignCategories();
+  const cashFlowLabels: Record<CashFlowBucket, string> = {
+    spending: t("spending:cashFlow.spending"),
+    income: t("spending:cashFlow.income"),
+    saving: t("spending:cashFlow.saving"),
+    neutral: t("ai:categorization.unknownBucket"),
+  };
 
   const isLoading = status?.type === "running";
   const isIncomplete = status?.type === "incomplete";
@@ -126,6 +138,7 @@ function CategorizationProposalsContentImpl({
       amount: p.amount,
       currency: p.currency,
       notes: p.notes,
+      cashFlowBucket: p.cashFlowBucket,
       taxonomyId: p.taxonomyId,
       categoryId: p.categoryId,
       categoryPath: p.categoryPath,
@@ -133,7 +146,8 @@ function CategorizationProposalsContentImpl({
       confidence: p.confidence,
       source: p.source,
       explanation: p.explanation,
-      selected: p.confidence >= 0.6,
+      selected:
+        p.confidence >= 0.6 && categoryMatchesCashFlowBucket(p.cashFlowBucket, p.taxonomyId),
     }));
   }, [result, categoryColorMap]);
 
@@ -155,8 +169,14 @@ function CategorizationProposalsContentImpl({
 
   const isSubmitted = localSubmitted || result?.submitted === true;
   const selectedCount = rows.filter((r) => r.selected).length;
+  // Unproposed rows are intentionally non-selectable and may be neutral (or
+  // legacy bucketless rows). They must not block valid proposals from being
+  // applied; only editable proposal rows can invalidate this draft.
+  const hasInvalidDraftRows = rows.some(
+    (row) => !categoryMatchesCashFlowBucket(row.cashFlowBucket, row.taxonomyId),
+  );
   const isSubmitting = bulkAssign.isPending;
-  const canSubmit = !isSubmitted && !isSubmitting && selectedCount > 0;
+  const canSubmit = !isSubmitted && !isSubmitting && !hasInvalidDraftRows && selectedCount > 0;
   const appliedCount = localAppliedCount ?? result?.appliedCount ?? 0;
 
   if (isLoading) return <ProposalsLoadingState />;
@@ -198,11 +218,17 @@ function CategorizationProposalsContentImpl({
 
   const toggleRow = (activityId: string) => {
     setRows((prev) =>
-      prev.map((r) => (r.activityId === activityId ? { ...r, selected: !r.selected } : r)),
+      prev.map((r) =>
+        r.activityId === activityId && categoryMatchesCashFlowBucket(r.cashFlowBucket, r.taxonomyId)
+          ? { ...r, selected: !r.selected }
+          : r,
+      ),
     );
   };
 
   const updateRowCategory = (activityId: string, taxonomyId: string, categoryId: string) => {
+    const row = rows.find((candidate) => candidate.activityId === activityId);
+    if (!row || !categoryMatchesCashFlowBucket(row.cashFlowBucket, taxonomyId)) return;
     const cat = categoryPathMap.get(categoryId);
     setRows((prev) =>
       prev.map((r) =>
@@ -223,9 +249,21 @@ function CategorizationProposalsContentImpl({
     );
   };
 
-  const handleAcceptAll = () => setRows((prev) => prev.map((r) => ({ ...r, selected: true })));
+  const handleAcceptAll = () =>
+    setRows((prev) =>
+      prev.map((r) => ({
+        ...r,
+        selected: categoryMatchesCashFlowBucket(r.cashFlowBucket, r.taxonomyId),
+      })),
+    );
   const handleAcceptHighConfidence = () =>
-    setRows((prev) => prev.map((r) => ({ ...r, selected: r.confidence >= 0.85 })));
+    setRows((prev) =>
+      prev.map((r) => ({
+        ...r,
+        selected:
+          r.confidence >= 0.85 && categoryMatchesCashFlowBucket(r.cashFlowBucket, r.taxonomyId),
+      })),
+    );
   const handleRejectAll = () => setRows((prev) => prev.map((r) => ({ ...r, selected: false })));
 
   const handleSubmit = async () => {
@@ -286,6 +324,18 @@ function CategorizationProposalsContentImpl({
         </div>
       </CardHeader>
       <CardContent className="space-y-3 px-0 pb-3">
+        {hasInvalidDraftRows && !isSubmitted && (
+          <div className="mx-3 sm:mx-6">
+            <Alert variant="error">
+              <Icons.AlertCircle className="h-4 w-4" />
+              <AlertTitle>{t("ai:categorization.expiredTitle")}</AlertTitle>
+              <AlertDescription className="text-xs">
+                {t("ai:categorization.expiredDescription")}
+              </AlertDescription>
+            </Alert>
+          </div>
+        )}
+
         {!isSubmitted && rows.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-6">
             <label className="flex cursor-pointer items-center gap-2 text-xs">
@@ -340,7 +390,9 @@ function CategorizationProposalsContentImpl({
               <Checkbox
                 checked={row.selected}
                 onCheckedChange={() => toggleRow(row.activityId)}
-                disabled={isSubmitted}
+                disabled={
+                  isSubmitted || !categoryMatchesCashFlowBucket(row.cashFlowBucket, row.taxonomyId)
+                }
                 aria-label={t("ai:categorization.selectRow")}
               />
               <span className="text-muted-foreground min-w-0 whitespace-nowrap tabular-nums">
@@ -366,17 +418,24 @@ function CategorizationProposalsContentImpl({
                   <button
                     type="button"
                     className="hover:bg-muted/70 col-span-2 inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] sm:col-span-1"
-                    disabled={isSubmitted}
+                    disabled={
+                      isSubmitted || categoryScopeForCashFlowBucket(row.cashFlowBucket) === null
+                    }
                   >
                     <span
                       className="h-2 w-2 rounded-full"
                       style={{ backgroundColor: row.categoryColor }}
                     />
+                    <span className="text-muted-foreground shrink-0">
+                      {row.cashFlowBucket
+                        ? cashFlowLabels[row.cashFlowBucket]
+                        : t("ai:categorization.unknownBucket")}
+                    </span>
                     <span className="min-w-0 max-w-[180px] truncate">{row.categoryPath}</span>
                   </button>
                 }
                 selectedCategoryId={row.categoryId}
-                scope="both"
+                scope={categoryScopeForCashFlowBucket(row.cashFlowBucket) ?? "both"}
                 onSelect={(taxonomyId, categoryId) =>
                   updateRowCategory(row.activityId, taxonomyId, categoryId)
                 }
@@ -428,13 +487,15 @@ function CategorizationProposalsContentImpl({
                       <button
                         type="button"
                         className="text-muted-foreground hover:bg-muted/70 col-span-3 inline-flex min-w-0 max-w-full items-center justify-center gap-1 rounded-full border border-dashed px-2 py-0.5 text-[11px] sm:col-span-1"
+                        disabled={categoryScopeForCashFlowBucket(row.cashFlowBucket) === null}
                       >
                         <Icons.Plus className="h-3 w-3" />
                         {t("ai:categorization.pickCategory")}
                       </button>
                     }
-                    scope="both"
+                    scope={categoryScopeForCashFlowBucket(row.cashFlowBucket) ?? "both"}
                     onSelect={(taxonomyId, categoryId) => {
+                      if (!categoryMatchesCashFlowBucket(row.cashFlowBucket, taxonomyId)) return;
                       const cat = categoryPathMap.get(categoryId);
                       setPickedUnproposedIds((prev) => {
                         const next = new Set(prev);
@@ -449,6 +510,7 @@ function CategorizationProposalsContentImpl({
                           amount: row.amount,
                           currency: row.currency,
                           notes: row.notes,
+                          cashFlowBucket: row.cashFlowBucket,
                           taxonomyId,
                           categoryId,
                           categoryPath: cat?.path ?? "",

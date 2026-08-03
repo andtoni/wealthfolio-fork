@@ -605,12 +605,12 @@ fn categorization_env() -> Arc<MockEnvironment> {
     });
     env.taxonomy_service = Arc::new(MockTaxonomyService {
         taxonomies: vec![fixture_taxonomy(
-            "spending",
+            "spending_categories",
             "Spending",
             "activity",
             vec![
-                fixture_category("spending", "cat-food", "Food"),
-                fixture_child_category("spending", "cat-coffee", "cat-food", "Coffee"),
+                fixture_category("spending_categories", "cat-food", "Food"),
+                fixture_child_category("spending_categories", "cat-coffee", "cat-food", "Coffee"),
             ],
         )],
         assignments: vec![],
@@ -629,7 +629,7 @@ fn categorization_env() -> Arc<MockEnvironment> {
                 "acc-1",
                 "2024-05-10T00:00:00Z",
                 "SQ *COFFEE SHOP OTTAWA",
-                Some(("spending", "cat-coffee")),
+                Some(("spending_categories", "cat-coffee")),
             ),
         ],
     });

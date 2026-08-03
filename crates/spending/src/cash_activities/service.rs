@@ -17,7 +17,7 @@ use super::{
     model::{
         CashActivity, CashActivityFilter, CashActivitySearchRequest, CashActivitySearchResponse,
         CashActivitySortField, CashActivityStatusFilter, CashFlowBucket, SortDirection,
-        TransferLinkStatus,
+        TransferLinkStatus, INCOME_TAXONOMY, SAVINGS_TAXONOMY, SPENDING_TAXONOMY,
     },
     CASH_ACTIVITY_TYPES,
 };
@@ -39,9 +39,6 @@ use crate::error::SpendingError;
 use crate::events::EventsService;
 use crate::settings::SpendingSettingsService;
 
-const SPENDING_TAXONOMY: &str = "spending_categories";
-const INCOME_TAXONOMY: &str = "income_sources";
-const SAVINGS_TAXONOMY: &str = "savings_categories";
 const MAX_CASH_ACTIVITY_SEARCH_LIMIT: usize = 1_000;
 
 /// Service for listing/searching activities scoped to the user's spending accounts.
@@ -297,7 +294,7 @@ impl CashActivityService {
                 let asgs = by_activity.get(a.id.as_str());
                 let activity_splits = splits_by_activity.get(a.id.as_str());
                 let bucket = cash_flow_bucket_for(a, &account_types, &transfer_groups);
-                let expected_taxonomy = taxonomy_for_bucket(bucket);
+                let expected_taxonomy = bucket.taxonomy_id();
                 let has_category =
                     expected_taxonomy.map_or(bucket == CashFlowBucket::Neutral, |taxonomy_id| {
                         asgs.map(|v| v.iter().any(|asg| asg.taxonomy_id == taxonomy_id))
@@ -667,6 +664,15 @@ impl CashActivityService {
             sum += split.amount;
         }
 
+        self.assignments
+            .ensure_category_pairs(
+                &category_ids
+                    .iter()
+                    .map(|category_id| (expected_taxonomy.to_string(), category_id.clone()))
+                    .collect::<Vec<_>>(),
+            )
+            .await?;
+
         if !self
             .splits
             .categories_belong_to_taxonomy(expected_taxonomy, &category_ids)
@@ -810,7 +816,7 @@ impl CashActivityService {
             account_type,
             &transfer_groups,
         ));
-        let Some(expected_taxonomy) = taxonomy_for_bucket(bucket) else {
+        let Some(expected_taxonomy) = bucket.taxonomy_id() else {
             return Err(SpendingError::InvalidInput {
                 message: "Neutral transfers cannot be categorized. Change or unlink the transfer if it should count as spending.".to_string(),
             }
@@ -855,7 +861,7 @@ impl CashActivityService {
             account_type,
             &transfer_groups,
         ));
-        let Some(expected_taxonomy) = taxonomy_for_bucket(bucket) else {
+        let Some(expected_taxonomy) = bucket.taxonomy_id() else {
             return Err(SpendingError::InvalidInput {
                 message: "Neutral transfers cannot be split. Change or unlink the transfer if it should count as spending.".to_string(),
             }
@@ -948,15 +954,6 @@ fn cash_flow_bucket_from_classification(classification: SpendingClassification) 
     }
 }
 
-fn taxonomy_for_bucket(bucket: CashFlowBucket) -> Option<&'static str> {
-    match bucket {
-        CashFlowBucket::Spending => Some(SPENDING_TAXONOMY),
-        CashFlowBucket::Income => Some(INCOME_TAXONOMY),
-        CashFlowBucket::Saving => Some(SAVINGS_TAXONOMY),
-        CashFlowBucket::Neutral => None,
-    }
-}
-
 fn transfer_link_status_for(
     activity: &Activity,
     resolution: &TransferPairResolution,
@@ -1005,26 +1002,6 @@ fn aggregate_transfer_context_rows(
         .filter(|activity| context_ids.contains(activity.id.as_str()))
         .cloned()
         .collect()
-}
-
-impl CashFlowBucket {
-    fn label(self) -> &'static str {
-        match self {
-            CashFlowBucket::Spending => "Spending",
-            CashFlowBucket::Income => "Income",
-            CashFlowBucket::Saving => "Saving",
-            CashFlowBucket::Neutral => "Neutral",
-        }
-    }
-
-    fn taxonomy_label(self) -> &'static str {
-        match self {
-            CashFlowBucket::Spending => "spending",
-            CashFlowBucket::Income => "income",
-            CashFlowBucket::Saving => "savings",
-            CashFlowBucket::Neutral => "no",
-        }
-    }
 }
 
 fn is_visible_cash_activity(activity: &Activity, account_type: &str) -> bool {
@@ -1604,6 +1581,10 @@ mod tests {
             _: &[String],
         ) -> Result<Vec<ActivityTaxonomyAssignment>> {
             Ok(Vec::new())
+        }
+
+        async fn categories_belong_to_taxonomy(&self, _: &str, _: &[String]) -> Result<bool> {
+            Ok(true)
         }
 
         async fn upsert(

@@ -1,5 +1,6 @@
 ---
 source: crates/ai/tests/tool_outputs_parity.rs
+assertion_line: 644
 expression: result
 ---
 {
@@ -13,7 +14,7 @@ expression: result
     ],
     "nextStep": "Call propose_transaction_categories with aiProposals: [] and the same filters to render the review widget. Rule/history matches are draft proposals, not applied categories.",
     "summary": {
-      "deterministicallyProposed": 2,
+      "deterministicallyProposed": 1,
       "needsAiJudgement": 0,
       "total": 2
     },
@@ -35,7 +36,7 @@ expression: result
             "path": "Food / Coffee"
           }
         ],
-        "taxonomyId": "spending",
+        "taxonomyId": "spending_categories",
         "taxonomyName": "Spending"
       }
     ],

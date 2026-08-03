@@ -121,6 +121,7 @@
     "markReimbursement": "Marquer comme remboursement",
     "splitTransaction": "Ventiler la transaction",
     "duplicate": "Dupliquer",
+    "markTransfer": "Marquer comme virement",
     "unlinkTransfer": "Dissocier le virement",
     "linkTransfer": "Associer un virement..."
   },

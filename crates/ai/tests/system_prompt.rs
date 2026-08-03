@@ -116,6 +116,10 @@ fn categorization_context_still_requires_review_widget() {
     assert!(lower.contains("always follow it with `propose_transaction_categories`"));
     assert!(lower.contains("aiproposals: []"));
     assert!(lower.contains("rules/history matches are still only draft proposals"));
+    assert!(lower.contains("canonical `cashflowbucket`"));
+    assert!(lower.contains("budget-configured categories shown in `taxonomies`"));
+    assert!(lower.contains("using `spending_categories` for spending"));
+    assert!(lower.contains("categories label that bucket and never change it"));
     assert!(
         lower.contains("never say transactions were categorized automatically"),
         "system prompt should prevent treating context-only deterministic matches as applied",

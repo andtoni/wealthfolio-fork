@@ -55,6 +55,7 @@ import {
   CASH_ACTIVITY_TYPES,
   CASH_ACTIVITY_TYPE_LABELS,
   getEffectiveCashActivityType,
+  isCashActivityInflow,
   isCreditCardAccountType,
   isSpendingAccountType,
 } from "../lib/constants";
@@ -213,6 +214,10 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
     const [transferFormActivity, setTransferFormActivity] = useState<
       Partial<ActivityDetails> | undefined
     >();
+    const [transferCleanup, setTransferCleanup] = useState<{
+      activityId: string;
+      taxonomyIds: string[];
+    } | null>(null);
     const [transferMatchDialog, setTransferMatchDialog] = useState<{
       open: boolean;
       mode: "link" | "unlink";
@@ -379,6 +384,7 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
     const handleTransferClick = useCallback(
       (accountId: string) => {
         const account = accounts.find((a: Account) => a.id === accountId);
+        setTransferCleanup(null);
         setTransferFormActivity({
           activityType: isCreditCardAccountType(account?.accountType)
             ? ActivityType.TRANSFER_IN
@@ -393,6 +399,7 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
     const handleTransferFormClose = useCallback(() => {
       setShowTransferForm(false);
       setTransferFormActivity(undefined);
+      setTransferCleanup(null);
     }, []);
     const { data: events = [] } = useSpendingEvents();
     const { data: eventTypes = [] } = useEventTypes();
@@ -405,6 +412,17 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
     const replaceSplitsMutation = useReplaceActivitySplits();
     const clearSplitsMutation = useClearActivitySplits();
     const setEventMutation = useSetActivityEvent();
+
+    const handleTransferSaved = useCallback(() => {
+      const cleanup = transferCleanup;
+      if (!cleanup) return;
+      void Promise.all([
+        ...cleanup.taxonomyIds.map((taxonomyId) =>
+          unassignMutation.mutateAsync({ activityId: cleanup.activityId, taxonomyId }),
+        ),
+        clearSplitsMutation.mutateAsync({ activityId: cleanup.activityId }),
+      ]).finally(() => setTransferCleanup(null));
+    }, [clearSplitsMutation, transferCleanup, unassignMutation]);
 
     const allCategories = useMemo(() => {
       const map = new Map<string, TaxonomyCategory>();
@@ -704,6 +722,7 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
     const handleEditRow = useCallback(
       (row: TransactionRowVM) => {
         if (isTransferCashActivity(row.activity)) {
+          setTransferCleanup(null);
           setEditingActivity(undefined);
           setShowForm(false);
           setTransferFormActivity(toActivityDetails(row, accountById.get(row.activity.accountId)));
@@ -726,6 +745,29 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
         currency: row.activity.currency,
       });
     }, []);
+    const handleMarkTransfer = useCallback(
+      (row: TransactionRowVM) => {
+        const details = toActivityDetails(row, accountById.get(row.activity.accountId));
+        const isIncoming = isCashActivityInflow(
+          getEffectiveCashActivityType(row.activity),
+          accountById.get(row.activity.accountId)?.accountType,
+        );
+        setTransferCleanup({
+          activityId: row.activity.id,
+          taxonomyIds: row.activity.assignments.map((assignment) => assignment.taxonomyId),
+        });
+        const flow = (details.metadata?.flow ?? {}) as Record<string, unknown>;
+        setEditingActivity(undefined);
+        setShowForm(false);
+        setTransferFormActivity({
+          ...details,
+          activityType: isIncoming ? ActivityType.TRANSFER_IN : ActivityType.TRANSFER_OUT,
+          metadata: { ...details.metadata, flow: { ...flow, is_external: true } },
+        });
+        setShowTransferForm(true);
+      },
+      [accountById],
+    );
     const handleLinkTransfer = useCallback((row: TransactionRowVM) => {
       setTransferMatchDialog({ open: true, mode: "link", row });
     }, []);
@@ -861,6 +903,7 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
             onMarkReimbursement={(row) => markReimbursementMutation.mutate(row)}
             onEditSplits={setSplittingActivity}
             onEdit={handleEditRow}
+            onMarkTransfer={handleMarkTransfer}
             onDuplicate={handleDuplicate}
             onDelete={handleDeleteRow}
             onLinkTransfer={handleLinkTransfer}
@@ -1055,6 +1098,7 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
               activity={transferFormActivity}
               open={showTransferForm}
               onClose={handleTransferFormClose}
+              onSuccess={handleTransferSaved}
               startOnDetails
             />
           ) : (
@@ -1064,6 +1108,7 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
               activity={transferFormActivity}
               open={showTransferForm}
               onClose={handleTransferFormClose}
+              onSuccess={handleTransferSaved}
               hidePicker
             />
           ))}

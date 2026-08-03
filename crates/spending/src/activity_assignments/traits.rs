@@ -17,6 +17,13 @@ pub trait ActivityTaxonomyAssignmentRepositoryTrait: Send + Sync {
         activity_ids: &[String],
     ) -> Result<Vec<ActivityTaxonomyAssignment>>;
 
+    /// Verify that every category belongs to the supplied taxonomy.
+    async fn categories_belong_to_taxonomy(
+        &self,
+        taxonomy_id: &str,
+        category_ids: &[String],
+    ) -> Result<bool>;
+
     /// Create or replace (for single-select taxonomies) the assignment.
     async fn upsert(
         &self,

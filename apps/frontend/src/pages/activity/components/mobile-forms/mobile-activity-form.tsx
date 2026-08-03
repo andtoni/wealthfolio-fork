@@ -47,6 +47,8 @@ interface MobileActivityFormProps {
   activity?: Partial<ActivityDetails>;
   open?: boolean;
   onClose?: () => void;
+  /** Called after a mutation succeeds, before the form is discarded. */
+  onSuccess?: () => void;
   startOnDetails?: boolean;
 }
 
@@ -291,6 +293,7 @@ export function MobileActivityForm({
   activity,
   open,
   onClose,
+  onSuccess,
   startOnDetails,
 }: MobileActivityFormProps) {
   const { t } = useTranslation();
@@ -302,7 +305,10 @@ export function MobileActivityForm({
     updateActivityMutation,
     saveActivitiesMutation,
     saveInternalTransferPairMutation,
-  } = useActivityMutations(onClose);
+  } = useActivityMutations(() => {
+    onSuccess?.();
+    onClose?.();
+  });
 
   const defaultValues = useMemo<Partial<NewActivityFormValues>>(() => {
     // Derive transfer mode from existing activity data
@@ -374,6 +380,7 @@ export function MobileActivityForm({
       tax: activity?.tax ? Number(activity.tax) : 0,
       comment: activity?.comment ?? null,
       subtype: activity?.subtype ?? null,
+      metadata: activity?.metadata,
       fxRate,
       assetId:
         isTransferType && !isSecurityTransferActivity

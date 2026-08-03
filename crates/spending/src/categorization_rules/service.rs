@@ -5,7 +5,9 @@ use anyhow::Result;
 use tokio::sync::Mutex;
 use wealthfolio_core::activities::ActivityRepositoryTrait;
 
-use super::matcher::{compile_regex_pattern, compile_rules, match_compiled, MAX_REGEX_PATTERN_LEN};
+use super::matcher::{
+    compile_regex_pattern, compile_rules, match_compiled_where, MAX_REGEX_PATTERN_LEN,
+};
 use super::model::{
     CategorizationRule, NewCategorizationRule, RuleMatchType, UpdateCategorizationRule,
 };
@@ -14,12 +16,14 @@ use super::traits::CategorizationRulesRepositoryTrait;
 use crate::activity_assignments::{
     ActivityTaxonomyAssignmentService, NewActivityTaxonomyAssignment,
 };
+use crate::cash_activities::CashActivityServiceTrait;
 use crate::error::SpendingError;
 
 pub struct CategorizationRulesService {
     repo: Arc<dyn CategorizationRulesRepositoryTrait>,
     activity_repo: Arc<dyn ActivityRepositoryTrait>,
     assignment_service: Arc<ActivityTaxonomyAssignmentService>,
+    cash_activity_service: Arc<dyn CashActivityServiceTrait>,
     /// Serializes `rerun_all` against itself and against in-progress user
     /// assignments. Without this, a background rerun's pre-built skip-set
     /// can become stale relative to a concurrent manual assign, causing the
@@ -36,11 +40,13 @@ impl CategorizationRulesService {
         repo: Arc<dyn CategorizationRulesRepositoryTrait>,
         activity_repo: Arc<dyn ActivityRepositoryTrait>,
         assignment_service: Arc<ActivityTaxonomyAssignmentService>,
+        cash_activity_service: Arc<dyn CashActivityServiceTrait>,
     ) -> Self {
         Self {
             repo,
             activity_repo,
             assignment_service,
+            cash_activity_service,
             rerun_lock: Arc::new(Mutex::new(())),
         }
     }
@@ -118,6 +124,13 @@ impl CategorizationRulesService {
 
         let ids: Vec<String> = activities.iter().map(|a| a.id.clone()).collect();
         let assignments = self.assignment_service.list_for_activities(&ids).await?;
+        let buckets = self
+            .cash_activity_service
+            .get_by_activity_ids(&ids)
+            .await?
+            .into_iter()
+            .map(|row| (row.activity.id, row.cash_flow_bucket))
+            .collect::<HashMap<_, _>>();
 
         // Skip-key is (activity_id, taxonomy_id) — never `activity_id` alone.
         // That preserves cross-taxonomy independence: a manual `income_sources`
@@ -142,19 +155,42 @@ impl CategorizationRulesService {
         }
 
         let rules = self.repo.list().await?;
+        let configured_rule_pairs = self
+            .assignment_service
+            .filter_configured_category_pairs(
+                &rules
+                    .iter()
+                    .filter_map(|rule| Some((rule.taxonomy_id.clone()?, rule.category_id.clone()?)))
+                    .collect::<Vec<_>>(),
+            )
+            .await?;
         let compiled = compile_rules(&rules);
 
         let mut matched_count = 0usize;
         let mut writes: Vec<NewActivityTaxonomyAssignment> = Vec::with_capacity(activities.len());
         for a in &activities {
+            let Some(bucket) = buckets.get(&a.id) else {
+                continue;
+            };
             let notes_raw = a.notes.as_deref().unwrap_or("");
             let notes_upper = notes_raw.to_uppercase();
-            let Some(m) = match_compiled(
+            let Some(m) = match_compiled_where(
                 &compiled,
                 &notes_upper,
                 notes_raw,
                 a.effective_type(),
                 &a.account_id,
+                |rule| {
+                    let Some(taxonomy_id) = rule.taxonomy_id.as_deref() else {
+                        return false;
+                    };
+                    let Some(category_id) = rule.category_id.as_deref() else {
+                        return false;
+                    };
+                    bucket.accepts_taxonomy(taxonomy_id)
+                        && configured_rule_pairs
+                            .contains(&(taxonomy_id.to_string(), category_id.to_string()))
+                },
             ) else {
                 continue;
             };
@@ -335,6 +371,9 @@ mod tests {
     use crate::activity_assignments::{
         ActivityTaxonomyAssignment, ActivityTaxonomyAssignmentRepositoryTrait,
     };
+    use crate::cash_activities::{
+        CashActivity, CashActivitySearchRequest, CashActivitySearchResponse, CashFlowBucket,
+    };
     use async_trait::async_trait;
     use chrono::{DateTime, NaiveDate, Utc};
     use std::sync::Mutex;
@@ -494,6 +533,9 @@ mod tests {
                 .cloned()
                 .collect())
         }
+        async fn categories_belong_to_taxonomy(&self, _: &str, _: &[String]) -> Result<bool> {
+            Ok(true)
+        }
         async fn upsert(
             &self,
             _: NewActivityTaxonomyAssignment,
@@ -593,6 +635,56 @@ mod tests {
 
     struct MockActivityRepo {
         activities: Vec<Activity>,
+    }
+
+    struct MockCashActivityService {
+        activities: Vec<Activity>,
+    }
+
+    #[async_trait]
+    impl CashActivityServiceTrait for MockCashActivityService {
+        async fn search(&self, _: CashActivitySearchRequest) -> Result<CashActivitySearchResponse> {
+            unimplemented!()
+        }
+
+        async fn get_by_activity_ids(&self, activity_ids: &[String]) -> Result<Vec<CashActivity>> {
+            Ok(self
+                .activities
+                .iter()
+                .filter(|activity| activity_ids.contains(&activity.id))
+                .cloned()
+                .map(|activity| {
+                    let cash_flow_bucket = match activity.effective_type() {
+                        "DEPOSIT" | "CREDIT" | "INTEREST" => CashFlowBucket::Income,
+                        _ => CashFlowBucket::Spending,
+                    };
+                    CashActivity {
+                        activity,
+                        cash_flow_bucket,
+                        assignments: Vec::new(),
+                        splits: Vec::new(),
+                        event_id: None,
+                        transfer_link_status: None,
+                    }
+                })
+                .collect())
+        }
+
+        async fn get_by_activity_ids_for_aggregate(
+            &self,
+            _: &[String],
+            _: NaiveDate,
+        ) -> Result<Vec<CashActivity>> {
+            unimplemented!()
+        }
+    }
+
+    fn mock_cash_activity_service(
+        activity_repo: &Arc<MockActivityRepo>,
+    ) -> Arc<dyn CashActivityServiceTrait> {
+        Arc::new(MockCashActivityService {
+            activities: activity_repo.activities.clone(),
+        })
     }
 
     fn mk_activity(id: &str, account: &str, notes: &str) -> Activity {
@@ -896,8 +988,9 @@ mod tests {
         ));
         let svc = CategorizationRulesService::new(
             rules_repo as Arc<dyn CategorizationRulesRepositoryTrait>,
-            activity_repo as Arc<dyn ActivityRepositoryTrait>,
+            activity_repo.clone() as Arc<dyn ActivityRepositoryTrait>,
             assignment_service,
+            mock_cash_activity_service(&activity_repo),
         );
 
         let matched = svc
@@ -929,6 +1022,65 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rerun_drops_rule_targeting_the_wrong_cash_flow_bucket() {
+        let rule = mk_rule("r1", "PAYROLL", "spending_categories", "cat_food", 10);
+        let rules_repo = Arc::new(MockRulesRepo {
+            rules: Mutex::new(vec![rule]),
+        });
+        let assignment_repo = Arc::new(MockAssignmentRepo::default());
+        let mut income = mk_activity("income1", "acct1", "PAYROLL");
+        income.activity_type = "DEPOSIT".to_string();
+        let activity_repo = Arc::new(MockActivityRepo {
+            activities: vec![income],
+        });
+        let assignment_service = Arc::new(ActivityTaxonomyAssignmentService::new(
+            assignment_repo.clone() as Arc<dyn ActivityTaxonomyAssignmentRepositoryTrait>,
+        ));
+        let svc = CategorizationRulesService::new(
+            rules_repo as Arc<dyn CategorizationRulesRepositoryTrait>,
+            activity_repo.clone() as Arc<dyn ActivityRepositoryTrait>,
+            assignment_service,
+            mock_cash_activity_service(&activity_repo),
+        );
+
+        let matched = svc.rerun_all(&["acct1".to_string()], false).await.unwrap();
+
+        assert_eq!(matched, 0);
+        assert!(assignment_repo.writes.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn rerun_chooses_lower_priority_compatible_rule() {
+        let wrong_bucket = mk_rule("wrong", "PAYROLL", "spending_categories", "cat_food", 20);
+        let right_bucket = mk_rule("right", "PAYROLL", "income_sources", "cat_salary", 10);
+        let rules_repo = Arc::new(MockRulesRepo {
+            rules: Mutex::new(vec![wrong_bucket, right_bucket]),
+        });
+        let assignment_repo = Arc::new(MockAssignmentRepo::default());
+        let mut income = mk_activity("income1", "acct1", "PAYROLL");
+        income.activity_type = "DEPOSIT".to_string();
+        let activity_repo = Arc::new(MockActivityRepo {
+            activities: vec![income],
+        });
+        let assignment_service = Arc::new(ActivityTaxonomyAssignmentService::new(
+            assignment_repo.clone() as Arc<dyn ActivityTaxonomyAssignmentRepositoryTrait>,
+        ));
+        let svc = CategorizationRulesService::new(
+            rules_repo as Arc<dyn CategorizationRulesRepositoryTrait>,
+            activity_repo.clone() as Arc<dyn ActivityRepositoryTrait>,
+            assignment_service,
+            mock_cash_activity_service(&activity_repo),
+        );
+
+        let matched = svc.rerun_all(&["acct1".to_string()], false).await.unwrap();
+
+        assert_eq!(matched, 1);
+        let writes = assignment_repo.writes.lock().unwrap();
+        assert_eq!(writes.len(), 1);
+        assert_eq!(writes[0].taxonomy_id, "income_sources");
+    }
+
+    #[tokio::test]
     async fn rerun_preserves_manual_same_taxonomy() {
         let rule = mk_rule("r1", "AMAZON", "spending_categories", "cat_food", 10);
         let rules_repo = Arc::new(MockRulesRepo {
@@ -951,8 +1103,9 @@ mod tests {
         ));
         let svc = CategorizationRulesService::new(
             rules_repo as Arc<dyn CategorizationRulesRepositoryTrait>,
-            activity_repo as Arc<dyn ActivityRepositoryTrait>,
+            activity_repo.clone() as Arc<dyn ActivityRepositoryTrait>,
             assignment_service,
+            mock_cash_activity_service(&activity_repo),
         );
 
         let _ = svc.rerun_all(&["acct1".to_string()], false).await.unwrap();
@@ -984,8 +1137,9 @@ mod tests {
         ));
         let svc = Arc::new(CategorizationRulesService::new(
             rules_repo as Arc<dyn CategorizationRulesRepositoryTrait>,
-            activity_repo as Arc<dyn ActivityRepositoryTrait>,
+            activity_repo.clone() as Arc<dyn ActivityRepositoryTrait>,
             assignment_service,
+            mock_cash_activity_service(&activity_repo),
         ));
 
         let svc_a = svc.clone();
@@ -1030,8 +1184,9 @@ mod tests {
         let activity_repo = Arc::new(MockActivityRepo { activities: vec![] });
         let svc = CategorizationRulesService::new(
             rules_repo as Arc<dyn CategorizationRulesRepositoryTrait>,
-            activity_repo as Arc<dyn ActivityRepositoryTrait>,
+            activity_repo.clone() as Arc<dyn ActivityRepositoryTrait>,
             assignment_service,
+            mock_cash_activity_service(&activity_repo),
         );
 
         let err = svc
@@ -1069,8 +1224,9 @@ mod tests {
         let activity_repo = Arc::new(MockActivityRepo { activities: vec![] });
         let svc = CategorizationRulesService::new(
             rules_repo as Arc<dyn CategorizationRulesRepositoryTrait>,
-            activity_repo as Arc<dyn ActivityRepositoryTrait>,
+            activity_repo.clone() as Arc<dyn ActivityRepositoryTrait>,
             assignment_service,
+            mock_cash_activity_service(&activity_repo),
         );
 
         let err = svc
@@ -1108,8 +1264,9 @@ mod tests {
         let activity_repo = Arc::new(MockActivityRepo { activities: vec![] });
         let svc = CategorizationRulesService::new(
             rules_repo as Arc<dyn CategorizationRulesRepositoryTrait>,
-            activity_repo as Arc<dyn ActivityRepositoryTrait>,
+            activity_repo.clone() as Arc<dyn ActivityRepositoryTrait>,
             assignment_service,
+            mock_cash_activity_service(&activity_repo),
         );
 
         let err = svc
@@ -1151,8 +1308,9 @@ mod tests {
         let activity_repo = Arc::new(MockActivityRepo { activities: vec![] });
         let svc = CategorizationRulesService::new(
             rules_repo as Arc<dyn CategorizationRulesRepositoryTrait>,
-            activity_repo as Arc<dyn ActivityRepositoryTrait>,
+            activity_repo.clone() as Arc<dyn ActivityRepositoryTrait>,
             assignment_service,
+            mock_cash_activity_service(&activity_repo),
         );
 
         let err = svc
@@ -1195,8 +1353,9 @@ mod tests {
         let activity_repo = Arc::new(MockActivityRepo { activities: vec![] });
         let svc = CategorizationRulesService::new(
             rules_repo.clone() as Arc<dyn CategorizationRulesRepositoryTrait>,
-            activity_repo as Arc<dyn ActivityRepositoryTrait>,
+            activity_repo.clone() as Arc<dyn ActivityRepositoryTrait>,
             assignment_service,
+            mock_cash_activity_service(&activity_repo),
         );
         let mut resolver = HashMap::new();
         resolver.insert(

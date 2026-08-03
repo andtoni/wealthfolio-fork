@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::{get_connection, write_actor::DbWriteTx, DbPool, WriteHandle};
 use crate::errors::StorageError;
-use crate::schema::{activity_taxonomy_assignments, spending_activity_splits};
+use crate::schema::{activity_taxonomy_assignments, spending_activity_splits, taxonomy_categories};
 use crate::spending::activity_splits::ActivitySplitDB;
 use crate::spending::activity_sync::should_sync_activity_local_id_outbox;
 use crate::spending::deterministic_ids::activity_taxonomy_assignment_id;
@@ -176,6 +176,34 @@ impl ActivityTaxonomyAssignmentRepositoryTrait for ActivityTaxonomyAssignmentRep
             out.extend(rows.into_iter().map(ActivityTaxonomyAssignment::from));
         }
         Ok(out)
+    }
+
+    async fn categories_belong_to_taxonomy(
+        &self,
+        taxonomy_id: &str,
+        category_ids: &[String],
+    ) -> Result<bool> {
+        if category_ids.is_empty() {
+            return Ok(true);
+        }
+
+        let unique = category_ids.iter().collect::<HashSet<_>>();
+        let unique_ids = unique.iter().copied().collect::<Vec<_>>();
+        let mut conn = get_connection(&self.pool).map_err(|e| anyhow::anyhow!(e))?;
+        let mut matched = HashSet::new();
+        for chunk in unique_ids.chunks(500) {
+            matched.extend(
+                taxonomy_categories::table
+                    .filter(taxonomy_categories::taxonomy_id.eq(taxonomy_id))
+                    .filter(taxonomy_categories::id.eq_any(chunk))
+                    .select(taxonomy_categories::id)
+                    .load::<String>(&mut conn)
+                    .map_err(StorageError::from)
+                    .map_err(|e| anyhow::anyhow!(e))?,
+            );
+        }
+
+        Ok(matched.len() == unique.len())
     }
 
     async fn upsert(

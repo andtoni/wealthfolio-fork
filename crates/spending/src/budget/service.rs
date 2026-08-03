@@ -233,6 +233,79 @@ impl BudgetService {
         }
     }
 
+    /// Return taxonomy/category pairs selected by the user's budget plan. Group
+    /// membership and default-period category targets are included; income rows
+    /// are also part of the budget surface even when they have no target.
+    pub async fn configured_category_pairs(&self) -> Result<HashSet<(String, String)>> {
+        Self::configured_category_pairs_from_repository(
+            self.repo.as_ref(),
+            Some(self.taxonomy_service.as_ref()),
+        )
+        .await
+    }
+
+    pub(crate) async fn configured_category_pairs_from_repository(
+        repo: &dyn BudgetRepositoryTrait,
+        taxonomy_service: Option<&dyn TaxonomyServiceTrait>,
+    ) -> Result<HashSet<(String, String)>> {
+        let mut pairs = repo
+            .list_group_assignments()
+            .await?
+            .into_iter()
+            .map(|assignment| (assignment.taxonomy_id, assignment.category_id))
+            .collect::<HashSet<_>>();
+        pairs.extend(
+            repo.list_targets()
+                .await?
+                .into_iter()
+                .filter(|target| {
+                    matches!(target.target_type, BudgetTargetType::Category)
+                        && target.period_key == DEFAULT_PERIOD_KEY
+                })
+                .filter_map(|target| Some((target.taxonomy_id?, target.category_id?))),
+        );
+
+        let Some(taxonomy_service) = taxonomy_service else {
+            return Ok(pairs);
+        };
+        let taxonomy_entries = taxonomy_service.get_taxonomies_with_categories()?;
+        pairs.extend(
+            taxonomy_entries
+                .iter()
+                .filter(|entry| entry.taxonomy.id == INCOME_TAXONOMY)
+                .flat_map(|entry| {
+                    entry
+                        .categories
+                        .iter()
+                        .map(|category| (INCOME_TAXONOMY.to_string(), category.id.clone()))
+                }),
+        );
+        for entry in taxonomy_entries {
+            let by_id = entry
+                .categories
+                .iter()
+                .map(|category| (category.id.as_str(), category))
+                .collect::<HashMap<_, _>>();
+            for category in &entry.categories {
+                let mut parent_id = category.parent_id.as_deref();
+                let mut seen = HashSet::new();
+                while let Some(parent) = parent_id {
+                    if !seen.insert(parent) {
+                        break;
+                    }
+                    if pairs.contains(&(entry.taxonomy.id.clone(), parent.to_string())) {
+                        pairs.insert((entry.taxonomy.id.clone(), category.id.clone()));
+                        break;
+                    }
+                    parent_id = by_id
+                        .get(parent)
+                        .and_then(|parent| parent.parent_id.as_deref());
+                }
+            }
+        }
+        Ok(pairs)
+    }
+
     pub async fn get(
         &self,
         period_key: Option<String>,
@@ -2063,6 +2136,10 @@ mod tests {
                 .collect())
         }
 
+        async fn categories_belong_to_taxonomy(&self, _: &str, _: &[String]) -> Result<bool> {
+            Ok(true)
+        }
+
         async fn upsert(
             &self,
             _: NewActivityTaxonomyAssignment,
@@ -3150,6 +3227,40 @@ mod tests {
             created_at: ts(),
             updated_at: ts(),
         }
+    }
+
+    #[tokio::test]
+    async fn configured_category_pairs_include_groups_and_category_targets() {
+        let fixture = budget_fixture(
+            Vec::new(),
+            Vec::new(),
+            vec![
+                target(
+                    DEFAULT_PERIOD_KEY,
+                    BudgetTargetType::Category,
+                    Some(INCOME_TAXONOMY),
+                    Some("income-salary"),
+                    None,
+                    "1000",
+                ),
+                target(
+                    "2026-08",
+                    BudgetTargetType::Category,
+                    Some(SPENDING_TAXONOMY),
+                    Some("month-only"),
+                    None,
+                    "50",
+                ),
+            ],
+            &[],
+            &[],
+        );
+
+        let pairs = fixture.service.configured_category_pairs().await.unwrap();
+
+        assert!(pairs.contains(&(SPENDING_TAXONOMY.to_string(), "cat_groceries".to_string())));
+        assert!(pairs.contains(&(INCOME_TAXONOMY.to_string(), "income-salary".to_string())));
+        assert!(!pairs.contains(&(SPENDING_TAXONOMY.to_string(), "month-only".to_string())));
     }
 
     #[test]

@@ -16,6 +16,7 @@ use wealthfolio_core::{
     taxonomies::TaxonomyServiceTrait, valuation::ValuationServiceTrait,
 };
 use wealthfolio_spending::activity_assignments::ActivityTaxonomyAssignmentService;
+use wealthfolio_spending::budget::BudgetService;
 use wealthfolio_spending::cash_activities::{CashActivityService, CashActivityServiceTrait};
 use wealthfolio_spending::categorization_evidence::CategorizationEvidenceService;
 use wealthfolio_spending::categorization_rules::{
@@ -46,6 +47,7 @@ pub struct TauriAiEnvironment {
     portfolio_service: Arc<dyn PortfolioServiceTrait + Send + Sync>,
     net_worth_service: Arc<dyn NetWorthServiceTrait + Send + Sync>,
     contribution_limit_service: Arc<dyn ContributionLimitServiceTrait + Send + Sync>,
+    budget_service: Arc<BudgetService>,
     cash_activity_service: Arc<CashActivityService>,
     activity_taxonomy_assignment_service: Arc<ActivityTaxonomyAssignmentService>,
     categorization_rules_service: Arc<CategorizationRulesService>,
@@ -75,6 +77,7 @@ impl TauriAiEnvironment {
         portfolio_service: Arc<dyn PortfolioServiceTrait + Send + Sync>,
         net_worth_service: Arc<dyn NetWorthServiceTrait + Send + Sync>,
         contribution_limit_service: Arc<dyn ContributionLimitServiceTrait + Send + Sync>,
+        budget_service: Arc<BudgetService>,
         cash_activity_service: Arc<CashActivityService>,
         activity_taxonomy_assignment_service: Arc<ActivityTaxonomyAssignmentService>,
         categorization_rules_service: Arc<CategorizationRulesService>,
@@ -100,6 +103,7 @@ impl TauriAiEnvironment {
             portfolio_service,
             net_worth_service,
             contribution_limit_service,
+            budget_service,
             cash_activity_service,
             activity_taxonomy_assignment_service,
             categorization_rules_service,
@@ -179,6 +183,10 @@ impl AgentEnvironment for TauriAiEnvironment {
 
     fn cash_activity_service(&self) -> Arc<dyn CashActivityServiceTrait> {
         self.cash_activity_service.clone()
+    }
+
+    fn budget_service(&self) -> Option<Arc<BudgetService>> {
+        Some(self.budget_service.clone())
     }
 
     fn categorization_rules_service(&self) -> Arc<dyn CategorizationRulesServiceTrait> {

@@ -170,6 +170,8 @@ export const createTransferFormSchema = (t?: TFunction) =>
       symbolInstrumentType: z.string().nullable().optional(),
       // Asset metadata for custom assets (name, etc.)
       assetMetadata: assetMetadataSchema,
+      // Preserve provider/source metadata when converting an existing activity.
+      metadata: z.record(z.string(), z.unknown()).optional(),
     })
     // External transfer requires accountId
     .refine(

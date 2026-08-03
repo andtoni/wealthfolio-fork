@@ -43,6 +43,7 @@ interface TransactionCardProps {
   onMarkReimbursement: (row: TransactionRowVM) => void;
   onEditSplits: (row: TransactionRowVM) => void;
   onEdit: (row: TransactionRowVM) => void;
+  onMarkTransfer?: (row: TransactionRowVM) => void;
   onDuplicate: (row: TransactionRowVM) => void;
   onDelete: (row: TransactionRowVM) => void;
   onLinkTransfer?: (row: TransactionRowVM) => void;
@@ -66,6 +67,7 @@ function TransactionCardImpl({
   onMarkReimbursement,
   onEditSplits,
   onEdit,
+  onMarkTransfer,
   onDuplicate,
   onDelete,
   onLinkTransfer,
@@ -140,9 +142,31 @@ function TransactionCardImpl({
 
       <div className="mt-2.5 flex items-center gap-2 pl-7">
         {isNeutral ? (
-          <span className="text-muted-foreground text-xs">
-            {t("spending:transactions.neutral")}
-          </span>
+          isTransfer && (onLinkTransfer || onUnlinkTransfer) ? (
+            transferLinkStatus === "linked" && onUnlinkTransfer ? (
+              <button
+                type="button"
+                className={cn(CHIP, "text-muted-foreground")}
+                onClick={() => onUnlinkTransfer(row)}
+              >
+                <Icons.Unlink className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span className="truncate">{t("spending:transactions.unlinkTransfer")}</span>
+              </button>
+            ) : onLinkTransfer ? (
+              <button
+                type="button"
+                className={cn(CHIP, "text-muted-foreground")}
+                onClick={() => onLinkTransfer(row)}
+              >
+                <Icons.Link className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span className="truncate">{t("spending:transactions.linkTransfer")}</span>
+              </button>
+            ) : null
+          ) : (
+            <span className="text-muted-foreground text-xs">
+              {t("spending:transactions.neutral")}
+            </span>
+          )
         ) : row.splitCount > 0 ? (
           <button type="button" className={cn(CHIP, "min-w-0")} onClick={() => onEditSplits(row)}>
             <Icons.SplitHorizontal className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -246,6 +270,12 @@ function TransactionCardImpl({
               <DropdownMenuItem onClick={() => onEditSplits(row)}>
                 <Icons.SplitHorizontal className="mr-2 h-4 w-4" aria-hidden="true" />
                 {t("spending:transactions.splitTransaction")}
+              </DropdownMenuItem>
+            )}
+            {!isTransfer && onMarkTransfer && (
+              <DropdownMenuItem onClick={() => onMarkTransfer(row)}>
+                <Icons.ArrowLeftRight className="mr-2 h-4 w-4" aria-hidden="true" />
+                {t("spending:transactions.markTransfer")}
               </DropdownMenuItem>
             )}
             <DropdownMenuItem onClick={() => onDuplicate(row)}>

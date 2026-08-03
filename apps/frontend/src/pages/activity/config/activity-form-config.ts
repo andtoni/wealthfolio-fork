@@ -382,10 +382,15 @@ export const ACTIVITY_FORM_CONFIG: Record<
         activity?.assetId,
       );
       const transferMode = transferIsSecurity ? "securities" : "cash";
-      // Reflect only the persisted external flag. Unpaired transfers stay unchecked
-      // until the user explicitly marks them external.
+      // Existing non-transfer rows opened through “Mark as transfer” start in
+      // external mode so saving converts the row without requiring a missing
+      // counterpart pair. Existing transfer rows still reflect persisted state.
       const flowMetadata = activity?.metadata?.flow as { is_external?: boolean } | undefined;
-      const isExternal = flowMetadata?.is_external === true;
+      const isExistingTransfer =
+        activity?.activityType === ActivityType.TRANSFER_IN ||
+        activity?.activityType === ActivityType.TRANSFER_OUT;
+      const isExternal =
+        flowMetadata?.is_external === true || (!!activity?.id && !isExistingTransfer);
       // Derive direction from activity type
       const direction = activity?.activityType === ActivityType.TRANSFER_IN ? "in" : "out";
       const editingTransferIn = activity?.activityType === ActivityType.TRANSFER_IN;
@@ -426,6 +431,7 @@ export const ACTIVITY_FORM_CONFIG: Record<
         quantity: transferIsSecurity ? (absNum(activity?.quantity) ?? null) : null,
         unitPrice: transferIsSecurity ? (absNum(activity?.unitPrice) ?? null) : null,
         comment: activity?.comment ?? null,
+        metadata: activity?.metadata,
         // Advanced options
         currency: activity?.currency,
         fxRate: absNum(activity?.fxRate ?? activity?.counterpartFxRate) ?? undefined,
@@ -467,7 +473,15 @@ export const ACTIVITY_FORM_CONFIG: Record<
               providerSymbol: d.assetMetadata.providerSymbol ?? undefined,
             }
           : undefined,
-        ...(d.isExternal && { metadata: { flow: { is_external: true } } }),
+        metadata: d.isExternal
+          ? {
+              ...(d.metadata ?? {}),
+              flow: {
+                ...((d.metadata?.flow as Record<string, unknown> | undefined) ?? {}),
+                is_external: true,
+              },
+            }
+          : d.metadata,
       };
     },
   },

@@ -19,7 +19,7 @@ use crate::scope::AgentScope;
 use crate::tool::{AgentTool, AgentToolAccess, AgentToolError, AgentToolResult};
 use wealthfolio_core::accounts::account_types;
 use wealthfolio_spending::cash_activities::{
-    CashActivity, CashActivitySearchRequest, CashActivityStatusFilter,
+    CashActivity, CashActivitySearchRequest, CashActivityStatusFilter, CashFlowBucket,
 };
 use wealthfolio_spending::categorization_evidence::{CategorizationEvidence, AGREEMENT, CONFLICT};
 
@@ -33,6 +33,13 @@ const EVIDENCE_NORMALIZATION_VERSION: i32 = 1;
 const MIN_EVIDENCE_LABEL_COUNT: i32 = 3;
 /// Max characters of a transaction's notes surfaced to the model.
 pub const MAX_NOTES_LEN: usize = 100;
+
+type CategoryLookupValue = (String, String, String, String, String);
+type CategoryLookup = HashMap<(String, String), CategoryLookupValue>;
+
+fn category_lookup_key(taxonomy_id: &str, category_id: &str) -> (String, String) {
+    (taxonomy_id.to_string(), category_id.to_string())
+}
 
 /// Truncate notes to [`MAX_NOTES_LEN`] characters, appending an ellipsis.
 pub fn truncate_notes(s: &str) -> String {
@@ -98,6 +105,7 @@ pub struct Proposal {
     pub amount: f64,
     pub currency: String,
     pub notes: Option<String>,
+    pub cash_flow_bucket: CashFlowBucket,
     pub taxonomy_id: String,
     pub category_id: String,
     pub category_path: String,
@@ -115,6 +123,7 @@ pub struct UnproposedActivity {
     pub amount: f64,
     pub currency: String,
     pub notes: Option<String>,
+    pub cash_flow_bucket: CashFlowBucket,
     pub reason: String,
 }
 
@@ -235,10 +244,19 @@ pub async fn compute_categorization_state(
         .into_iter()
         .filter(|t| t.taxonomy.scope == "activity")
         .collect();
+    let configured_category_pairs = if let Some(budget) = env.budget_service() {
+        Some(
+            budget
+                .configured_category_pairs()
+                .await
+                .map_err(|e| AgentToolError::ExecutionFailed(e.to_string()))?,
+        )
+    } else {
+        None
+    };
 
-    // category_id -> (taxonomy_id, taxonomy_name, category_name, path, color)
-    let mut category_lookup: HashMap<String, (String, String, String, String, String)> =
-        HashMap::new();
+    // (taxonomy_id, category_id) -> (taxonomy_id, taxonomy_name, category_name, path, color)
+    let mut category_lookup: CategoryLookup = HashMap::new();
     let mut key_lookup: HashMap<(String, String), (String, String, String)> = HashMap::new();
     let mut taxonomy_summaries = Vec::with_capacity(activity_taxonomies.len());
     for entry in &activity_taxonomies {
@@ -249,9 +267,15 @@ pub async fn compute_categorization_state(
             .collect();
         let mut options = Vec::with_capacity(entry.categories.len());
         for cat in &entry.categories {
+            if configured_category_pairs
+                .as_ref()
+                .is_some_and(|pairs| !pairs.contains(&(entry.taxonomy.id.clone(), cat.id.clone())))
+            {
+                continue;
+            }
             let path = build_category_path(cat, &cats_by_id);
             category_lookup.insert(
-                cat.id.clone(),
+                category_lookup_key(&entry.taxonomy.id, &cat.id),
                 (
                     entry.taxonomy.id.clone(),
                     entry.taxonomy.name.clone(),
@@ -272,11 +296,13 @@ pub async fn compute_categorization_state(
                 color: cat.color.clone(),
             });
         }
-        taxonomy_summaries.push(TaxonomySummary {
-            taxonomy_id: entry.taxonomy.id.clone(),
-            taxonomy_name: entry.taxonomy.name.clone(),
-            categories: options,
-        });
+        if !options.is_empty() {
+            taxonomy_summaries.push(TaxonomySummary {
+                taxonomy_id: entry.taxonomy.id.clone(),
+                taxonomy_name: entry.taxonomy.name.clone(),
+                categories: options,
+            });
+        }
     }
 
     let history_request = CashActivitySearchRequest {
@@ -301,6 +327,11 @@ pub async fn compute_categorization_state(
         }
         let key = (payee_key, item.activity.effective_type().to_string());
         for asg in &item.assignments {
+            if !category_lookup
+                .contains_key(&category_lookup_key(&asg.taxonomy_id, &asg.category_id))
+            {
+                continue;
+            }
             payee_map
                 .entry(key.clone())
                 .or_default()
@@ -310,7 +341,7 @@ pub async fn compute_categorization_state(
         }
     }
 
-    let mut per_cat_count: HashMap<String, usize> = HashMap::new();
+    let mut per_cat_count: HashMap<(String, String), usize> = HashMap::new();
     let mut examples = Vec::new();
     for item in &history_response.items {
         if examples.len() >= MAX_TOTAL_EXAMPLES {
@@ -320,12 +351,14 @@ pub async fn compute_categorization_state(
             continue;
         };
         for asg in &item.assignments {
-            let count = per_cat_count.entry(asg.category_id.clone()).or_insert(0);
+            let count = per_cat_count
+                .entry((asg.taxonomy_id.clone(), asg.category_id.clone()))
+                .or_insert(0);
             if *count >= EXAMPLES_PER_CATEGORY {
                 continue;
             }
             let Some((_tax_id, _tax_name, _cat_name, path, _color)) =
-                category_lookup.get(&asg.category_id)
+                category_lookup.get(&category_lookup_key(&asg.taxonomy_id, &asg.category_id))
             else {
                 continue;
             };
@@ -355,7 +388,7 @@ pub async fn compute_categorization_state(
         let act = &target.activity;
         // Existing assignments are authoritative. In particular, `status: all`
         // must never turn a manual category into a replacement proposal.
-        if has_authoritative_assignment(target) {
+        if has_authoritative_assignment(target, &category_lookup) {
             continue;
         }
         let amount = act.amount.and_then(|d| d.to_f64()).unwrap_or(0.0);
@@ -364,32 +397,53 @@ pub async fn compute_categorization_state(
 
         let notes = act.notes.as_deref().unwrap_or("");
         let notes_upper = notes.to_uppercase();
-        let rule_match = wealthfolio_spending::categorization_rules::matcher::match_compiled(
+        let rule_match = wealthfolio_spending::categorization_rules::matcher::match_compiled_where(
             &compiled_rules,
             &notes_upper,
             notes,
             act.effective_type(),
             &act.account_id,
+            |rule| {
+                let Some(taxonomy_id) = rule.taxonomy_id.as_deref() else {
+                    return false;
+                };
+                let Some(category_id) = rule.category_id.as_deref() else {
+                    return false;
+                };
+                target.cash_flow_bucket.accepts_taxonomy(taxonomy_id)
+                    && category_lookup
+                        .get(&category_lookup_key(taxonomy_id, category_id))
+                        .is_some_and(|(category_taxonomy_id, _, _, _, _)| {
+                            category_taxonomy_id == taxonomy_id
+                        })
+            },
         );
         if let Some(m) = rule_match {
             if let (Some(tax_id), Some(cat_id)) =
                 (m.rule.taxonomy_id.clone(), m.rule.category_id.clone())
             {
-                if let Some((_, _, _, path, _)) = category_lookup.get(&cat_id) {
-                    proposals.push(Proposal {
-                        activity_id: act.id.clone(),
-                        activity_date: date.clone(),
-                        amount,
-                        currency: act.currency.clone(),
-                        notes: notes_trimmed.clone(),
-                        taxonomy_id: tax_id,
-                        category_id: cat_id,
-                        category_path: path.clone(),
-                        confidence: 0.95,
-                        source: "rule".to_string(),
-                        explanation: format!("Matched rule \"{}\".", m.rule.name),
-                    });
-                    continue;
+                if target.cash_flow_bucket.accepts_taxonomy(&tax_id) {
+                    if let Some((category_taxonomy_id, _, _, path, _)) =
+                        category_lookup.get(&category_lookup_key(&tax_id, &cat_id))
+                    {
+                        if category_taxonomy_id == &tax_id {
+                            proposals.push(Proposal {
+                                activity_id: act.id.clone(),
+                                activity_date: date.clone(),
+                                amount,
+                                currency: act.currency.clone(),
+                                notes: notes_trimmed.clone(),
+                                cash_flow_bucket: target.cash_flow_bucket,
+                                taxonomy_id: tax_id,
+                                category_id: cat_id,
+                                category_path: path.clone(),
+                                confidence: 0.95,
+                                source: "rule".to_string(),
+                                explanation: format!("Matched rule \"{}\".", m.rule.name),
+                            });
+                            continue;
+                        }
+                    }
                 }
             }
         }
@@ -406,17 +460,24 @@ pub async fn compute_categorization_state(
             let provider = account_context
                 .get(&act.account_id)
                 .and_then(|provider| provider.as_deref());
-            if let Some(candidate) =
-                select_evidence(&evidence, act, provider, &act.account_id, &category_lookup)
-            {
+            if let Some(candidate) = select_evidence(
+                &evidence,
+                act,
+                provider,
+                &act.account_id,
+                target.cash_flow_bucket,
+                &category_lookup,
+            ) {
                 let record = &candidate.evidence;
-                let (_, _, _, path, _) = &category_lookup[&record.category_id];
+                let (_, _, _, path, _) = &category_lookup
+                    [&category_lookup_key(&record.taxonomy_id, &record.category_id)];
                 proposals.push(Proposal {
                     activity_id: act.id.clone(),
                     activity_date: date.clone(),
                     amount,
                     currency: act.currency.clone(),
                     notes: notes_trimmed.clone(),
+                    cash_flow_bucket: target.cash_flow_bucket,
                     taxonomy_id: record.taxonomy_id.clone(),
                     category_id: record.category_id.clone(),
                     category_path: path.clone(),
@@ -445,33 +506,44 @@ pub async fn compute_categorization_state(
             .and_then(|by_cat| {
                 by_cat
                     .into_iter()
+                    .filter(|((taxonomy_id, _), _)| {
+                        target.cash_flow_bucket.accepts_taxonomy(taxonomy_id)
+                    })
                     .max_by_key(|(_, count)| *count)
                     .map(|((tax_id, cat_id), count)| (tax_id, cat_id, count))
             });
 
         if let Some((tax_id, cat_id, count)) = history_match {
-            if let Some((_, _, _, path, _)) = category_lookup.get(&cat_id) {
-                let confidence = if count >= 3 {
-                    0.92
-                } else if count == 2 {
-                    0.82
-                } else {
-                    0.7
-                };
-                proposals.push(Proposal {
-                    activity_id: act.id.clone(),
-                    activity_date: date,
-                    amount,
-                    currency: act.currency.clone(),
-                    notes: notes_trimmed,
-                    taxonomy_id: tax_id,
-                    category_id: cat_id,
-                    category_path: path.clone(),
-                    confidence,
-                    source: "history".to_string(),
-                    explanation: format!("Matched same payee in {} prior transaction(s).", count),
-                });
-                continue;
+            if let Some((category_taxonomy_id, _, _, path, _)) =
+                category_lookup.get(&category_lookup_key(&tax_id, &cat_id))
+            {
+                if category_taxonomy_id == &tax_id {
+                    let confidence = if count >= 3 {
+                        0.92
+                    } else if count == 2 {
+                        0.82
+                    } else {
+                        0.7
+                    };
+                    proposals.push(Proposal {
+                        activity_id: act.id.clone(),
+                        activity_date: date,
+                        amount,
+                        currency: act.currency.clone(),
+                        notes: notes_trimmed,
+                        cash_flow_bucket: target.cash_flow_bucket,
+                        taxonomy_id: tax_id,
+                        category_id: cat_id,
+                        category_path: path.clone(),
+                        confidence,
+                        source: "history".to_string(),
+                        explanation: format!(
+                            "Matched same payee in {} prior transaction(s).",
+                            count
+                        ),
+                    });
+                    continue;
+                }
             }
         }
 
@@ -481,7 +553,8 @@ pub async fn compute_categorization_state(
             amount,
             currency: act.currency.clone(),
             notes: notes_trimmed,
-            reason: "No rule, trusted evidence, or history match — needs AI or manual judgement."
+            cash_flow_bucket: target.cash_flow_bucket,
+            reason: "No compatible rule, trusted evidence, or history match — needs AI or manual judgement."
                 .to_string(),
         });
     }
@@ -497,8 +570,16 @@ pub async fn compute_categorization_state(
     })
 }
 
-fn has_authoritative_assignment(activity: &CashActivity) -> bool {
-    !activity.assignments.is_empty()
+fn has_authoritative_assignment(activity: &CashActivity, category_lookup: &CategoryLookup) -> bool {
+    activity.assignments.iter().any(|assignment| {
+        activity
+            .cash_flow_bucket
+            .accepts_taxonomy(&assignment.taxonomy_id)
+            && category_lookup.contains_key(&category_lookup_key(
+                &assignment.taxonomy_id,
+                &assignment.category_id,
+            ))
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -584,7 +665,8 @@ fn select_evidence<'a>(
     activity: &wealthfolio_core::activities::Activity,
     provider: Option<&str>,
     account_id: &str,
-    category_lookup: &HashMap<String, (String, String, String, String, String)>,
+    cash_flow_bucket: CashFlowBucket,
+    category_lookup: &CategoryLookup,
 ) -> Option<&'a CategorizationEvidence> {
     let mut eligible = evidence
         .iter()
@@ -592,6 +674,7 @@ fn select_evidence<'a>(
             let record = &row.evidence;
             if record.activity_type != activity.effective_type()
                 || record.direction != evidence_direction(activity)
+                || !cash_flow_bucket.accepts_taxonomy(&record.taxonomy_id)
             {
                 return None;
             }
@@ -611,7 +694,10 @@ fn select_evidence<'a>(
         record.agreement_state == AGREEMENT
             && record.label_count >= MIN_EVIDENCE_LABEL_COUNT
             && category_lookup
-                .get(&record.category_id)
+                .get(&category_lookup_key(
+                    &record.taxonomy_id,
+                    &record.category_id,
+                ))
                 .is_some_and(|(taxonomy_id, _, _, _, _)| taxonomy_id == &record.taxonomy_id)
     });
     let category_count = eligible
@@ -673,8 +759,11 @@ pub fn retain_explicit_targets(
             }
         }
 
-        let has_category =
-            is_neutral_visible_target(item, account_type_by_id) || !item.assignments.is_empty();
+        let has_category = is_neutral_visible_target(item, account_type_by_id)
+            || item.assignments.iter().any(|assignment| {
+                item.cash_flow_bucket
+                    .accepts_taxonomy(&assignment.taxonomy_id)
+            });
         match status {
             CashActivityStatusFilter::All => true,
             CashActivityStatusFilter::NeedsReview => item.activity.needs_review,
@@ -816,7 +905,12 @@ impl AgentTool for ListCategorizationContext {
          widget whenever `summary.total > 0`. If `unproposed` is empty / \
          `needsAiJudgement` is 0, call it with `aiProposals: []`; otherwise infer the best \
          `taxonomyId` + `categoryKey` pair for each `unproposed` row from `taxonomies` \
-         using `examples` + merchant-name knowledge, then pass those as `aiProposals`. \
+         using `examples` + merchant-name knowledge. `taxonomies` is limited to categories \
+         selected by configured budget groups or targets when a budget plan exists. Each row \
+         includes its \
+         canonical `cashFlowBucket`; choose only `spending_categories` for spending, `income_sources` \
+         for income, and `savings_categories` for saving. Never infer or change the bucket \
+         from amount or merchant text. Then pass those choices as `aiProposals`. \
          Never tell the user categories were applied from this context result alone. \
          Do NOT pass `accountIds` for generic mentions like 'credit card' — the \
          spending settings already restrict to opted-in accounts."
@@ -916,7 +1010,7 @@ fn next_step_instruction(summary: &ContextSummary) -> String {
     }
 
     format!(
-        "Infer categories for the {} unproposed row(s), then call propose_transaction_categories with those aiProposals and the same filters to render the review widget.",
+        "Infer categories for the {} unproposed row(s) using only the taxonomy matching each row's cashFlowBucket, then call propose_transaction_categories with those aiProposals and the same filters to render the review widget.",
         summary.needs_ai_judgement
     )
 }
@@ -1102,7 +1196,7 @@ mod tests {
                 merchant_key: "merchant:coffee".to_string(),
                 merchant_key_version: 1,
                 normalization_version: 1,
-                taxonomy_id: "tax1".to_string(),
+                taxonomy_id: "spending_categories".to_string(),
                 category_id: category_id.to_string(),
                 direction: "outflow".to_string(),
                 activity_type: "WITHDRAWAL".to_string(),
@@ -1118,14 +1212,14 @@ mod tests {
         }
     }
 
-    fn evidence_lookup() -> HashMap<String, (String, String, String, String, String)> {
+    fn evidence_lookup() -> CategoryLookup {
         ["food", "travel"]
             .into_iter()
             .map(|category| {
                 (
-                    category.to_string(),
+                    category_lookup_key("spending_categories", category),
                     (
-                        "tax1".to_string(),
+                        "spending_categories".to_string(),
                         "Spending".to_string(),
                         category.to_string(),
                         category.to_string(),
@@ -1176,6 +1270,7 @@ mod tests {
                 &target.activity,
                 Some("plaid"),
                 "acct",
+                CashFlowBucket::Spending,
                 &lookup
             )
             .unwrap()
@@ -1188,14 +1283,21 @@ mod tests {
             evidence("food", AGREEMENT, 8, None, None),
             evidence("travel", CONFLICT, 4, Some("plaid"), Some("acct")),
         ];
-        assert!(
-            select_evidence(&conflict, &target.activity, Some("plaid"), "acct", &lookup).is_none()
-        );
+        assert!(select_evidence(
+            &conflict,
+            &target.activity,
+            Some("plaid"),
+            "acct",
+            CashFlowBucket::Spending,
+            &lookup,
+        )
+        .is_none());
         assert!(select_evidence(
             &[evidence("retired-category", AGREEMENT, 8, None, None)],
             &target.activity,
             None,
             "acct",
+            CashFlowBucket::Spending,
             &lookup,
         )
         .is_none());
@@ -1210,6 +1312,7 @@ mod tests {
             &target.activity,
             None,
             "acct",
+            CashFlowBucket::Spending,
             &lookup,
         )
         .is_none());
@@ -1218,16 +1321,29 @@ mod tests {
             &target.activity,
             Some("snaptrade"),
             "acct",
+            CashFlowBucket::Spending,
             &lookup,
         )
         .is_none());
-        assert!(has_authoritative_assignment(&make_cash_activity(
-            "manual",
-            "acct",
-            "2024-06-15T00:00:00Z",
-            false,
-            true,
-        )));
+        let mut assignment_lookup = CategoryLookup::new();
+        assignment_lookup.insert(
+            category_lookup_key("spending_categories", "cat-1"),
+            (
+                "spending_categories".to_string(),
+                "Spending".to_string(),
+                "Food".to_string(),
+                "Food".to_string(),
+                "#000".to_string(),
+            ),
+        );
+        assert!(has_authoritative_assignment(
+            &make_cash_activity("manual", "acct", "2024-06-15T00:00:00Z", false, true),
+            &assignment_lookup,
+        ));
+
+        let mut stale = make_cash_activity("stale", "acct", "2024-06-15T00:00:00Z", false, true);
+        stale.cash_flow_bucket = CashFlowBucket::Income;
+        assert!(!has_authoritative_assignment(&stale, &assignment_lookup));
     }
 
     #[test]

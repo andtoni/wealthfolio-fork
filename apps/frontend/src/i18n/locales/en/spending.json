@@ -121,6 +121,7 @@
     "markReimbursement": "Mark as reimbursement",
     "splitTransaction": "Split transaction",
     "duplicate": "Duplicate",
+    "markTransfer": "Mark as transfer",
     "unlinkTransfer": "Unlink transfer",
     "linkTransfer": "Link transfer..."
   },

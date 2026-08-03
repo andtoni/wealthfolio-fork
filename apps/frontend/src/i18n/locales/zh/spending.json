@@ -121,6 +121,7 @@
     "markReimbursement": "标记为报销",
     "splitTransaction": "拆分交易",
     "duplicate": "复制",
+    "markTransfer": "标记为转账",
     "unlinkTransfer": "取消关联转账",
     "linkTransfer": "关联转账……"
   },

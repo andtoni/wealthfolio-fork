@@ -8,7 +8,8 @@ pub mod traits;
 
 pub use model::{
     CashActivity, CashActivityFilter, CashActivitySearchRequest, CashActivitySearchResponse,
-    CashActivitySortField, CashActivityStatusFilter, SortDirection,
+    CashActivitySortField, CashActivityStatusFilter, CashFlowBucket, SortDirection,
+    INCOME_TAXONOMY, SAVINGS_TAXONOMY, SPENDING_TAXONOMY,
 };
 pub use service::CashActivityService;
 pub use traits::CashActivityServiceTrait;

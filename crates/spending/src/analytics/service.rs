@@ -2321,6 +2321,10 @@ mod tests {
                 .collect())
         }
 
+        async fn categories_belong_to_taxonomy(&self, _: &str, _: &[String]) -> Result<bool> {
+            Ok(true)
+        }
+
         async fn upsert(
             &self,
             _: NewActivityTaxonomyAssignment,

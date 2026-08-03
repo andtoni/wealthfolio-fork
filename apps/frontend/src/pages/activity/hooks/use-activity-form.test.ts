@@ -2,7 +2,7 @@ import { ActivityType } from "@/lib/constants";
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountSelectOption } from "../components/forms/fields";
-import type { ActivityFormValues } from "../config/activity-form-config";
+import { ACTIVITY_FORM_CONFIG, type ActivityFormValues } from "../config/activity-form-config";
 import { useActivityForm } from "./use-activity-form";
 
 const mutationMocks = vi.hoisted(() => ({
@@ -75,6 +75,96 @@ describe("useActivityForm", () => {
     mutationMocks.unlinkMutateAsync.mockResolvedValue({});
     adapterMocks.getTransferPairForActivity.mockReset();
     adapterMocks.loggerError.mockReset();
+  });
+
+  it("opens an existing non-transfer row as an external transfer", () => {
+    const defaults = ACTIVITY_FORM_CONFIG.TRANSFER.getDefaults(
+      {
+        id: "withdrawal-id",
+        activityType: ActivityType.WITHDRAWAL,
+        accountId: "acc-usd",
+        amount: "-250",
+      },
+      accounts,
+    );
+
+    expect(defaults).toMatchObject({
+      isExternal: true,
+      direction: "out",
+      accountId: "acc-usd",
+      fromAccountId: "",
+      toAccountId: "",
+    });
+  });
+
+  it("keeps an existing internal transfer in paired mode", () => {
+    const defaults = ACTIVITY_FORM_CONFIG.TRANSFER.getDefaults(
+      {
+        id: "transfer-out-id",
+        activityType: ActivityType.TRANSFER_OUT,
+        accountId: "acc-usd",
+      },
+      accounts,
+    );
+
+    expect(defaults).toMatchObject({
+      isExternal: false,
+      direction: "out",
+      fromAccountId: "acc-usd",
+    });
+  });
+
+  it("preserves incoming direction for an external transfer", () => {
+    const defaults = ACTIVITY_FORM_CONFIG.TRANSFER.getDefaults(
+      {
+        id: "deposit-id",
+        activityType: ActivityType.TRANSFER_IN,
+        accountId: "acc-usd",
+        metadata: { flow: { is_external: true } },
+      },
+      accounts,
+    );
+
+    expect(defaults).toMatchObject({
+      isExternal: true,
+      direction: "in",
+      accountId: "acc-usd",
+    });
+  });
+
+  it("converts a marked row through the external transfer update path", async () => {
+    const { result } = renderHook(() =>
+      useActivityForm({
+        accounts,
+        selectedType: "TRANSFER",
+        activity: {
+          id: "withdrawal-id",
+          activityType: ActivityType.WITHDRAWAL,
+          accountId: "acc-usd",
+          amount: "-250",
+        },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.handleSubmit({
+        ...result.current.defaultValues,
+        isExternal: true,
+        direction: "out",
+        accountId: "acc-usd",
+        amount: 250,
+        transferMode: "cash",
+        currency: "USD",
+      } as ActivityFormValues);
+    });
+
+    expect(mutationMocks.updateMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "withdrawal-id",
+        activityType: ActivityType.TRANSFER_OUT,
+        metadata: { flow: { is_external: true } },
+      }),
+    );
   });
 
   it("preserves user-selected currency for DEPOSIT", async () => {

@@ -173,11 +173,6 @@ pub async fn initialize_context(
             writer.clone(),
         ),
     );
-    let activity_taxonomy_assignment_service = Arc::new(
-        wealthfolio_spending::activity_assignments::ActivityTaxonomyAssignmentService::new(
-            activity_assignments_repo.clone(),
-        ),
-    );
     let settings = settings_service.get_settings()?;
     let base_currency_string = settings.base_currency.clone();
     let base_currency = Arc::new(RwLock::new(base_currency_string.clone()));
@@ -232,6 +227,20 @@ pub async fn initialize_context(
     let taxonomy_repository = Arc::new(TaxonomyRepository::new(pool.clone(), writer.clone()));
     let taxonomy_service = Arc::new(
         TaxonomyService::new(taxonomy_repository).with_event_sink(domain_event_sink.clone()),
+    );
+
+    let budget_repo: Arc<dyn wealthfolio_spending::budget::BudgetRepositoryTrait> = Arc::new(
+        wealthfolio_storage_sqlite::spending::budget::BudgetRepository::new(
+            pool.clone(),
+            writer.clone(),
+        ),
+    );
+    let activity_taxonomy_assignment_service = Arc::new(
+        wealthfolio_spending::activity_assignments::ActivityTaxonomyAssignmentService::new(
+            activity_assignments_repo.clone(),
+        )
+        .with_budget_repository(budget_repo.clone())
+        .with_taxonomy_service(taxonomy_service.clone()),
     );
 
     let asset_service = Arc::new(
@@ -303,6 +312,7 @@ pub async fn initialize_context(
             categorization_rules_repo,
             activity_repository.clone(),
             activity_taxonomy_assignment_service.clone(),
+            cash_activity_service.clone(),
         ),
     );
 
@@ -322,12 +332,6 @@ pub async fn initialize_context(
     );
 
     // Spending: budget
-    let budget_repo: Arc<dyn wealthfolio_spending::budget::BudgetRepositoryTrait> = Arc::new(
-        wealthfolio_storage_sqlite::spending::budget::BudgetRepository::new(
-            pool.clone(),
-            writer.clone(),
-        ),
-    );
     let budget_service = Arc::new(wealthfolio_spending::budget::BudgetService::new(
         budget_repo,
         activity_repository.clone(),
@@ -590,6 +594,7 @@ pub async fn initialize_context(
         portfolio_service.clone(),
         net_worth_service.clone(),
         limits_service.clone(),
+        budget_service.clone(),
         cash_activity_service.clone(),
         activity_taxonomy_assignment_service.clone(),
         categorization_rules_service.clone(),

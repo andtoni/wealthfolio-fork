@@ -348,12 +348,6 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
             writer.clone(),
         ),
     );
-    let activity_taxonomy_assignment_service = Arc::new(
-        wealthfolio_spending::activity_assignments::ActivityTaxonomyAssignmentService::new(
-            activity_assignments_repo.clone(),
-        ),
-    );
-
     let account_repo = Arc::new(AccountRepository::new(pool.clone(), writer.clone()));
     let verified_receipt_repository = Arc::new(VerifiedReceiptRepository::new(pool.clone()));
     let provenance_repository = Arc::new(ProvenanceRepository::new(pool.clone()));
@@ -421,6 +415,20 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
     let taxonomy_repository = Arc::new(TaxonomyRepository::new(pool.clone(), writer.clone()));
     let taxonomy_service = Arc::new(
         TaxonomyService::new(taxonomy_repository).with_event_sink(domain_event_sink.clone()),
+    );
+
+    let budget_repo: Arc<dyn wealthfolio_spending::budget::BudgetRepositoryTrait> = Arc::new(
+        wealthfolio_storage_sqlite::spending::budget::BudgetRepository::new(
+            pool.clone(),
+            writer.clone(),
+        ),
+    );
+    let activity_taxonomy_assignment_service = Arc::new(
+        wealthfolio_spending::activity_assignments::ActivityTaxonomyAssignmentService::new(
+            activity_assignments_repo.clone(),
+        )
+        .with_budget_repository(budget_repo.clone())
+        .with_taxonomy_service(taxonomy_service.clone()),
     );
 
     let asset_service = Arc::new(
@@ -643,6 +651,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
             categorization_rules_repo,
             activity_repository.clone(),
             activity_taxonomy_assignment_service.clone(),
+            cash_activity_service.clone(),
         ),
     );
 
@@ -663,12 +672,6 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
     let historical_import_repository = Arc::new(HistoricalImportRepository::new(writer.clone()));
 
     // Spending: budget
-    let budget_repo: Arc<dyn wealthfolio_spending::budget::BudgetRepositoryTrait> = Arc::new(
-        wealthfolio_storage_sqlite::spending::budget::BudgetRepository::new(
-            pool.clone(),
-            writer.clone(),
-        ),
-    );
     let budget_service = Arc::new(wealthfolio_spending::budget::BudgetService::new(
         budget_repo,
         activity_repository.clone(),
@@ -802,6 +805,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         portfolio_service.clone(),
         net_worth_service.clone(),
         limits_service.clone(),
+        budget_service.clone(),
         cash_activity_service.clone(),
         activity_taxonomy_assignment_service.clone(),
         categorization_rules_service.clone(),

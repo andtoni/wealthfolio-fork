@@ -17,6 +17,11 @@ import {
 
 import { useTaxonomy } from "@/hooks/use-taxonomies";
 import type { TaxonomyCategory } from "@/lib/types";
+import { useBudget } from "../hooks/use-budget";
+import {
+  categoryPairKey,
+  configuredCategoryPairsFromBudget,
+} from "../lib/configured-category-pairs";
 
 const SPENDING_TAXONOMY = "spending_categories";
 const INCOME_TAXONOMY = "income_sources";
@@ -38,6 +43,7 @@ interface FlatOption {
   taxonomyId: string;
   category: TaxonomyCategory;
   parent: TaxonomyCategory | null;
+  ancestorIds: string[];
   group: "Expense" | "Savings" | "Income";
 }
 
@@ -50,12 +56,23 @@ function flattenTaxonomy(
   return cats
     .slice()
     .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map((c) => ({
-      taxonomyId,
-      category: c,
-      parent: c.parentId ? (byId.get(c.parentId) ?? null) : null,
-      group,
-    }));
+    .map((c) => {
+      const ancestorIds: string[] = [];
+      const seen = new Set<string>();
+      let parentId = c.parentId;
+      while (parentId && !seen.has(parentId)) {
+        seen.add(parentId);
+        ancestorIds.push(parentId);
+        parentId = byId.get(parentId)?.parentId ?? null;
+      }
+      return {
+        taxonomyId,
+        category: c,
+        parent: c.parentId ? (byId.get(c.parentId) ?? null) : null,
+        ancestorIds,
+        group,
+      };
+    });
 }
 
 export function QuickCategorizePopover({
@@ -76,20 +93,60 @@ export function QuickCategorizePopover({
   const spending = useTaxonomy(SPENDING_TAXONOMY);
   const income = useTaxonomy(INCOME_TAXONOMY);
   const savings = useTaxonomy(SAVINGS_TAXONOMY);
+  const budget = useBudget();
+  const configuredCategoryPairs = useMemo(() => {
+    if (budget.isLoading || budget.isError) return new Set<string>();
+    return configuredCategoryPairsFromBudget(budget.data?.state);
+  }, [
+    budget.data?.state.groupAssignments,
+    budget.data?.state.targets,
+    budget.isError,
+    budget.isLoading,
+  ]);
 
+  const budgetReady = !budget.isLoading && !budget.isError;
   const options = useMemo<FlatOption[]>(() => {
+    const filterConfigured = (items: FlatOption[]) =>
+      items.filter(
+        (item) =>
+          item.taxonomyId === INCOME_TAXONOMY ||
+          (budgetReady &&
+            (configuredCategoryPairs.has(categoryPairKey(item.taxonomyId, item.category.id)) ||
+              item.ancestorIds.some((ancestorId) =>
+                configuredCategoryPairs.has(categoryPairKey(item.taxonomyId, ancestorId)),
+              ))),
+      );
     const out: FlatOption[] = [];
     if (scope === "expense" || scope === "both") {
-      out.push(...flattenTaxonomy(SPENDING_TAXONOMY, spending.data?.categories ?? [], "Expense"));
+      out.push(
+        ...filterConfigured(
+          flattenTaxonomy(SPENDING_TAXONOMY, spending.data?.categories ?? [], "Expense"),
+        ),
+      );
     }
     if (scope === "saving") {
-      out.push(...flattenTaxonomy(SAVINGS_TAXONOMY, savings.data?.categories ?? [], "Savings"));
+      out.push(
+        ...filterConfigured(
+          flattenTaxonomy(SAVINGS_TAXONOMY, savings.data?.categories ?? [], "Savings"),
+        ),
+      );
     }
     if (scope === "income" || scope === "both") {
-      out.push(...flattenTaxonomy(INCOME_TAXONOMY, income.data?.categories ?? [], "Income"));
+      out.push(
+        ...filterConfigured(
+          flattenTaxonomy(INCOME_TAXONOMY, income.data?.categories ?? [], "Income"),
+        ),
+      );
     }
     return out;
-  }, [spending.data?.categories, savings.data?.categories, income.data?.categories, scope]);
+  }, [
+    budgetReady,
+    configuredCategoryPairs,
+    income.data?.categories,
+    savings.data?.categories,
+    scope,
+    spending.data?.categories,
+  ]);
 
   const grouped = useMemo(() => {
     const groups: Record<FlatOption["group"], FlatOption[]> = {

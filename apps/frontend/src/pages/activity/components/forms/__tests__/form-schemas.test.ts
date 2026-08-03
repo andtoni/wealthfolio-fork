@@ -1013,6 +1013,26 @@ describe("Form Schemas Validation", () => {
       expect(payload).not.toHaveProperty("existingAssetId");
     });
 
+    it("preserves unrelated metadata when marking an external transfer", () => {
+      const formData = {
+        isExternal: true,
+        direction: "in" as const,
+        accountId: "acc-123",
+        activityDate: new Date(),
+        transferMode: "cash" as const,
+        amount: 100,
+        currency: "USD",
+        metadata: { providerOwned: { merchantContext: { merchantKey: "merchant:test" } } },
+      };
+
+      const payload = ACTIVITY_FORM_CONFIG.TRANSFER.toPayload(formData as any) as any;
+
+      expect(payload.metadata).toEqual({
+        providerOwned: { merchantContext: { merchantKey: "merchant:test" } },
+        flow: { is_external: true },
+      });
+    });
+
     it("omits unitPrice when not provided", () => {
       const formData = {
         isExternal: false,

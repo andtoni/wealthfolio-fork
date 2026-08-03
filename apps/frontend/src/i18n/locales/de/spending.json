@@ -121,6 +121,7 @@
     "markReimbursement": "Als Erstattung markieren",
     "splitTransaction": "Transaktion aufteilen",
     "duplicate": "Duplizieren",
+    "markTransfer": "Als Überweisung markieren",
     "unlinkTransfer": "Überweisung trennen",
     "linkTransfer": "Überweisung verknüpfen..."
   },

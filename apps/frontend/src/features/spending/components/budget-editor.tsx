@@ -250,7 +250,7 @@ export function BudgetEditor({ mode, periodKey }: BudgetEditorProps) {
 
   if (mode === "period") {
     return (
-      <div className="grid w-full min-w-0 max-w-full gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid w-full min-w-0 max-w-full grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-4">
           <BudgetSummary budget={budget} currency={currency} mode={mode} />
           <BudgetFxNote budget={budget} currency={currency} />
@@ -1790,7 +1790,7 @@ function BudgetSkeleton() {
   return (
     <div className="space-y-4">
       <Skeleton className="h-40 rounded-xl" />
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-4">
           <Skeleton className="h-72 rounded-xl" />
           <Skeleton className="h-56 rounded-xl" />

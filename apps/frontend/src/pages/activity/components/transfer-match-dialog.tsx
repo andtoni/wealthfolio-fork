@@ -296,7 +296,7 @@ function externalTransferUpdatePayload(
     subtype: activity.subtype ?? null,
     currentAssetId: activity.assetId,
     metadata: { flow: { is_external: true } },
-  } as NewActivityFormValues & { id: string; currentAssetId?: string };
+  } as unknown as NewActivityFormValues & { id: string; currentAssetId?: string };
 }
 
 function ActivitySummaryRow({

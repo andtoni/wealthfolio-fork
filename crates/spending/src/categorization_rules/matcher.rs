@@ -56,17 +56,22 @@ pub fn compile_rules(rules: &[CategorizationRule]) -> Vec<CompiledRule<'_>> {
         .collect()
 }
 
-/// Highest-priority match against a precompiled rule set. Callers that loop
-/// over many activities should normalize each activity's notes to uppercase
-/// once and pass it as `notes_upper`; `notes_raw` is needed for regex
-/// matching (regex matches against the original casing, same as today).
-pub fn match_compiled<'r>(
+/// Highest-priority match against a precompiled rule set, restricted by a
+/// caller-supplied eligibility predicate. Callers that loop over many
+/// activities should normalize each activity's notes to uppercase once and
+/// pass it as `notes_upper`; `notes_raw` is needed for regex matching (regex
+/// matches against the original casing, same as today).
+pub fn match_compiled_where<'r, F>(
     compiled: &[CompiledRule<'r>],
     notes_upper: &str,
     notes_raw: &str,
     activity_type: &str,
     account_id: &str,
-) -> Option<RuleMatch<'r>> {
+    is_eligible: F,
+) -> Option<RuleMatch<'r>>
+where
+    F: Fn(&CategorizationRule) -> bool,
+{
     let mut best: Option<&CategorizationRule> = None;
 
     for c in compiled {
@@ -83,6 +88,10 @@ pub fn match_compiled<'r>(
             if rt != activity_type {
                 continue;
             }
+        }
+
+        if !is_eligible(rule) {
+            continue;
         }
 
         let matched = match rule.match_type {
@@ -104,6 +113,25 @@ pub fn match_compiled<'r>(
     }
 
     best.map(|rule| RuleMatch { rule })
+}
+
+/// Highest-priority match against a precompiled rule set without additional
+/// eligibility filtering.
+pub fn match_compiled<'r>(
+    compiled: &[CompiledRule<'r>],
+    notes_upper: &str,
+    notes_raw: &str,
+    activity_type: &str,
+    account_id: &str,
+) -> Option<RuleMatch<'r>> {
+    match_compiled_where(
+        compiled,
+        notes_upper,
+        notes_raw,
+        activity_type,
+        account_id,
+        |_| true,
+    )
 }
 
 /// Single-shot match against an un-compiled rule slice. Convenience for the
@@ -161,6 +189,26 @@ mod tests {
         ];
         let m = match_rules(&rules, "FOO BAR", "WITHDRAWAL", "acct1").unwrap();
         assert_eq!(m.rule.id, "b");
+    }
+
+    #[test]
+    fn filtered_matching_skips_ineligible_higher_priority_rule() {
+        let rules = vec![
+            rule("high", "FOO", RuleMatchType::Contains, 10),
+            rule("low", "FOO", RuleMatchType::Contains, 1),
+        ];
+        let compiled = compile_rules(&rules);
+        let matched = match_compiled_where(
+            &compiled,
+            "FOO BAR",
+            "FOO BAR",
+            "WITHDRAWAL",
+            "acct1",
+            |candidate| candidate.id == "low",
+        )
+        .unwrap();
+
+        assert_eq!(matched.rule.id, "low");
     }
 
     #[test]

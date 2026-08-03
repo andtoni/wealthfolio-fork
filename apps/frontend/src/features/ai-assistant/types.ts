@@ -1,5 +1,6 @@
 // AI Assistant Feature Types
 
+import type { CashFlowBucket } from "@/features/spending/types/cash-activity";
 import type { NewCategorizationRule } from "@/features/spending/types/rule";
 import type { MergedProvider } from "@/lib/types";
 
@@ -696,11 +697,13 @@ export interface ProposeCategoryProposal {
   amount: number;
   currency: string;
   notes: string | null;
+  /** Optional for backward compatibility with persisted pre-invariant drafts. */
+  cashFlowBucket?: CashFlowBucket;
   taxonomyId: string;
   categoryId: string;
   categoryPath: string;
   confidence: number;
-  source: "rule" | "history" | "ai" | "manual";
+  source: "rule" | "evidence" | "history" | "ai" | "manual";
   explanation: string;
 }
 
@@ -710,6 +713,8 @@ export interface ProposeCategoryUnproposed {
   amount: number;
   currency: string;
   notes: string | null;
+  /** Optional for backward compatibility with persisted pre-invariant drafts. */
+  cashFlowBucket?: CashFlowBucket;
   reason: string;
 }
 

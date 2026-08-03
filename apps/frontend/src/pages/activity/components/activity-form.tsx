@@ -43,6 +43,8 @@ interface ActivityFormProps {
   activity?: Partial<ActivityDetails>;
   open?: boolean;
   onClose?: () => void;
+  /** Called after a mutation succeeds, before the form is discarded. */
+  onSuccess?: () => void;
   /** When true, hides the activity type picker (use when type is already determined) */
   hidePicker?: boolean;
 }
@@ -53,6 +55,7 @@ export function ActivityForm({
   activity,
   open,
   onClose,
+  onSuccess,
   hidePicker,
 }: ActivityFormProps) {
   const { t } = useTranslation();
@@ -83,7 +86,10 @@ export function ActivityForm({
     accounts: filteredAccounts,
     activity,
     selectedType: effectiveSelectedType,
-    onSuccess: onClose,
+    onSuccess: () => {
+      onSuccess?.();
+      onClose?.();
+    },
   });
 
   // Handle sheet open change - reset state when closing

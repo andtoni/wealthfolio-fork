@@ -190,17 +190,21 @@ export function CashActivityForm({
   const income = useTaxonomy(INCOME_TAXONOMY);
   const savings = useTaxonomy(SAVINGS_TAXONOMY);
 
-  const allCategoriesById = useMemo(() => {
+  const allCategoriesByPair = useMemo(() => {
     const map = new Map<string, { name: string; color: string | null; parentId: string | null }>();
-    (spending.data?.categories ?? []).forEach((c) =>
-      map.set(c.id, { name: c.name, color: c.color, parentId: c.parentId ?? null }),
-    );
-    (income.data?.categories ?? []).forEach((c) =>
-      map.set(c.id, { name: c.name, color: c.color, parentId: c.parentId ?? null }),
-    );
-    (savings.data?.categories ?? []).forEach((c) =>
-      map.set(c.id, { name: c.name, color: c.color, parentId: c.parentId ?? null }),
-    );
+    for (const categories of [
+      spending.data?.categories ?? [],
+      income.data?.categories ?? [],
+      savings.data?.categories ?? [],
+    ]) {
+      for (const category of categories) {
+        map.set(`${category.taxonomyId}:${category.id}`, {
+          name: category.name,
+          color: category.color,
+          parentId: category.parentId ?? null,
+        });
+      }
+    }
     return map;
   }, [spending.data?.categories, income.data?.categories, savings.data?.categories]);
 
@@ -653,13 +657,15 @@ export function CashActivityForm({
                       control={form.control}
                       name="category"
                       render={({ field }) => {
-                        const [, currentCatId] = field.value?.split(":") ?? [];
-                        const currentCat = currentCatId
-                          ? allCategoriesById.get(currentCatId)
-                          : null;
-                        const currentParent = currentCat?.parentId
-                          ? allCategoriesById.get(currentCat.parentId)
-                          : null;
+                        const [currentTaxonomyId, currentCatId] = field.value?.split(":") ?? [];
+                        const currentCat =
+                          currentTaxonomyId && currentCatId
+                            ? allCategoriesByPair.get(`${currentTaxonomyId}:${currentCatId}`)
+                            : null;
+                        const currentParent =
+                          currentCat?.parentId && currentTaxonomyId
+                            ? allCategoriesByPair.get(`${currentTaxonomyId}:${currentCat.parentId}`)
+                            : null;
                         return (
                           <FormItem>
                             <FormLabel>

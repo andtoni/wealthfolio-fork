@@ -54,13 +54,8 @@ export const transferActivitySchema = baseActivitySchema.extend({
   quantity: z.coerce.number().positive().optional().nullable(),
   unitPrice: z.coerce.number().positive().optional().nullable(),
   quoteMode: z.enum([QuoteMode.MARKET, QuoteMode.MANUAL]).default(QuoteMode.MARKET),
-  metadata: z
-    .object({
-      flow: z.object({
-        is_external: z.boolean(),
-      }),
-    })
-    .optional(),
+  // Preserve provider/source metadata when converting an existing activity.
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const bulkHoldingRowSchema = z

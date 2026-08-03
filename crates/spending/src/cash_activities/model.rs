@@ -91,6 +91,10 @@ fn default_limit() -> usize {
     50
 }
 
+pub const SPENDING_TAXONOMY: &str = "spending_categories";
+pub const INCOME_TAXONOMY: &str = "income_sources";
+pub const SAVINGS_TAXONOMY: &str = "savings_categories";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CashFlowBucket {
@@ -98,6 +102,39 @@ pub enum CashFlowBucket {
     Income,
     Saving,
     Neutral,
+}
+
+impl CashFlowBucket {
+    pub fn taxonomy_id(self) -> Option<&'static str> {
+        match self {
+            Self::Spending => Some(SPENDING_TAXONOMY),
+            Self::Income => Some(INCOME_TAXONOMY),
+            Self::Saving => Some(SAVINGS_TAXONOMY),
+            Self::Neutral => None,
+        }
+    }
+
+    pub fn accepts_taxonomy(self, taxonomy_id: &str) -> bool {
+        self.taxonomy_id() == Some(taxonomy_id)
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Spending => "Spending",
+            Self::Income => "Income",
+            Self::Saving => "Saving",
+            Self::Neutral => "Neutral",
+        }
+    }
+
+    pub(crate) fn taxonomy_label(self) -> &'static str {
+        match self {
+            Self::Spending => "spending",
+            Self::Income => "income",
+            Self::Saving => "savings",
+            Self::Neutral => "no",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
