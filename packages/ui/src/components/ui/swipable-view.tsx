@@ -40,6 +40,8 @@ export interface SwipableViewProps {
    * whenever it changes. This is the single source of truth for the selected view.
    */
   selectedIndex?: number;
+  /** Allow native horizontal scrolling inside descendants that block carousel drag. */
+  allowNestedHorizontalScroll?: boolean;
 }
 
 export function SwipableView({
@@ -53,6 +55,7 @@ export function SwipableView({
   onInit: onInitProp,
   initialIndex = 0,
   selectedIndex: controlledIndex,
+  allowNestedHorizontalScroll = false,
 }: SwipableViewProps) {
   const [emblaRef, emblaApi] = useEmblaCarousel({
     loop: false,
@@ -167,7 +170,7 @@ export function SwipableView({
       {/* Swipable Content */}
       <div ref={emblaRef} className="h-full grow overflow-hidden">
         <div
-          className="flex h-full touch-pan-y"
+          className={cn("flex h-full", allowNestedHorizontalScroll ? "touch-auto" : "touch-pan-y")}
           style={{
             overflowX: "visible",
           }}
@@ -178,7 +181,9 @@ export function SwipableView({
                  SCROLL ARCHITECTURE:
                  1. We use a nested div for scrolling.
                  2. This ensures the Header stays fixed while content scrolls.
-                 3. touch-pan-y allows vertical scrolling while horizontal swipes trigger the carousel.
+                 3. The dashboard opts into touch-auto only when a descendant owns
+                    horizontal scrolling; Embla still ignores those descendants
+                    through data-no-swipe-drag.
                */}
               <div
                 className={cn(

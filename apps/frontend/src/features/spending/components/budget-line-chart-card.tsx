@@ -535,7 +535,18 @@ export function BudgetLineChartCard({
             </Link>
           </div>
         ) : (
-          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(4rem,1fr))] gap-x-2 gap-y-3">
+          <div
+            key={monthKey}
+            data-no-swipe-drag
+            role="region"
+            className="-mx-1 flex min-w-0 touch-auto snap-x snap-proximity gap-3 overflow-x-auto overscroll-x-contain pb-1 pl-1 pr-8 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            aria-label={t("spending:budgetChart.byCategory")}
+            style={{
+              maskImage: "linear-gradient(to right, black calc(100% - 32px), transparent 100%)",
+              WebkitMaskImage:
+                "linear-gradient(to right, black calc(100% - 32px), transparent 100%)",
+            }}
+          >
             {rings.map((r) => (
               <BudgetRing key={r.id} ring={r} currency={currency} activityRange={activityRange} />
             ))}
@@ -736,7 +747,7 @@ function BudgetRing({
       to={`/activities?tab=spending&category=${encodeURIComponent(ring.categoryId)}&from=${
         activityRange.from
       }&to=${activityRange.to}`}
-      className="hover:bg-muted/40 flex min-w-0 flex-col items-center gap-1 rounded-md px-1 py-1 transition-colors"
+      className="hover:bg-muted/40 flex w-16 shrink-0 snap-start flex-col items-center gap-1 rounded-md px-1 py-1 transition-colors"
       title={`${ring.name}: ${ring.spent.toFixed(2)} / ${ring.target.toFixed(2)}`}
     >
       <div className="relative" style={{ width: size, height: size }}>

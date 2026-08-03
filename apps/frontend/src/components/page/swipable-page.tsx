@@ -30,6 +30,8 @@ interface SwipablePageProps {
    * so navigating back to this page restores the previously chosen tab.
    */
   persistKey?: string;
+  /** Allow touch scrolling in nested horizontal carousels that opt out of page swipes. */
+  allowNestedHorizontalScroll?: boolean;
 }
 
 // Navigation Pills Component - Segmented control style
@@ -161,6 +163,7 @@ export function SwipablePage({
   title,
   mobileActionsPlacement = "below",
   persistKey,
+  allowNestedHorizontalScroll = false,
 }: SwipablePageProps) {
   const isMobile = useIsMobileViewport();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -279,6 +282,7 @@ export function SwipablePage({
                   ),
                 }))}
                 displayToggle={false}
+                allowNestedHorizontalScroll={allowNestedHorizontalScroll}
                 onViewChange={(_index: number, name: string) => {
                   const matchedView = views.find((v) => v.label === name);
                   if (matchedView) {

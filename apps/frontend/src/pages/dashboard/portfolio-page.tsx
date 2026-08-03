@@ -167,6 +167,7 @@ export default function PortfolioPage() {
         withMobileNavOffset={false}
         mobileActionsPlacement="header"
         persistKey="dashboard-tab"
+        allowNestedHorizontalScroll
       />
       <AlternativeAssetQuickAddModal
         open={isQuickAddOpen}
