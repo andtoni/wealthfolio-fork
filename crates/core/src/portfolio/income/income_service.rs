@@ -1112,11 +1112,16 @@ mod tests {
 
     #[tokio::test]
     async fn get_income_summary_public_matrix_covers_periods_groupings_fx_and_income_types() {
+        let current_date = Utc::now().date_naive();
+        let current_year = current_date.year();
+        let last_year = current_year - 1;
+        let two_years_ago = current_year - 2;
+        let current_month = current_date.month();
         let mut rows = vec![
-            activity("usd-dividend", "acc-1", "DIVIDEND", 2024, 1, 10),
-            activity("usd-staking", "acc-1", "INTEREST", 2025, 3, 10),
-            activity("eur-drip", "acc-2", "DIVIDEND", 2026, 5, 10),
-            activity("usd-interest", "acc-2", "INTEREST", 2026, 7, 10),
+            activity("usd-dividend", "acc-1", "DIVIDEND", two_years_ago, 1, 10),
+            activity("usd-staking", "acc-1", "INTEREST", last_year, 3, 10),
+            activity("eur-drip", "acc-2", "DIVIDEND", current_year, 5, 10),
+            activity("usd-interest", "acc-2", "INTEREST", current_year, 7, 10),
         ];
         for (index, asset, currency, amount) in [
             (0, "CASH", "USD", 100),
@@ -1131,20 +1136,20 @@ mod tests {
         rows[1].subtype = Some("STAKING_REWARD".into());
         rows[2].subtype = Some("DRIP".into());
         let mut staking = income_data("usd-staking", "acc-1", 50).1;
-        staking.date = "2025-03".into();
+        staking.date = format!("{last_year:04}-03");
         staking.income_type = "STAKING".into();
         staking.asset_id = "ETF".into();
         let mut drip = income_data("eur-drip", "acc-2", 30).1;
-        drip.date = "2026-05".into();
+        drip.date = format!("{current_year:04}-05");
         drip.income_type = "DRIP".into();
         drip.asset_id = "STOCK".into();
         drip.currency = "EUR".into();
         let mut interest = income_data("usd-interest", "acc-2", 20).1;
-        interest.date = "2026-07".into();
+        interest.date = format!("{current_year:04}-07");
         interest.income_type = "INTEREST".into();
         interest.asset_id = "BOND".into();
         let mut dividend = income_data("usd-dividend", "acc-1", 100).1;
-        dividend.date = "2024-01".into();
+        dividend.date = format!("{two_years_ago:04}-01");
         let income = vec![
             ("usd-dividend".into(), dividend),
             ("usd-staking".into(), staking),
@@ -1265,14 +1270,19 @@ mod tests {
                 ),
             ),
         ]);
+        let two_years_ago_january = format!("{two_years_ago:04}-01");
+        let last_year_march = format!("{last_year:04}-03");
+        let current_year_may = format!("{current_year:04}-05");
+        let current_year_july = format!("{current_year:04}-07");
+        let total_months = Decimal::new(23 + i64::from(current_month), 0);
         let accounts = HashMap::from([
             (
                 "acc-1".into(),
                 (
                     "acc-1".into(),
                     HashMap::from([
-                        ("2024-01".into(), Decimal::new(100, 0)),
-                        ("2025-03".into(), Decimal::new(50, 0)),
+                        (two_years_ago_january.clone(), Decimal::new(100, 0)),
+                        (last_year_march.clone(), Decimal::new(50, 0)),
                     ]),
                     Decimal::new(150, 0),
                 ),
@@ -1282,8 +1292,8 @@ mod tests {
                 (
                     "acc-2".into(),
                     HashMap::from([
-                        ("2026-05".into(), Decimal::new(60, 0)),
-                        ("2026-07".into(), Decimal::new(20, 0)),
+                        (current_year_may.clone(), Decimal::new(60, 0)),
+                        (current_year_july.clone(), Decimal::new(20, 0)),
                     ]),
                     Decimal::new(80, 0),
                 ),
@@ -1293,10 +1303,10 @@ mod tests {
             &summaries[0],
             "ALL",
             HashMap::from([
-                ("2024-01".into(), Decimal::new(100, 0)),
-                ("2025-03".into(), Decimal::new(50, 0)),
-                ("2026-05".into(), Decimal::new(60, 0)),
-                ("2026-07".into(), Decimal::new(20, 0)),
+                (two_years_ago_january.clone(), Decimal::new(100, 0)),
+                (last_year_march.clone(), Decimal::new(50, 0)),
+                (current_year_may.clone(), Decimal::new(60, 0)),
+                (current_year_july.clone(), Decimal::new(20, 0)),
             ]),
             HashMap::from([
                 ("DIVIDEND".into(), Decimal::new(100, 0)),
@@ -1311,15 +1321,15 @@ mod tests {
             ]),
             accounts.clone(),
             Decimal::new(230, 0),
-            Decimal::new(767, 2),
+            (Decimal::new(230, 0) / total_months).round_dp(2),
             None,
         );
         assert_summary(
             &summaries[1],
             "YTD",
             HashMap::from([
-                ("2026-05".into(), Decimal::new(60, 0)),
-                ("2026-07".into(), Decimal::new(20, 0)),
+                (current_year_may.clone(), Decimal::new(60, 0)),
+                (current_year_july.clone(), Decimal::new(20, 0)),
             ]),
             HashMap::from([
                 ("DRIP".into(), Decimal::new(60, 0)),
@@ -1335,13 +1345,13 @@ mod tests {
             ]),
             HashMap::from([("acc-2".into(), accounts["acc-2"].clone())]),
             Decimal::new(80, 0),
-            Decimal::new(1143, 2),
+            (Decimal::new(80, 0) / Decimal::new(i64::from(current_month), 0)).round_dp(2),
             Some(Decimal::new(60, 2)),
         );
         assert_summary(
             &summaries[2],
             "LAST_YEAR",
-            HashMap::from([("2025-03".into(), Decimal::new(50, 0))]),
+            HashMap::from([(last_year_march.clone(), Decimal::new(50, 0))]),
             HashMap::from([("STAKING".into(), Decimal::new(50, 0))]),
             HashMap::from([("ETF".into(), assets["ETF"].clone())]),
             HashMap::from([("USD".into(), Decimal::new(50, 0))]),
@@ -1349,7 +1359,7 @@ mod tests {
                 "acc-1".into(),
                 (
                     "acc-1".into(),
-                    HashMap::from([("2025-03".into(), Decimal::new(50, 0))]),
+                    HashMap::from([(last_year_march.clone(), Decimal::new(50, 0))]),
                     Decimal::new(50, 0),
                 ),
             )]),
@@ -1360,7 +1370,7 @@ mod tests {
         assert_summary(
             &summaries[3],
             "TWO_YEARS_AGO",
-            HashMap::from([("2024-01".into(), Decimal::new(100, 0))]),
+            HashMap::from([(two_years_ago_january.clone(), Decimal::new(100, 0))]),
             HashMap::from([("DIVIDEND".into(), Decimal::new(100, 0))]),
             HashMap::from([("CASH".into(), assets["CASH"].clone())]),
             HashMap::from([("USD".into(), Decimal::new(100, 0))]),
@@ -1368,7 +1378,7 @@ mod tests {
                 "acc-1".into(),
                 (
                     "acc-1".into(),
-                    HashMap::from([("2024-01".into(), Decimal::new(100, 0))]),
+                    HashMap::from([(two_years_ago_january.clone(), Decimal::new(100, 0))]),
                     Decimal::new(100, 0),
                 ),
             )]),

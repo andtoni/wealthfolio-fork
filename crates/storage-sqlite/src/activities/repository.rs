@@ -2848,6 +2848,7 @@ mod tests {
     use crate::db::{create_pool, get_connection, init, run_migrations, write_actor::spawn_writer};
     use crate::schema::{spending_activity_splits, sync_outbox};
     use async_trait::async_trait;
+    use chrono::Datelike;
     use rust_decimal::Decimal;
     use std::sync::RwLock;
     use tempfile::tempdir;
@@ -3726,6 +3727,7 @@ mod tests {
     fn assert_income_summary(
         summary: &IncomeSummary,
         period: &str,
+        income_month: &str,
         monthly_average: Decimal,
         yoy_growth: Option<Decimal>,
     ) {
@@ -3736,7 +3738,7 @@ mod tests {
         assert_eq!(summary.yoy_growth, yoy_growth);
         assert_eq!(
             summary.by_month,
-            HashMap::from([("2026-07".to_string(), Decimal::new(220, 0))])
+            HashMap::from([(income_month.to_string(), Decimal::new(220, 0))])
         );
         assert_eq!(
             summary.by_type,
@@ -3771,7 +3773,7 @@ mod tests {
         assert_eq!(account.account_name, "Test");
         assert_eq!(
             account.by_month,
-            HashMap::from([("2026-07".to_string(), Decimal::new(220, 0))])
+            HashMap::from([(income_month.to_string(), Decimal::new(220, 0))])
         );
         assert_eq!(account.total, Decimal::new(220, 0));
     }
@@ -4147,6 +4149,10 @@ mod tests {
     async fn income_service_public_summary_uses_real_staking_and_drip_derivation() {
         let (pool, writer) = setup_db();
         let repo = Arc::new(ActivityRepository::new(pool.clone(), writer));
+        let current_date = Utc::now().date_naive();
+        let income_month = current_date.format("%Y-%m").to_string();
+        let staking_activity_date = format!("{income_month}-02T00:00:00+00:00");
+        let drip_activity_date = format!("{income_month}-09T00:00:00+00:00");
 
         {
             let mut conn = get_connection(&pool).expect("conn");
@@ -4160,7 +4166,7 @@ mod tests {
                     asset_id: "asset-staking",
                     activity_type: "INTEREST",
                     subtype: "STAKING_REWARD",
-                    activity_date: "2026-07-02T00:00:00+00:00",
+                    activity_date: &staking_activity_date,
                     quantity: "2",
                     unit_price: "50",
                 },
@@ -4172,7 +4178,7 @@ mod tests {
                     asset_id: "asset-drip",
                     activity_type: "DIVIDEND",
                     subtype: "DRIP",
-                    activity_date: "2026-07-09T00:00:00+00:00",
+                    activity_date: &drip_activity_date,
                     quantity: "3",
                     unit_price: "40",
                 },
@@ -4186,10 +4192,10 @@ mod tests {
             ])
             .expect("id-scoped income data");
         assert_eq!(scoped_rows.len(), 2);
-        assert_eq!(scoped_rows[0].date, "2026-07");
+        assert_eq!(scoped_rows[0].date, income_month);
         assert_eq!(scoped_rows[0].income_type, "STAKING");
         assert_eq!(scoped_rows[0].amount, Decimal::new(100, 0));
-        assert_eq!(scoped_rows[1].date, "2026-07");
+        assert_eq!(scoped_rows[1].date, income_month);
         assert_eq!(scoped_rows[1].income_type, "DRIP");
         assert_eq!(scoped_rows[1].amount, Decimal::new(120, 0));
 
@@ -4207,11 +4213,12 @@ mod tests {
             .expect("income summary");
 
         assert_eq!(summaries.len(), 4);
-        assert_income_summary(&summaries[0], "ALL", Decimal::ZERO, None);
+        assert_income_summary(&summaries[0], "ALL", &income_month, Decimal::ZERO, None);
         assert_income_summary(
             &summaries[1],
             "YTD",
-            Decimal::new(3143, 2),
+            &income_month,
+            (Decimal::new(220, 0) / Decimal::new(i64::from(current_date.month()), 0)).round_dp(2),
             Some(Decimal::ZERO),
         );
     }
