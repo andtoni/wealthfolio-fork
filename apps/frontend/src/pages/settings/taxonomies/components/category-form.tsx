@@ -148,8 +148,14 @@ export function CategoryForm({
       });
       toast.success(t("settings:tax_category_deleted"));
       onDelete?.();
-    } catch {
-      toast.error(t("settings:tax_category_delete_error"));
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === "string"
+            ? error
+            : t("settings:tax_category_delete_error");
+      toast.error(message);
     }
   };
 

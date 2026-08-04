@@ -1178,27 +1178,27 @@ function BudgetCategoryLine({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuLabel className="text-[10px] font-semibold uppercase tracking-wide">
+            {t("spending:budgetEditor.moveToGroup")}
+          </DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={row.groupId ?? ""}
+            onValueChange={(value) => onMoveCategory(row.categoryId, value)}
+          >
+            {groups.map((group) => (
+              <DropdownMenuRadioItem key={group.id} value={group.id} className="text-xs">
+                <span className="flex items-center gap-2">
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: group.color ?? FOREST_THEME.deep }}
+                  />
+                  {group.name}
+                </span>
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
           {mode === "setup" && (
             <>
-              <DropdownMenuLabel className="text-[10px] font-semibold uppercase tracking-wide">
-                {t("spending:budgetEditor.moveToGroup")}
-              </DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                value={row.groupId ?? ""}
-                onValueChange={(value) => onMoveCategory(row.categoryId, value)}
-              >
-                {groups.map((group) => (
-                  <DropdownMenuRadioItem key={group.id} value={group.id} className="text-xs">
-                    <span className="flex items-center gap-2">
-                      <span
-                        className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: group.color ?? FOREST_THEME.deep }}
-                      />
-                      {group.name}
-                    </span>
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 disabled={groupRolloverEnabled}

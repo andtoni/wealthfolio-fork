@@ -256,7 +256,10 @@ function ChatShellInner({ className }: ChatShellProps) {
         <ListCategorizationContextToolUI />
         <CategorizationProposalsToolUI />
 
-        <InitialPromptSender />
+        {/* Do not auto-submit navigation prompts until the provider/model query
+            has resolved. Sending while chatConfig is undefined produces the
+            one-time "cannot connect" error seen when opening from spending. */}
+        {chatConfig ? <InitialPromptSender /> : null}
 
         <div className={cn("bg-background flex h-full min-h-0 w-full", className)}>
           {/* Desktop Sidebar */}

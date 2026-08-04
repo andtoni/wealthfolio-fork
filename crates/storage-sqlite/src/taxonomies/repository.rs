@@ -3,7 +3,6 @@
 use async_trait::async_trait;
 use diesel::prelude::*;
 use diesel::r2d2::{self, Pool};
-use diesel::sql_types::{BigInt, Text};
 use diesel::SqliteConnection;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -22,18 +21,13 @@ use super::sync;
 use crate::db::{get_connection, WriteHandle};
 use crate::errors::StorageError;
 use crate::schema::{
-    allocation_target_weights, asset_taxonomy_assignments, taxonomies, taxonomy_categories,
+    allocation_target_weights, asset_taxonomy_assignments, spending_categorization_evidence,
+    taxonomies, taxonomy_categories,
 };
 
 pub struct TaxonomyRepository {
     pool: Arc<Pool<r2d2::ConnectionManager<SqliteConnection>>>,
     writer: WriteHandle,
-}
-
-#[derive(QueryableByName)]
-struct CountRow {
-    #[diesel(sql_type = BigInt)]
-    count: i64,
 }
 
 impl TaxonomyRepository {
@@ -176,36 +170,6 @@ impl TaxonomyRepositoryTrait for TaxonomyRepository {
         Ok(result.map(Category::from))
     }
 
-    fn get_category_spending_reference_count(
-        &self,
-        taxonomy_id: &str,
-        category_id: &str,
-    ) -> Result<usize> {
-        let mut conn = get_connection(&self.pool)?;
-        let row = diesel::sql_query(
-            "SELECT (
-                (SELECT COUNT(*) FROM activity_taxonomy_assignments WHERE taxonomy_id = ? AND category_id = ?) +
-                (SELECT COUNT(*) FROM budget_group_assignments WHERE taxonomy_id = ? AND category_id = ?) +
-                (SELECT COUNT(*) FROM budget_targets WHERE taxonomy_id = ? AND category_id = ?) +
-                (SELECT COUNT(*) FROM budget_rollover_settings WHERE taxonomy_id = ? AND category_id = ?) +
-                (SELECT COUNT(*) FROM spending_categorization_rules WHERE taxonomy_id = ? AND category_id = ?)
-            ) AS count",
-        )
-        .bind::<Text, _>(taxonomy_id)
-        .bind::<Text, _>(category_id)
-        .bind::<Text, _>(taxonomy_id)
-        .bind::<Text, _>(category_id)
-        .bind::<Text, _>(taxonomy_id)
-        .bind::<Text, _>(category_id)
-        .bind::<Text, _>(taxonomy_id)
-        .bind::<Text, _>(category_id)
-        .bind::<Text, _>(taxonomy_id)
-        .bind::<Text, _>(category_id)
-        .get_result::<CountRow>(&mut conn)
-        .map_err(StorageError::from)?;
-        Ok(row.count.max(0) as usize)
-    }
-
     fn get_category_allocation_target_weight_count(
         &self,
         taxonomy_id: &str,
@@ -306,6 +270,19 @@ impl TaxonomyRepositoryTrait for TaxonomyRepository {
             .exec_projected(move |conn, projection| -> Result<usize> {
                 // Check eligibility before the delete
                 let is_custom = sync::is_syncable_taxonomy(conn, &taxonomy_id);
+
+                // Evidence is derived from historical labels and intentionally
+                // uses ON DELETE RESTRICT. A confirmed category deletion must
+                // remove that derived evidence first; raw activities and their
+                // provider facts are not touched. Other spending sidecars use
+                // ON DELETE CASCADE/SET NULL and are cleaned by SQLite.
+                diesel::delete(
+                    spending_categorization_evidence::table
+                        .filter(spending_categorization_evidence::taxonomy_id.eq(&taxonomy_id))
+                        .filter(spending_categorization_evidence::category_id.eq(&category_id)),
+                )
+                .execute(conn)
+                .map_err(StorageError::from)?;
 
                 let affected = diesel::delete(
                     taxonomy_categories::table

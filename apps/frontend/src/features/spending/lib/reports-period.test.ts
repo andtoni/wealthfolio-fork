@@ -1,22 +1,34 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { periodLabel, periodToReportsRange } from "./reports-period";
+import { periodToReportsRange } from "./reports-period";
 
-describe("reports periods", () => {
-  afterEach(() => {
-    vi.useRealTimers();
+describe("anchored reports periods", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("uses the configured current and prior budget cycles for MTD and last month", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-04T12:00:00.000Z"));
+    const cycle = { cadence: "monthly" as const, anchorDate: "2026-07-25" };
+
+    const current = periodToReportsRange("MTD", "UTC", cycle);
+    const prior = periodToReportsRange("LAST_MONTH", "UTC", cycle);
+
+    expect(current.start.toISOString()).toBe("2026-07-25T00:00:00.000Z");
+    expect(current.end.toISOString()).toBe("2026-08-24T23:59:59.999Z");
+    expect(prior.start.toISOString()).toBe("2026-06-25T00:00:00.000Z");
+    expect(prior.end.toISOString()).toBe("2026-07-24T23:59:59.999Z");
   });
 
-  it("resolves LAST_MONTH to the previous full calendar month", () => {
+  it("supports anchored weekly periods without changing longer calendar ranges", () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-06-10T12:00:00.000Z"));
+    vi.setSystemTime(new Date("2026-08-04T12:00:00.000Z"));
+    const cycle = { cadence: "weekly" as const, anchorDate: "2026-07-29" };
 
-    const range = periodToReportsRange("LAST_MONTH", "UTC");
+    const current = periodToReportsRange("MTD", "UTC", cycle);
+    const longer = periodToReportsRange("3M", "UTC", cycle);
 
-    expect(range.start.toISOString()).toBe("2026-05-01T00:00:00.000Z");
-    expect(range.end.toISOString()).toBe("2026-05-31T23:59:59.999Z");
-    expect(range.days).toBe(31);
-    expect(range.months).toBe(1);
-    expect(periodLabel("LAST_MONTH")).toBe("Last month");
+    expect(current.start.toISOString()).toBe("2026-07-29T00:00:00.000Z");
+    expect(current.end.toISOString()).toBe("2026-08-04T23:59:59.999Z");
+    expect(longer.start.toISOString()).toBe("2026-06-01T00:00:00.000Z");
   });
 });

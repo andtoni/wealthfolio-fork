@@ -132,7 +132,15 @@ export default function SpendingCategoriesPage() {
       {
         onSuccess: () =>
           toast.success(t("settings:spending.categories.deleted", { name: category.name })),
-        onError: () => toast.error(t("settings:spending.categories.delete_error")),
+        onError: (error) => {
+          const message =
+            error instanceof Error
+              ? error.message
+              : typeof error === "string"
+                ? error
+                : t("settings:spending.categories.delete_error");
+          toast.error(message);
+        },
       },
     );
   };

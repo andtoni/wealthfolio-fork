@@ -414,14 +414,6 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
       return map;
     }, [spending.data?.categories, income.data?.categories, savings.data?.categories]);
 
-    const topLevelCategories = useMemo(
-      () =>
-        Array.from(allCategories.values())
-          .filter((c) => !c.parentId)
-          .sort((a, b) => a.sortOrder - b.sortOrder),
-      [allCategories],
-    );
-
     const subcategoriesForFilter = useMemo(() => {
       const all = Array.from(allCategories.values()).filter((c) => !!c.parentId);
       if (selectedCategories.size === 0) return all;
@@ -773,10 +765,32 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
       () => spendingAccounts.map((a) => ({ value: a.id, label: a.name })),
       [spendingAccounts],
     );
-    const categoryOptions = useMemo<FilterOption[]>(
-      () => topLevelCategories.map((c) => ({ value: c.id, label: c.name })),
-      [topLevelCategories],
-    );
+    const categoryOptions = useMemo<FilterOption[]>(() => {
+      const flowLabel = (taxonomyId: string) =>
+        taxonomyId === INCOME_TAXONOMY
+          ? t("spending:cashFlow.income")
+          : taxonomyId === SAVINGS_TAXONOMY
+            ? t("spending:cashFlow.saving")
+            : t("spending:cashFlow.spending");
+
+      const labelFor = (category: TaxonomyCategory): string => {
+        const parts = [category.name];
+        const seen = new Set<string>([category.id]);
+        let parentId = category.parentId;
+        while (parentId && !seen.has(parentId)) {
+          seen.add(parentId);
+          const parent = allCategories.get(parentId);
+          if (!parent) break;
+          parts.unshift(parent.name);
+          parentId = parent.parentId;
+        }
+        return `${flowLabel(category.taxonomyId)} / ${parts.join(" / ")}`;
+      };
+
+      return Array.from(allCategories.values())
+        .sort((a, b) => labelFor(a).localeCompare(labelFor(b)))
+        .map((category) => ({ value: category.id, label: labelFor(category) }));
+    }, [allCategories, t]);
     const subcategoryOptions = useMemo<FilterOption[]>(
       () =>
         subcategoriesForFilter.map((c) => {

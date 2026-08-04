@@ -275,16 +275,11 @@ impl TaxonomyServiceTrait for TaxonomyService {
             ))
             .into());
         }
-        let spending_references = self
-            .repository
-            .get_category_spending_reference_count(taxonomy_id, category_id)?;
-        if spending_references > 0 {
-            return Err(ValidationError::InvalidInput(format!(
-                "Cannot delete category with {} spending references",
-                spending_references
-            ))
-            .into());
-        }
+        // Spending assignments, budget references, and categorization rules are
+        // category-owned state. The repository removes those dependent rows (or
+        // clears nullable rule targets) as part of the confirmed category
+        // deletion, while raw activities remain intact. Allocation targets are
+        // different: they are an independent portfolio plan and stay protected.
         let allocation_target_references = self
             .repository
             .get_category_allocation_target_weight_count(taxonomy_id, category_id)?;

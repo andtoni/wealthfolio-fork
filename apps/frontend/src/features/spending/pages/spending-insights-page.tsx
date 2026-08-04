@@ -24,10 +24,12 @@ import { insightToReportProjection, UNCATEGORIZED_CATEGORY_ID } from "../lib/ins
 import {
   SPENDING_MONTH_PARAM,
   SPENDING_MONTH_STORAGE_KEY,
-  addMonthsToMonthKey,
-  currentMonthKey,
+  budgetPeriodKeyForDate,
+  budgetPeriodParts,
+  currentBudgetPeriodKey,
   monthReportsRange,
   parseMonthKey,
+  shiftBudgetPeriodKey,
 } from "../lib/month-period";
 import {
   INSIGHTS_PERIOD_STORAGE_KEY,
@@ -41,13 +43,13 @@ import {
   type ReportsPeriod,
   type ReportsRange,
 } from "../lib/reports-period";
+import type { BudgetCycleSettings } from "../types";
 import {
   addCalendarDays,
   addCalendarMonths,
   calendarDaysBetweenInclusive,
   calendarMonthsBetweenInclusive,
   createZonedDayHourFormatter,
-  daysInCalendarMonth,
   getZonedDateParts,
   zonedCalendarDateBoundaryToDate,
 } from "../lib/timezone";
@@ -69,36 +71,20 @@ const HEATMAP_DAY_KEYS = [
   "spending:dayOfWeek.sun",
 ] as const;
 
-function monthToDateRange(timezone?: string | null): ReportsRange {
-  const today = getZonedDateParts(new Date(), timezone);
-  const start = { year: today.year, month: today.month, day: 1 };
+function budgetReportsRange(
+  periodKey: string,
+  cycle: BudgetCycleSettings,
+  timezone?: string | null,
+): ReportsRange | null {
+  const parts = budgetPeriodParts(periodKey, cycle);
+  if (!parts) return null;
+  const start = zonedCalendarDateBoundaryToDate(parts.start, "start", timezone);
+  const end = zonedCalendarDateBoundaryToDate(parts.end, "end", timezone);
   return {
-    start: zonedCalendarDateBoundaryToDate(start, "start", timezone),
-    end: zonedCalendarDateBoundaryToDate(today, "end", timezone),
-    days: calendarDaysBetweenInclusive(start, today),
-    months: 1,
-  };
-}
-
-function previousMonthMatchingRange(range: ReportsRange, timezone?: string | null): ReportsRange {
-  const currentStart = getZonedDateParts(range.start, timezone);
-  const currentEnd = getZonedDateParts(range.end, timezone);
-  const priorStartBase = addCalendarMonths(currentStart, -1);
-  const priorEndBase = addCalendarMonths(currentEnd, -1);
-  const priorStart = {
-    ...priorStartBase,
-    day: Math.min(currentStart.day, daysInCalendarMonth(priorStartBase.year, priorStartBase.month)),
-  };
-  const priorEnd = {
-    ...priorEndBase,
-    day: Math.min(currentEnd.day, daysInCalendarMonth(priorEndBase.year, priorEndBase.month)),
-  };
-
-  return {
-    start: zonedCalendarDateBoundaryToDate(priorStart, "start", timezone),
-    end: zonedCalendarDateBoundaryToDate(priorEnd, "end", timezone),
-    days: calendarDaysBetweenInclusive(priorStart, priorEnd),
-    months: calendarMonthsBetweenInclusive(priorStart, priorEnd),
+    start,
+    end,
+    days: calendarDaysBetweenInclusive(parts.start, parts.end),
+    months: calendarMonthsBetweenInclusive(parts.start, parts.end),
   };
 }
 
@@ -122,7 +108,7 @@ export default function SpendingInsightsPage() {
   const { settings } = useSettingsContext();
   const baseCurrency = settings?.baseCurrency ?? "USD";
   const appTimezone = settings?.timezone ?? undefined;
-  const { isEnabled, isLoading: settingsLoading } = useSpendingSettings();
+  const { isEnabled, isLoading: settingsLoading, budgetCycle } = useSpendingSettings();
 
   const [persistedPeriod, setPersistedPeriod] = usePersistentState<string>(
     INSIGHTS_PERIOD_STORAGE_KEY,
@@ -232,22 +218,29 @@ export default function SpendingInsightsPage() {
     [period],
   );
 
-  const monthRange = useMemo(
-    () => (customMonth ? monthReportsRange(customMonth, appTimezone) : null),
-    [customMonth, appTimezone],
-  );
+  const monthRange = useMemo(() => {
+    if (!customMonth) return null;
+    if (budgetCycle.cadence !== "monthly") return monthReportsRange(customMonth, appTimezone);
+    const month = parseMonthKey(customMonth);
+    if (!month) return null;
+    const periodKey = budgetPeriodKeyForDate({ ...month, day: 1 }, budgetCycle);
+    return budgetReportsRange(periodKey, budgetCycle, appTimezone);
+  }, [budgetCycle, customMonth, appTimezone]);
   const range = useMemo(
-    () => monthRange ?? periodToReportsRange(period, appTimezone),
-    [monthRange, period, appTimezone],
+    () => monthRange ?? periodToReportsRange(period, appTimezone, budgetCycle),
+    [monthRange, period, appTimezone, budgetCycle],
   );
   const whatChangedWindow = useMemo(() => {
     if (customMonth || period !== "MTD") return null;
-    const current = monthToDateRange(appTimezone);
-    return {
-      current,
-      prior: previousMonthMatchingRange(current, appTimezone),
-    };
-  }, [customMonth, period, appTimezone]);
+    const currentKey = currentBudgetPeriodKey(appTimezone, budgetCycle);
+    const current = budgetReportsRange(currentKey, budgetCycle, appTimezone);
+    const prior = budgetReportsRange(
+      shiftBudgetPeriodKey(currentKey, -1, budgetCycle),
+      budgetCycle,
+      appTimezone,
+    );
+    return current && prior ? { current, prior } : null;
+  }, [budgetCycle, customMonth, period, appTimezone]);
   const eventsRange = useMemo(
     () => shiftRangeBack(range, period, eventsWindowOffset, appTimezone),
     [range, period, eventsWindowOffset, appTimezone],
@@ -353,7 +346,7 @@ export default function SpendingInsightsPage() {
       heatmapInsight
         ? new Map(heatmapInsight.byDay.map((day) => [day.date, day.spent] as const))
         : undefined,
-    [heatmapInsight?.byDay],
+    [heatmapInsight],
   );
 
   const eventsRequest = useMemo(
@@ -422,10 +415,13 @@ export default function SpendingInsightsPage() {
     () => new Map(accounts.map((account) => [account.id, account.accountType])),
     [accounts],
   );
-  const maxPickerMonth = useMemo(
-    () => addMonthsToMonthKey(currentMonthKey(appTimezone), -1),
-    [appTimezone],
-  );
+  const maxPickerMonth = useMemo(() => {
+    const currentKey = currentBudgetPeriodKey(appTimezone, budgetCycle);
+    const current = budgetPeriodParts(currentKey, budgetCycle);
+    return current
+      ? `${current.end.year}-${String(current.end.month).padStart(2, "0")}`
+      : `${getZonedDateParts(new Date(), appTimezone).year}-${String(getZonedDateParts(new Date(), appTimezone).month).padStart(2, "0")}`;
+  }, [appTimezone, budgetCycle]);
 
   // Gate the entire page when tracking is disabled — mirrors spending-budget-page.
   // Without this, disabling tracking from ModuleCard leaves Insights live and

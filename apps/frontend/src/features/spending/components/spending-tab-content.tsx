@@ -38,14 +38,14 @@ import { topCategoryId } from "../lib/category-rollup";
 import {
   SPENDING_MONTH_PARAM,
   SPENDING_MONTH_STORAGE_KEY,
-  addMonthsToMonthKey,
   budgetPeriodKeyForDate,
+  budgetPeriodLabel,
   budgetPeriodParts,
   budgetPeriodRange,
+  currentBudgetPeriodKey,
   localDateFromParts,
   shiftBudgetPeriodKey,
   monthKeyFromParts,
-  monthLabel,
   monthRange,
   parseMonthKey,
 } from "../lib/month-period";
@@ -64,7 +64,6 @@ import {
   addCalendarDays,
   addCalendarMonths,
   calendarDaysBetweenInclusive,
-  daysInCalendarMonth,
   formatZonedDateKey,
   getZonedDateParts,
   localDateBoundaryToISOString,
@@ -151,23 +150,28 @@ function normalizeSpendingDashboardPeriod(
   return DEFAULT_INTERVAL;
 }
 
-function spendingIntervalData(code: SpendingDashboardPeriod, timezone?: string | null) {
+function spendingIntervalData(
+  code: SpendingDashboardPeriod,
+  timezone: string | null | undefined,
+  cycle: BudgetCycleSettings,
+) {
+  // MTD/LAST_MONTH are budget periods on the spending dashboard, not calendar
+  // months. This keeps the headline, chart bars, category totals, and budget
+  // card on the same anchored window (for example Jul 25–Aug 24).
+  if (code === "MTD" || code === "LAST_MONTH") {
+    const currentPeriodKey = currentBudgetPeriodKey(timezone, cycle);
+    const periodKey =
+      code === "LAST_MONTH" ? shiftBudgetPeriodKey(currentPeriodKey, -1, cycle) : currentPeriodKey;
+    return {
+      code,
+      description: budgetPeriodLabel(periodKey, "short", undefined, cycle),
+      range: budgetPeriodRange(periodKey, cycle),
+    };
+  }
+
   const today = getZonedDateParts(new Date(), timezone);
   const { start, end } = (() => {
     switch (code) {
-      case "MTD":
-        return { start: { year: today.year, month: today.month, day: 1 }, end: today };
-      case "LAST_MONTH": {
-        const lastMonth = addCalendarMonths({ year: today.year, month: today.month, day: 1 }, -1);
-        return {
-          start: { year: lastMonth.year, month: lastMonth.month, day: 1 },
-          end: {
-            year: lastMonth.year,
-            month: lastMonth.month,
-            day: daysInCalendarMonth(lastMonth.year, lastMonth.month),
-          },
-        };
-      }
       case "3M":
         return { start: addCalendarMonths(today, -3), end: today };
       case "6M":
@@ -218,7 +222,7 @@ function budgetMonthStateForSelection(
       touched: true,
     };
   }
-  if (selection.kind === "month") {
+  if (selection.kind === "month" && cycle.cadence === "monthly") {
     const month = parseMonthKey(selection.monthKey);
     if (month) {
       const periodKey = budgetPeriodKeyForDate({ ...month, day: 1 }, cycle);
@@ -238,16 +242,37 @@ function budgetSelectionSyncKey(
   return `${selectionKey}:${currentPeriodKey}:${cycle.cadence}:${cycle.anchorDate}`;
 }
 
-function selectionData(selection: SpendingSelection, timezone?: string | null) {
+function selectionData(
+  selection: SpendingSelection,
+  timezone: string | null | undefined,
+  cycle: BudgetCycleSettings,
+) {
   if (selection.kind === "month") {
+    const month = parseMonthKey(selection.monthKey);
+    if (!month) {
+      const fallback = spendingIntervalData(selection.restoreCode, timezone, cycle);
+      return {
+        range: fallback.range,
+        description: fallback.description,
+        insightPeriod: insightPeriodForDashboardInterval(selection.restoreCode),
+      };
+    }
+    if (cycle.cadence !== "monthly") {
+      return {
+        range: monthRange(selection.monthKey),
+        description: INTERVAL_DESCRIPTIONS[selection.restoreCode],
+        insightPeriod: "LAST_MONTH" as ReportsPeriod,
+      };
+    }
+    const periodKey = budgetPeriodKeyForDate({ ...month, day: 1 }, cycle);
     return {
-      range: monthRange(selection.monthKey),
-      description: monthLabel(selection.monthKey),
+      range: budgetPeriodRange(periodKey, cycle),
+      description: budgetPeriodLabel(periodKey, "short", undefined, cycle),
       insightPeriod: "LAST_MONTH" as ReportsPeriod,
     };
   }
 
-  const interval = spendingIntervalData(selection.code, timezone);
+  const interval = spendingIntervalData(selection.code, timezone, cycle);
   return {
     range: interval.range,
     description: interval.description,
@@ -268,9 +293,17 @@ function previousFullMonthRange(range: DateRange): DateRange | undefined {
 
 function priorRange(
   range: DateRange | undefined,
-  selection?: SpendingSelection,
+  selection: SpendingSelection | undefined,
+  cycle: BudgetCycleSettings,
+  timezone?: string | null,
 ): DateRange | undefined {
   if (!range?.from || !range?.to) return undefined;
+
+  const periodKey = selection ? budgetPeriodKeyForSelection(selection, cycle, timezone) : null;
+  if (periodKey) {
+    return budgetPeriodRange(shiftBudgetPeriodKey(periodKey, -1, cycle), cycle);
+  }
+
   if (selection?.kind === "month" || selection?.code === "LAST_MONTH") {
     return previousFullMonthRange(range);
   }
@@ -284,6 +317,22 @@ function priorRange(
     from: localDateFromParts(priorStart),
     to: localDateFromParts(priorEnd),
   };
+}
+
+function budgetPeriodKeyForSelection(
+  selection: SpendingSelection,
+  cycle: BudgetCycleSettings,
+  timezone?: string | null,
+): string | null {
+  if (selection.kind === "month") {
+    if (cycle.cadence !== "monthly") return null;
+    const month = parseMonthKey(selection.monthKey);
+    return month ? budgetPeriodKeyForDate({ ...month, day: 1 }, cycle) : null;
+  }
+  if (selection.code !== "MTD" && selection.code !== "LAST_MONTH") return null;
+
+  const current = currentBudgetPeriodKey(timezone, cycle);
+  return selection.code === "LAST_MONTH" ? shiftBudgetPeriodKey(current, -1, cycle) : current;
 }
 
 /**
@@ -356,7 +405,10 @@ export default function SpendingTabContent() {
     range: dateRange,
     description: selectedIntervalDescription,
     insightPeriod,
-  } = useMemo(() => selectionData(selection, appTimezone), [selection, appTimezone]);
+  } = useMemo(
+    () => selectionData(selection, appTimezone, budgetCycle),
+    [selection, appTimezone, budgetCycle],
+  );
   const theme: Palette = FOREST_THEME;
 
   const [whereItWentView, setWhereItWentView] = usePersistentState<"list" | "map">(
@@ -375,8 +427,8 @@ export default function SpendingTabContent() {
   // "About the same as prior period" delta line. Track whether we actually
   // have a prior window and gate the query on it.
   const priorRangeForReport = useMemo(
-    () => priorRange(dateRange, selection),
-    [dateRange, selection],
+    () => priorRange(dateRange, selection, budgetCycle, appTimezone),
+    [dateRange, selection, budgetCycle, appTimezone],
   );
   const priorReportReq = useMemo(
     () =>
@@ -582,8 +634,10 @@ export default function SpendingTabContent() {
       preferDashboardPeriod && selection.kind === "month"
         ? `&${SPENDING_MONTH_PARAM}=${selection.monthKey}`
         : "";
+    const budgetPeriod = budgetPeriodKeyForSelection(selection, budgetCycle, appTimezone);
+    const budgetPeriodParam = budgetPeriod ? `&budgetPeriod=${budgetPeriod}` : "";
     const href = (stage: (typeof INSIGHT_STAGES)[number]["stage"], hash = "") =>
-      `/spending/insights?stage=${stage}&period=${linkPeriod}${monthParams}${hash}`;
+      `/spending/insights?stage=${stage}&period=${linkPeriod}${monthParams}${budgetPeriodParam}${hash}`;
     const cashflow = href("where", "#cashflow");
     return {
       where: href("where"),
@@ -597,6 +651,8 @@ export default function SpendingTabContent() {
     insightPeriodUpdatedAt,
     persistedInsightPeriod,
     selection,
+    budgetCycle,
+    appTimezone,
   ]);
   const accountTypeById = useMemo(
     () => new Map(accounts.map((account) => [account.id, account.accountType])),
@@ -615,10 +671,13 @@ export default function SpendingTabContent() {
   const deltaPct = priorSpending > 0 ? delta / priorSpending : 0;
   const priorIsMeaningful = priorSpending >= Math.max(100, totalSpending * 0.02);
   const displayDeltaPct = priorIsMeaningful ? deltaPct : null;
-  const maxPickerMonth = useMemo(
-    () => addMonthsToMonthKey(monthKeyFromParts(todayParts), -1),
-    [todayParts],
-  );
+  // The current calendar month must remain selectable because it contains the
+  // Allow the month containing the active budget cycle's end date (e.g. an
+  // active Jul 25–Aug 24 cycle must allow selecting August).
+  const maxPickerMonth = useMemo(() => {
+    const current = budgetPeriodParts(currentBudgetMonthKey, budgetCycle);
+    return monthKeyFromParts(current?.end ?? todayParts);
+  }, [budgetCycle, currentBudgetMonthKey, todayParts]);
 
   const handleIntervalSelect = (code: SpendingDashboardPeriod) => {
     setPersistedInterval(code);

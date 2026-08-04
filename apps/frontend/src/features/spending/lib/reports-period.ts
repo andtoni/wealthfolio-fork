@@ -7,6 +7,8 @@
 
 import type { DateRange } from "@/lib/types";
 
+import { budgetPeriodParts, currentBudgetPeriodKey, shiftBudgetPeriodKey } from "./month-period";
+import type { BudgetCycleSettings } from "../types";
 import {
   addCalendarDays,
   addCalendarMonths,
@@ -41,7 +43,23 @@ export interface ReportsRange {
 export function periodToReportsRange(
   period: ReportsPeriod,
   timezone?: string | null,
+  budgetCycle?: BudgetCycleSettings,
 ): ReportsRange {
+  if (budgetCycle && (period === "MTD" || period === "LAST_MONTH")) {
+    const current = currentBudgetPeriodKey(timezone, budgetCycle);
+    const periodKey =
+      period === "LAST_MONTH" ? shiftBudgetPeriodKey(current, -1, budgetCycle) : current;
+    const parts = budgetPeriodParts(periodKey, budgetCycle);
+    if (parts) {
+      return {
+        start: zonedCalendarDateBoundaryToDate(parts.start, "start", timezone),
+        end: zonedCalendarDateBoundaryToDate(parts.end, "end", timezone),
+        days: calendarDaysBetweenInclusive(parts.start, parts.end),
+        months: calendarMonthsBetweenInclusive(parts.start, parts.end),
+      };
+    }
+  }
+
   const now = new Date();
   const today = getZonedDateParts(now, timezone);
 
