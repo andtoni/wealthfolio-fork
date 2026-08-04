@@ -45,7 +45,6 @@ interface TransactionRowProps {
   onMarkReimbursement: (row: TransactionRowVM) => void;
   onEditSplits: (row: TransactionRowVM) => void;
   onEdit: (row: TransactionRowVM) => void;
-  onMarkTransfer?: (row: TransactionRowVM) => void;
   onDuplicate: (row: TransactionRowVM) => void;
   onDelete: (row: TransactionRowVM) => void;
   onLinkTransfer?: (row: TransactionRowVM) => void;
@@ -66,7 +65,6 @@ function TransactionRowImpl({
   onMarkReimbursement,
   onEditSplits,
   onEdit,
-  onMarkTransfer,
   onDuplicate,
   onDelete,
   onLinkTransfer,
@@ -133,33 +131,9 @@ function TransactionRowImpl({
       </TableCell>
       <TableCell className="hidden md:table-cell">
         {isNeutral ? (
-          isTransfer && (onLinkTransfer || onUnlinkTransfer) ? (
-            transferLinkStatus === "linked" && onUnlinkTransfer ? (
-              <button
-                type="button"
-                className="text-muted-foreground hover:bg-muted/60 -mx-1 inline-flex max-w-[180px] items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left transition-colors"
-                onClick={() => onUnlinkTransfer(row)}
-              >
-                <Icons.Unlink className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span className="truncate text-xs">
-                  {t("spending:transactions.unlinkTransfer")}
-                </span>
-              </button>
-            ) : onLinkTransfer ? (
-              <button
-                type="button"
-                className="text-muted-foreground hover:bg-muted/60 -mx-1 inline-flex max-w-[180px] items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left transition-colors"
-                onClick={() => onLinkTransfer(row)}
-              >
-                <Icons.Link className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span className="truncate text-xs">{t("spending:transactions.linkTransfer")}</span>
-              </button>
-            ) : null
-          ) : (
-            <span className="text-muted-foreground text-xs">
-              {t("spending:transactions.neutral")}
-            </span>
-          )
+          <span className="text-muted-foreground text-xs">
+            {t("spending:transactions.neutral")}
+          </span>
         ) : row.splitCount > 0 ? (
           <button
             type="button"
@@ -287,12 +261,6 @@ function TransactionRowImpl({
               <DropdownMenuItem onClick={() => onEditSplits(row)}>
                 <Icons.SplitHorizontal className="mr-2 h-4 w-4" aria-hidden="true" />
                 {t("spending:transactions.splitTransaction")}
-              </DropdownMenuItem>
-            )}
-            {!isTransfer && onMarkTransfer && (
-              <DropdownMenuItem onClick={() => onMarkTransfer(row)}>
-                <Icons.ArrowLeftRight className="mr-2 h-4 w-4" aria-hidden="true" />
-                {t("spending:transactions.markTransfer")}
               </DropdownMenuItem>
             )}
             <DropdownMenuItem onClick={() => onDuplicate(row)}>

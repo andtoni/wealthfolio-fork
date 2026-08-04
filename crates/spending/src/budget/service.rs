@@ -35,161 +35,12 @@ use crate::settings::{BudgetCycleSettings, SpendingSettingsService};
 
 const SPENDING_TAXONOMY: &str = "spending_categories";
 const INCOME_TAXONOMY: &str = "income_sources";
-const SAVINGS_TAXONOMY: &str = "savings_categories";
 const DEFAULT_PERIOD_KEY: &str = "default";
 const OTHER_GROUP_KEY: &str = "other";
-
-#[derive(Clone, Copy)]
-struct DefaultGroup {
-    id: &'static str,
-    name: &'static str,
-    key: &'static str,
-    color: &'static str,
-    icon: &'static str,
-    sort_order: i32,
-}
-
-struct DefaultAssignment {
-    id: &'static str,
-    category_id: &'static str,
-    group_key: &'static str,
-}
-
-const BUDGET_GROUP_NEEDS_ID: &str = "032ecb02-5912-42e8-9724-2cd566fc08d5";
-const BUDGET_GROUP_WANTS_ID: &str = "a409e0d6-9152-49c8-a5b4-a147a8ac636e";
-const BUDGET_GROUP_SAVINGS_ID: &str = "1fb6f2a3-3245-4702-83e8-ab116458d13e";
-const BUDGET_GROUP_GIVING_ID: &str = "8cbd26c8-e3b2-4176-8c61-e5c11e10b808";
-const BUDGET_GROUP_PERSONAL_ID: &str = "3ff71753-5dd5-4372-9ca2-63d8d9a04851";
-const BUDGET_GROUP_OTHER_ID: &str = "6e25d097-0c73-4521-9407-d47e8dfb73e2";
-
-const DEFAULT_GROUPS: [DefaultGroup; 6] = [
-    DefaultGroup {
-        id: BUDGET_GROUP_NEEDS_ID,
-        name: "Needs",
-        key: "needs",
-        color: "#4F6B92",
-        icon: "Home",
-        sort_order: 1,
-    },
-    DefaultGroup {
-        id: BUDGET_GROUP_WANTS_ID,
-        name: "Wants",
-        key: "wants",
-        color: "#8E7CB3",
-        icon: "Sparkles",
-        sort_order: 2,
-    },
-    DefaultGroup {
-        id: BUDGET_GROUP_SAVINGS_ID,
-        name: "Savings",
-        key: "savings",
-        color: "#6B8E54",
-        icon: "PiggyBank",
-        sort_order: 3,
-    },
-    DefaultGroup {
-        id: BUDGET_GROUP_GIVING_ID,
-        name: "Giving",
-        key: "giving",
-        color: "#A35742",
-        icon: "Gift",
-        sort_order: 4,
-    },
-    DefaultGroup {
-        id: BUDGET_GROUP_PERSONAL_ID,
-        name: "Personal",
-        key: "personal",
-        color: "#B89A4C",
-        icon: "User",
-        sort_order: 5,
-    },
-    DefaultGroup {
-        id: BUDGET_GROUP_OTHER_ID,
-        name: "Other",
-        key: "other",
-        color: "#9C998E",
-        icon: "MoreHorizontal",
-        sort_order: 99,
-    },
-];
-
-const DEFAULT_ASSIGNMENTS: [DefaultAssignment; 15] = [
-    DefaultAssignment {
-        id: "d36f8d92-36f8-4e07-b4b4-9e979ce8a9f4",
-        category_id: "cat_housing",
-        group_key: "needs",
-    },
-    DefaultAssignment {
-        id: "c9a1ef0d-72b2-4f75-858d-5f48e5bc7626",
-        category_id: "cat_groceries",
-        group_key: "needs",
-    },
-    DefaultAssignment {
-        id: "e9543a4c-dead-42f6-9e73-7343e8f43392",
-        category_id: "cat_transport",
-        group_key: "needs",
-    },
-    DefaultAssignment {
-        id: "aa46cdeb-d224-4f3f-9ffb-f6331bafeade",
-        category_id: "cat_health",
-        group_key: "needs",
-    },
-    DefaultAssignment {
-        id: "00769d66-fac3-45e9-9e98-1db5d4447bec",
-        category_id: "cat_bills",
-        group_key: "needs",
-    },
-    DefaultAssignment {
-        id: "9eeaa7b8-aa98-4861-94d3-54650226d9cc",
-        category_id: "cat_fees",
-        group_key: "needs",
-    },
-    DefaultAssignment {
-        id: "5ba8b7fa-bd44-456a-9165-dfdf554bfe10",
-        category_id: "cat_education",
-        group_key: "needs",
-    },
-    DefaultAssignment {
-        id: "2f4bbcbd-8120-4fbe-ab4a-85f7c406e488",
-        category_id: "cat_food",
-        group_key: "wants",
-    },
-    DefaultAssignment {
-        id: "39148a03-c9e9-40e4-867f-5949146b85b8",
-        category_id: "cat_shopping",
-        group_key: "wants",
-    },
-    DefaultAssignment {
-        id: "c2721f07-e7b6-4c74-b449-f138a7d7dabf",
-        category_id: "cat_entertainment",
-        group_key: "wants",
-    },
-    DefaultAssignment {
-        id: "5a2a7585-9f60-4a4b-9cbe-420432720f28",
-        category_id: "cat_travel",
-        group_key: "wants",
-    },
-    DefaultAssignment {
-        id: "d48afe20-18d3-422e-bc26-bd16f4d9d78c",
-        category_id: "cat_gifts",
-        group_key: "giving",
-    },
-    DefaultAssignment {
-        id: "2f46a6a5-dda6-41c7-b372-a0d4f2e571eb",
-        category_id: "cat_savings",
-        group_key: "savings",
-    },
-    DefaultAssignment {
-        id: "dc8d3b07-dbc5-4134-bc31-9f65a7f726bc",
-        category_id: "cat_personal",
-        group_key: "personal",
-    },
-    DefaultAssignment {
-        id: "fb622784-fb8a-497d-8b36-8eb8f347c222",
-        category_id: "cat_other_expense",
-        group_key: "other",
-    },
-];
+const OTHER_GROUP_NAME: &str = "Other";
+const OTHER_GROUP_COLOR: &str = "#9C998E";
+const OTHER_GROUP_ICON: &str = "MoreHorizontal";
+const OTHER_GROUP_SORT_ORDER: i32 = 99;
 
 type MonthActuals = HashMap<(String, String), Decimal>;
 
@@ -255,7 +106,7 @@ impl BudgetService {
             ));
         }
 
-        self.ensure_system_groups().await?;
+        self.ensure_other_group().await?;
         let groups = self.repo.list_groups().await?;
         let assignments = self.repo.list_group_assignments().await?;
         let targets = self.repo.list_targets().await?;
@@ -303,9 +154,12 @@ impl BudgetService {
             .map(|g| g.id.clone())
             .ok_or_else(|| anyhow!("Missing Other budget group"))?;
 
+        let group_ids: HashSet<&str> = groups.iter().map(|group| group.id.as_str()).collect();
         let assignment_by_category: HashMap<String, String> = assignments
             .iter()
-            .filter(|a| a.taxonomy_id == SPENDING_TAXONOMY)
+            .filter(|a| {
+                a.taxonomy_id == SPENDING_TAXONOMY && group_ids.contains(a.group_id.as_str())
+            })
             .map(|a| (a.category_id.clone(), a.group_id.clone()))
             .collect();
         let group_for_category = |category_id: &str| -> String {
@@ -615,16 +469,10 @@ impl BudgetService {
         timezone: &str,
     ) -> Result<BudgetSnapshot> {
         let groups = self.repo.list_groups().await?;
-        let group = groups
+        let _group = groups
             .iter()
             .find(|g| g.id == id)
             .ok_or_else(|| invalid_budget_input("Budget group not found"))?;
-        if group.is_system {
-            return Err(SpendingError::InvalidInput {
-                message: "System budget groups cannot be deleted".to_string(),
-            }
-            .into());
-        }
         if reassign_to_group_id == id {
             return Err(invalid_budget_input(
                 "Cannot reassign categories to the group being deleted",
@@ -689,15 +537,9 @@ impl BudgetService {
         currency: &str,
         timezone: &str,
     ) -> Result<BudgetSnapshot> {
-        let groups = self
-            .repo
-            .upsert_system_groups(default_group_inputs())
-            .await?;
-        let group_by_key: HashMap<String, String> =
-            groups.into_iter().map(|g| (g.key, g.id)).collect();
-        self.repo
-            .upsert_system_group_assignments(default_assignment_inputs(&group_by_key))
-            .await?;
+        // Keep this endpoint harmless for older clients. Resetting must not
+        // recreate the removed canonical group/assignment seed.
+        self.ensure_other_group().await?;
         self.get(period_key, currency, timezone).await
     }
 
@@ -809,25 +651,18 @@ impl BudgetService {
             .await
     }
 
-    async fn ensure_system_groups(&self) -> Result<()> {
-        let existing_keys: HashSet<String> = self
-            .repo
-            .list_groups()
-            .await?
-            .into_iter()
-            .map(|g| g.key)
-            .collect();
-        let missing = default_group_inputs()
-            .into_iter()
-            .filter(|g| {
-                g.key
-                    .as_ref()
-                    .is_some_and(|key| !existing_keys.contains(key))
+    async fn ensure_other_group(&self) -> Result<()> {
+        self.repo
+            .ensure_group(NewBudgetGroup {
+                id: None,
+                name: OTHER_GROUP_NAME.to_string(),
+                key: Some(OTHER_GROUP_KEY.to_string()),
+                color: Some(OTHER_GROUP_COLOR.to_string()),
+                icon: Some(OTHER_GROUP_ICON.to_string()),
+                sort_order: Some(OTHER_GROUP_SORT_ORDER),
+                is_system: false,
             })
-            .collect::<Vec<_>>();
-        if !missing.is_empty() {
-            self.repo.upsert_system_groups(missing).await?;
-        }
+            .await?;
         Ok(())
     }
 
@@ -844,14 +679,17 @@ impl BudgetService {
         let categories = self.taxonomy_categories(SPENDING_TAXONOMY)?;
         let meta = category_meta(&categories);
         let groups = self.repo.list_groups().await?;
+        let group_ids: HashSet<&str> = groups.iter().map(|group| group.id.as_str()).collect();
         let other_group_id = groups
-            .into_iter()
+            .iter()
             .find(|g| g.key == OTHER_GROUP_KEY)
-            .map(|g| g.id)
+            .map(|g| g.id.clone())
             .ok_or_else(|| anyhow!("Missing Other budget group"))?;
         let assignment_by_category = assignments
             .into_iter()
-            .filter(|a| a.taxonomy_id == SPENDING_TAXONOMY)
+            .filter(|a| {
+                a.taxonomy_id == SPENDING_TAXONOMY && group_ids.contains(a.group_id.as_str())
+            })
             .map(|a| (a.category_id, a.group_id))
             .collect::<HashMap<_, _>>();
 
@@ -874,6 +712,7 @@ impl BudgetService {
         let categories = self.taxonomy_categories(SPENDING_TAXONOMY)?;
         let meta = category_meta(&categories);
         let groups = self.repo.list_groups().await?;
+        let group_ids: HashSet<&str> = groups.iter().map(|group| group.id.as_str()).collect();
         let other_group_id = groups
             .iter()
             .find(|g| g.key == OTHER_GROUP_KEY)
@@ -881,6 +720,7 @@ impl BudgetService {
             .ok_or_else(|| anyhow!("Missing Other budget group"))?;
         let assignment_by_category = assignments
             .into_iter()
+            .filter(|a| group_ids.contains(a.group_id.as_str()))
             .map(|a| (a.category_id, a.group_id))
             .collect::<HashMap<_, _>>();
         Ok(resolve_group_for_category(
@@ -1164,44 +1004,6 @@ fn compute_rollover_for_period(
     ))
 }
 
-fn default_group_inputs() -> Vec<NewBudgetGroup> {
-    DEFAULT_GROUPS
-        .iter()
-        .map(|g| NewBudgetGroup {
-            id: Some(g.id.to_string()),
-            name: g.name.to_string(),
-            key: Some(g.key.to_string()),
-            color: Some(g.color.to_string()),
-            icon: Some(g.icon.to_string()),
-            sort_order: Some(g.sort_order),
-            is_system: true,
-        })
-        .collect()
-}
-
-fn default_assignment_inputs(
-    group_by_key: &HashMap<String, String>,
-) -> Vec<NewBudgetGroupAssignment> {
-    DEFAULT_ASSIGNMENTS
-        .iter()
-        .filter_map(|assignment| {
-            group_by_key
-                .get(assignment.group_key)
-                .map(|group_id| NewBudgetGroupAssignment {
-                    id: Some(assignment.id.to_string()),
-                    group_id: group_id.clone(),
-                    taxonomy_id: if assignment.category_id == "cat_savings" {
-                        SAVINGS_TAXONOMY
-                    } else {
-                        SPENDING_TAXONOMY
-                    }
-                    .to_string(),
-                    category_id: assignment.category_id.to_string(),
-                })
-        })
-        .collect()
-}
-
 pub(crate) fn category_meta(categories: &[Category]) -> HashMap<String, Category> {
     categories
         .iter()
@@ -1400,6 +1202,13 @@ fn fx_to_target(
 #[cfg(test)]
 mod tests {
     #![allow(clippy::type_complexity)]
+
+    const BUDGET_GROUP_NEEDS_ID: &str = "032ecb02-5912-42e8-9724-2cd566fc08d5";
+    const BUDGET_GROUP_WANTS_ID: &str = "a409e0d6-9152-49c8-a5b4-a147a8ac636e";
+    const BUDGET_GROUP_SAVINGS_ID: &str = "1fb6f2a3-3245-4702-83e8-ab116458d13e";
+    const BUDGET_GROUP_GIVING_ID: &str = "8cbd26c8-e3b2-4176-8c61-e5c11e10b808";
+    const BUDGET_GROUP_PERSONAL_ID: &str = "3ff71753-5dd5-4372-9ca2-63d8d9a04851";
+    const BUDGET_GROUP_OTHER_ID: &str = "6e25d097-0c73-4521-9407-d47e8dfb73e2";
 
     use async_trait::async_trait;
     use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
@@ -2466,7 +2275,10 @@ mod tests {
             SPENDING_TAXONOMY.to_string(),
             taxonomy_with_categories(
                 SPENDING_TAXONOMY,
-                vec![category(SPENDING_TAXONOMY, "cat_groceries", None)],
+                vec![
+                    category(SPENDING_TAXONOMY, "cat_groceries", None),
+                    category(SPENDING_TAXONOMY, "cat_unassigned", None),
+                ],
             ),
         );
         taxonomies.insert(
@@ -2995,6 +2807,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn budget_get_places_unassigned_top_level_categories_in_other() {
+        let fixture = budget_fixture(Vec::new(), Vec::new(), Vec::new(), &[], &[]);
+        let snapshot = fixture
+            .service
+            .get(Some(DEFAULT_PERIOD_KEY.to_string()), "USD", "UTC")
+            .await
+            .unwrap();
+
+        let other = snapshot
+            .computed
+            .group_rows
+            .iter()
+            .find(|row| row.group.key == OTHER_GROUP_KEY)
+            .expect("Other budget group");
+        assert!(other
+            .categories
+            .iter()
+            .any(|category| category.category_id == "cat_unassigned"));
+        assert!(snapshot.computed.ungrouped_rows.is_empty());
+    }
+
+    #[tokio::test]
     async fn budget_get_default_planned_targets_do_not_read_actual_policy() {
         let fixture = budget_fixture(
             Vec::new(),
@@ -3064,40 +2898,6 @@ mod tests {
             created_at: ts(),
             updated_at: ts(),
         }
-    }
-
-    #[test]
-    fn seeded_groups_use_savings_label() {
-        let names = DEFAULT_GROUPS.iter().map(|g| g.name).collect::<Vec<_>>();
-
-        assert!(names.contains(&"Savings"));
-        assert!(!names.contains(&"Saving & Investment"));
-        assert!(!names.contains(&"Saving & Investments"));
-    }
-
-    #[test]
-    fn seeded_budget_group_sync_ids_are_uuids() {
-        for group in DEFAULT_GROUPS {
-            uuid::Uuid::parse_str(group.id).unwrap();
-        }
-        for assignment in DEFAULT_ASSIGNMENTS {
-            uuid::Uuid::parse_str(assignment.id).unwrap();
-        }
-    }
-
-    #[test]
-    fn default_savings_assignment_uses_savings_taxonomy() {
-        let group_by_key = DEFAULT_GROUPS
-            .iter()
-            .map(|g| (g.key.to_string(), g.id.to_string()))
-            .collect::<HashMap<_, _>>();
-        let assignments = default_assignment_inputs(&group_by_key);
-        let savings = assignments
-            .iter()
-            .find(|a| a.category_id == "cat_savings")
-            .expect("seeded savings assignment");
-
-        assert_eq!(savings.taxonomy_id, SAVINGS_TAXONOMY);
     }
 
     #[test]

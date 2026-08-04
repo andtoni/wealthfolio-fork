@@ -384,6 +384,41 @@ impl BudgetRepositoryTrait for BudgetRepository {
             .map_err(|e| anyhow::anyhow!(e))
     }
 
+    async fn ensure_group(&self, new_group: NewBudgetGroup) -> Result<BudgetGroup> {
+        let now = chrono::Utc::now().to_rfc3339();
+        let row = NewBudgetGroupDB {
+            id: new_group.id.unwrap_or_else(|| Uuid::new_v4().to_string()),
+            key: new_group.key.unwrap_or_else(|| Uuid::new_v4().to_string()),
+            name: new_group.name,
+            color: new_group.color,
+            icon: new_group.icon,
+            sort_order: new_group.sort_order.unwrap_or(0),
+            is_system: if new_group.is_system { 1 } else { 0 },
+            created_at: now.clone(),
+            updated_at: now,
+        };
+        self.writer
+            .exec_tx(move |tx| {
+                let inserted = diesel::insert_into(budget_groups::table)
+                    .values(&row)
+                    .on_conflict(budget_groups::key)
+                    .do_nothing()
+                    .execute(tx.conn())
+                    .map_err(StorageError::from)?;
+                let existing = budget_groups::table
+                    .filter(budget_groups::key.eq(&row.key))
+                    .first::<BudgetGroupDB>(tx.conn())
+                    .map_err(StorageError::from)?;
+                if inserted > 0 {
+                    tx.insert(&existing)?;
+                }
+                Ok(existing)
+            })
+            .await
+            .map(Into::into)
+            .map_err(|e| anyhow::anyhow!(e))
+    }
+
     async fn update_group(&self, id: &str, patch: UpdateBudgetGroup) -> Result<BudgetGroup> {
         let id = id.to_string();
         self.writer
@@ -477,6 +512,7 @@ impl BudgetRepositoryTrait for BudgetRepository {
                         .do_update()
                         .set((
                             budget_group_assignments::group_id.eq(&row.group_id),
+                            budget_group_assignments::is_system.eq(0),
                             budget_group_assignments::updated_at.eq(&row.updated_at),
                         ))
                         .returning(BudgetGroupAssignmentDB::as_returning())

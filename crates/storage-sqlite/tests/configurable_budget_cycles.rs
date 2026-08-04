@@ -29,6 +29,83 @@ fn migrations_seed_configurable_cycle_and_restore_native_editing() {
         .unwrap();
     assert_eq!(finance_policy_count, 0);
 
+    let system_group_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM budget_groups WHERE is_system = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(system_group_count, 0);
+
+    let other_group_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM budget_groups WHERE key = 'other'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(other_group_count, 1);
+
+    let group_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM budget_groups", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(group_count, 1);
+
+    let system_assignment_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM budget_group_assignments WHERE is_system = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(system_assignment_count, 0);
+
+    let finance_target_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM budget_targets WHERE id LIKE 'finance_v1_target_%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(finance_target_count, 0);
+
+    let finance_category_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM taxonomy_categories WHERE id LIKE 'finance_v1_cat_%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(finance_category_count, 0);
+
+    let clean_category: (String, String, Option<String>) = connection
+        .query_row(
+            "SELECT name, key, parent_id FROM taxonomy_categories WHERE id='cat_fees'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        clean_category,
+        ("Fees & Charges".into(), "fees".into(), None)
+    );
+
+    connection
+        .execute(
+            "UPDATE taxonomy_categories SET name='Fees edited' WHERE id='cat_fees'",
+            [],
+        )
+        .unwrap();
+    let edited_category_name: String = connection
+        .query_row(
+            "SELECT name FROM taxonomy_categories WHERE id='cat_fees'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(edited_category_name, "Fees edited");
+
     connection
         .execute(
             "INSERT INTO budget_targets(id,period_key,target_type,taxonomy_id,category_id,amount) VALUES('test-period','2026-07-25','category','spending_categories','cat_groceries','1')",
@@ -58,25 +135,19 @@ fn migrations_seed_configurable_cycle_and_restore_native_editing() {
         .unwrap();
     connection
         .execute(
-            "UPDATE budget_targets SET amount='2' WHERE id='finance_v1_target_groceries'",
+            "UPDATE budget_targets SET amount='2' WHERE id='test-period'",
             [],
         )
         .unwrap();
     connection
         .execute(
-            "UPDATE taxonomy_categories SET name='Insurance edited' WHERE id='finance_v1_cat_insurance'",
+            "UPDATE taxonomy_categories SET name='Fees edited again' WHERE id='cat_fees'",
             [],
         )
         .unwrap();
     connection
         .execute(
-            "UPDATE budget_groups SET name='Needs edited' WHERE id='032ecb02-5912-42e8-9724-2cd566fc08d5'",
-            [],
-        )
-        .unwrap();
-    connection
-        .execute(
-            "UPDATE budget_group_assignments SET group_id='8cbd26c8-e3b2-4176-8c61-e5c11e10b808' WHERE id='finance_v1_assign_insurance'",
+            "UPDATE budget_groups SET name='Unassigned' WHERE key='other'",
             [],
         )
         .unwrap();

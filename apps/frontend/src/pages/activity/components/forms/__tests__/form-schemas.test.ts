@@ -721,6 +721,21 @@ describe("Form Schemas Validation", () => {
     });
   });
 
+  describe("FEE toPayload", () => {
+    it("stores standalone charges in fee and clears the legacy amount", () => {
+      const payload = ACTIVITY_FORM_CONFIG.FEE.toPayload({
+        accountId: "acc-123",
+        activityDate: new Date(),
+        amount: 25,
+        currency: "USD",
+        comment: "Account maintenance fee",
+        subtype: null,
+      } as any);
+
+      expect(payload).toMatchObject({ amount: null, fee: 25 });
+    });
+  });
+
   describe("interestFormSchema", () => {
     it("validates a complete valid interest form", () => {
       const validData = {

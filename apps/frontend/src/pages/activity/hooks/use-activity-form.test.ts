@@ -77,7 +77,7 @@ describe("useActivityForm", () => {
     adapterMocks.loggerError.mockReset();
   });
 
-  it("opens an existing non-transfer row as an external transfer", () => {
+  it("opens an existing non-transfer row as an unlinked transfer", () => {
     const defaults = ACTIVITY_FORM_CONFIG.TRANSFER.getDefaults(
       {
         id: "withdrawal-id",
@@ -89,10 +89,10 @@ describe("useActivityForm", () => {
     );
 
     expect(defaults).toMatchObject({
-      isExternal: true,
+      isExternal: false,
       direction: "out",
-      accountId: "acc-usd",
-      fromAccountId: "",
+      accountId: "",
+      fromAccountId: "acc-usd",
       toAccountId: "",
     });
   });

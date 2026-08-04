@@ -158,19 +158,16 @@ impl InsightService {
         let top_categories = top_level_categories(&spending_categories);
 
         // "Other" is the catch-all bucket for categories that aren't assigned
-        // to any explicit group. It's seeded by the migration + ensured by
-        // BudgetService::ensure_system_groups, so it normally exists. If the
-        // user has deleted/renamed it, degrade gracefully: fall back to the
-        // last group (typically the lowest-priority one) and log a warning
-        // rather than blanking the whole dashboard. If no groups exist at all
-        // we return an empty insight — the user hasn't set anything up yet.
+        // to any explicit group. BudgetService ensures this ordinary fallback
+        // row exists before snapshots are built. If it is missing while an
+        // insight is being computed, degrade gracefully to the last group
+        // rather than blanking the whole dashboard.
         let other_group_id = match groups.iter().find(|g| g.key == OTHER_GROUP_KEY) {
             Some(g) => g.id.clone(),
             None => match groups.last() {
                 Some(fallback) => {
                     log::warn!(
-                        "spending insight: 'Other' budget group missing; falling back to '{}' as catch-all. \
-                         Run BudgetService::reset_groups() or restore the seed to fix.",
+                        "spending insight: 'Other' budget group missing; falling back to '{}' as catch-all.",
                         fallback.name,
                     );
                     fallback.id.clone()
@@ -178,9 +175,12 @@ impl InsightService {
                 None => return Ok(empty_insight(period, prior, currency, budget_cycle.clone())),
             },
         };
+        let group_ids: HashSet<&str> = groups.iter().map(|group| group.id.as_str()).collect();
         let assignment_by_category: HashMap<String, String> = group_assignments
             .iter()
-            .filter(|a| a.taxonomy_id == SPENDING_TAXONOMY)
+            .filter(|a| {
+                a.taxonomy_id == SPENDING_TAXONOMY && group_ids.contains(a.group_id.as_str())
+            })
             .map(|a| (a.category_id.clone(), a.group_id.clone()))
             .collect();
 

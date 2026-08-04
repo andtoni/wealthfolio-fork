@@ -5,7 +5,6 @@ import {
   getActivityTypesForAccount,
   getEffectiveCashActivityType,
   isCashActivityIncome,
-  isCashActivityInflow,
 } from "./constants";
 
 describe("spending constants", () => {
@@ -144,16 +143,6 @@ describe("spending constants", () => {
           AccountType.SECURITIES,
         ),
       ).toBe(0);
-    });
-  });
-
-  describe("isCashActivityInflow", () => {
-    it("keeps refunds incoming even when they are spending rows", () => {
-      expect(isCashActivityInflow("CREDIT")).toBe(true);
-      expect(isCashActivityInflow("WITHDRAWAL")).toBe(false);
-      expect(isCashActivityInflow("TRANSFER_IN")).toBe(true);
-      expect(isCashActivityInflow("INTEREST", AccountType.CASH)).toBe(true);
-      expect(isCashActivityInflow("INTEREST", AccountType.CREDIT_CARD)).toBe(false);
     });
   });
 

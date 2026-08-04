@@ -11,7 +11,6 @@ import {
   deleteBudgetRolloverSetting,
   deleteBudgetTarget,
   getBudget,
-  resetBudgetGroups,
   updateBudgetGroup,
   upsertBudgetRolloverSetting,
   upsertBudgetTarget,
@@ -95,12 +94,6 @@ export function useBudgetMutations(periodKey?: string) {
     onError: () => toast.error("Failed to move category."),
   });
 
-  const resetGroups = useMutation({
-    mutationFn: () => resetBudgetGroups(periodKey),
-    onSuccess: invalidate,
-    onError: () => toast.error("Failed to reset budget groups."),
-  });
-
   const copyFromMonth = useMutation({
     mutationFn: ({
       sourcePeriodKey,
@@ -131,7 +124,6 @@ export function useBudgetMutations(periodKey?: string) {
     updateGroup,
     removeGroup,
     assignCategory,
-    resetGroups,
     copyFromMonth,
   };
 }

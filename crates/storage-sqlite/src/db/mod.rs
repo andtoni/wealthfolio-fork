@@ -451,7 +451,7 @@ mod migration_tests {
                (id,period_key,target_type,group_id,amount)
              VALUES
                ('legacy-period-target','2026-08','group_buffer',
-                '032ecb02-5912-42e8-9724-2cd566fc08d5','123.45');",
+                '6e25d097-0c73-4521-9407-d47e8dfb73e2','123.45');",
         )
         .unwrap();
 
@@ -508,6 +508,227 @@ mod migration_tests {
             ),
             0
         );
+    }
+
+    #[test]
+    fn native_budget_group_migration_preserves_user_plan_state() {
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        migrate_until(&mut conn, "20260803000001");
+        conn.batch_execute(
+            "PRAGMA foreign_keys = OFF;
+             UPDATE budget_targets
+             SET amount='4500', updated_at='2026-08-04T00:00:00Z'
+             WHERE id='finance_v1_target_housing';
+             INSERT INTO budget_targets
+                 (id,period_key,target_type,group_id,amount,created_at,updated_at)
+             VALUES
+                 ('user-needs-buffer','default','group_buffer',
+                  '032ecb02-5912-42e8-9724-2cd566fc08d5','12.50',
+                  '2026-08-03T00:00:00Z','2026-08-04T00:00:00Z');
+             INSERT INTO budget_rollover_settings
+                 (id,target_type,group_id,enabled,start_month,starting_balance)
+             VALUES
+                 ('user-needs-rollover','group',
+                  '032ecb02-5912-42e8-9724-2cd566fc08d5',1,'2026-07-25','4.25');
+             UPDATE budget_group_assignments
+             SET is_system=0
+             WHERE group_id='032ecb02-5912-42e8-9724-2cd566fc08d5'
+               AND category_id='cat_housing';",
+        )
+        .unwrap();
+
+        conn.run_pending_migrations(MIGRATIONS).unwrap();
+
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM budget_groups
+                 WHERE key='needs' AND is_system=0",
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM budget_targets
+                 WHERE id='finance_v1_target_housing' AND amount='4500'",
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM budget_targets
+                 WHERE id='user-needs-buffer' AND group_id='032ecb02-5912-42e8-9724-2cd566fc08d5'",
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM budget_rollover_settings
+                 WHERE id='user-needs-rollover' AND group_id='032ecb02-5912-42e8-9724-2cd566fc08d5'",
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM budget_group_assignments
+                 WHERE group_id='032ecb02-5912-42e8-9724-2cd566fc08d5'
+                   AND category_id='cat_housing' AND is_system=0",
+            ),
+            1
+        );
+    }
+
+    #[test]
+    fn native_spending_taxonomy_migration_remaps_historical_category_references() {
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        migrate_until(&mut conn, "20260803000001");
+        conn.batch_execute(
+            "PRAGMA foreign_keys = OFF;
+             UPDATE taxonomy_categories
+                SET parent_id='finance_v1_cat_insurance'
+              WHERE id='cat_health_insurance';
+             UPDATE taxonomy_categories
+                SET parent_id='finance_v1_cat_connectivity'
+              WHERE id='cat_bills_phone';
+             UPDATE taxonomy_categories
+                SET name='My Food'
+              WHERE id='cat_food';
+             UPDATE taxonomy_categories
+                SET parent_id='cat_housing'
+              WHERE id='cat_health_insurance';
+             INSERT INTO activity_taxonomy_assignments
+                 (id,activity_id,taxonomy_id,category_id,weight,source)
+             VALUES
+                 ('legacy-assignment','legacy-activity','spending_categories','finance_v1_cat_connectivity',10000,'manual');
+             INSERT INTO spending_activity_splits
+                 (id,activity_id,taxonomy_id,category_id,amount)
+             VALUES
+                 ('legacy-split','legacy-activity','spending_categories','finance_v1_cat_giving','10');
+             INSERT INTO spending_categorization_evidence
+                 (id,identity_key,merchant_key,merchant_key_version,normalization_version,
+                  taxonomy_id,category_id,direction,activity_type,label_count,agreement_state,
+                  first_label_date,last_label_date,provenance,import_run_id)
+             VALUES
+                 ('legacy-evidence','legacy-identity','merchant',1,1,'spending_categories',
+                  'finance_v1_cat_miscellaneous','OUTFLOW','WITHDRAWAL',1,'agreement',
+                  '2026-08-01','2026-08-01','manual','legacy-import');
+             INSERT INTO spending_categorization_rules
+                 (id,name,pattern,match_type,taxonomy_id,category_id,is_global)
+             VALUES
+                 ('legacy-rule','Legacy','legacy','contains','spending_categories',
+                  'finance_v1_cat_dining',1);
+             INSERT OR REPLACE INTO budget_group_assignments
+                 (id,group_id,taxonomy_id,category_id,is_system)
+             VALUES
+                 ('legacy-budget-assignment','6e25d097-0c73-4521-9407-d47e8dfb73e2',
+                  'spending_categories','finance_v1_cat_insurance',0);
+             INSERT OR REPLACE INTO budget_targets
+                 (id,period_key,target_type,taxonomy_id,category_id,amount)
+             VALUES
+                 ('legacy-budget-target','default','category','spending_categories',
+                  'finance_v1_cat_connectivity','12');
+             INSERT OR REPLACE INTO budget_targets
+                 (id,period_key,target_type,taxonomy_id,category_id,amount)
+             VALUES
+                 ('native-budget-target','default','category','spending_categories',
+                  'cat_bills','3.5');",
+        )
+        .unwrap();
+
+        conn.run_pending_migrations(MIGRATIONS).unwrap();
+
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM taxonomy_categories
+                 WHERE id LIKE 'finance_v1_cat_%'",
+            ),
+            0
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM taxonomy_categories
+                 WHERE id='cat_fees' AND name='Fees & Charges'",
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM taxonomy_categories
+                 WHERE id='cat_health_insurance' AND parent_id='cat_housing'",
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM taxonomy_categories
+                 WHERE id='cat_food' AND name='My Food'",
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM activity_taxonomy_assignments
+                 WHERE category_id='cat_bills'",
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM spending_activity_splits
+                 WHERE category_id='cat_gifts'",
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM spending_categorization_evidence
+                 WHERE category_id='cat_other_expense'",
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM spending_categorization_rules
+                 WHERE category_id='cat_food'",
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM budget_group_assignments
+                 WHERE category_id='cat_bills'",
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM budget_targets
+                 WHERE category_id='cat_bills'",
+            ),
+            1
+        );
+        let merged_amount = diesel::sql_query(
+            "SELECT amount AS value FROM budget_targets
+             WHERE id='native-budget-target'",
+        )
+        .get_result::<SnapshotRow>(&mut conn)
+        .unwrap()
+        .value;
+        assert_eq!(merged_amount, "15.5");
     }
 
     #[test]

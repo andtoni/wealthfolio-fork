@@ -10,6 +10,19 @@ use super::model::{
 pub trait BudgetRepositoryTrait: Send + Sync {
     async fn list_groups(&self) -> Result<Vec<BudgetGroup>>;
     async fn create_group(&self, new_group: NewBudgetGroup) -> Result<BudgetGroup>;
+    async fn ensure_group(&self, new_group: NewBudgetGroup) -> Result<BudgetGroup> {
+        if let Some(key) = new_group.key.as_deref() {
+            if let Some(group) = self
+                .list_groups()
+                .await?
+                .into_iter()
+                .find(|group| group.key == key)
+            {
+                return Ok(group);
+            }
+        }
+        self.create_group(new_group).await
+    }
     async fn update_group(&self, id: &str, patch: UpdateBudgetGroup) -> Result<BudgetGroup>;
     async fn delete_group(&self, id: &str) -> Result<()>;
     async fn delete_group_and_reassign(

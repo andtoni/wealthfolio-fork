@@ -88,18 +88,6 @@ export function getEffectiveCashActivityType(activity: {
   return activity.activityTypeOverride ?? activity.activityType;
 }
 
-/** Whether the original cash movement increased the account balance.
- *
- * This deliberately differs from `isCashActivityIncome`: refunds are spending
- * reporting rows, but they are still incoming movements when converted to a
- * transfer. Credit-card interest is an expense despite being an inflow on
- * cash accounts.
- */
-export function isCashActivityInflow(activityType: string, accountType?: string): boolean {
-  if (activityType === "INTEREST") return !isCreditCardAccountType(accountType);
-  return activityType === "DEPOSIT" || activityType === "TRANSFER_IN" || activityType === "CREDIT";
-}
-
 export function isCashActivityIncome(
   activityType: string,
   accountType?: string,

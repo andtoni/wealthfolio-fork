@@ -172,7 +172,7 @@ export function BudgetEditor({ mode, periodKey }: BudgetEditorProps) {
               });
             }
           }}
-          canDelete={!row.group.isSystem && groups.some((g) => g.id !== row.group.id)}
+          canDelete={groups.some((g) => g.id !== row.group.id)}
           deletePending={mutations.removeGroup.isPending}
           onSaveGroupRollover={(enabled, startingBalance) =>
             mutations.upsertRollover.mutate({
@@ -220,15 +220,6 @@ export function BudgetEditor({ mode, periodKey }: BudgetEditorProps) {
           >
             <Icons.Plus className="h-3.5 w-3.5" />
             {t("spending:budgetEditor.addGroup")}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => mutations.resetGroups.mutate()}
-            className="text-muted-foreground hover:text-foreground h-8 gap-1.5 px-2 text-xs"
-          >
-            <Icons.Refresh className="h-3.5 w-3.5" />
-            {t("spending:budgetEditor.resetDefaults")}
           </Button>
         </div>
       )}
