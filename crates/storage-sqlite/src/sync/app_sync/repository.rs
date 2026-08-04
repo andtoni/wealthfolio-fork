@@ -203,7 +203,10 @@ impl SyncRowFilter {
                   OR taxonomy_id IN (SELECT id FROM taxonomies WHERE is_system = 0) \
                   OR taxonomy_id IN ('spending_categories', 'income_sources', 'savings_categories'))"
             }
-            Self::UserModifiedBudgetGroups => "is_system = 0 OR updated_at != created_at",
+            Self::UserModifiedBudgetGroups => {
+                "(is_system = 0 OR updated_at != created_at) \
+                 AND NOT (key = 'other' AND updated_at = created_at)"
+            },
             // Snapshot restore uses the complete current group set so deleted seeded groups
             // stay deleted and edited seeded rows replace the migration copy cleanly.
             Self::SnapshotBudgetGroups => "1 = 1",
@@ -5383,7 +5386,7 @@ mod tests {
                 "INSERT INTO budget_targets \
                  (id, period_key, target_type, taxonomy_id, category_id, group_id, amount, created_at, updated_at) \
                  VALUES ('budget-target-overwrite-risk', '2025-12-25', 'group_buffer', NULL, NULL, \
-                         '032ecb02-5912-42e8-9724-2cd566fc08d5', '100.00', \
+                         '6e25d097-0c73-4521-9407-d47e8dfb73e2', '100.00', \
                          '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
             )
             .expect("insert budget rows");
@@ -7493,7 +7496,7 @@ mod tests {
                     (id,period_key,target_type,taxonomy_id,category_id,group_id,amount,created_at,updated_at)
                  VALUES
                     ('legacy-snapshot-target','2026-08','group_buffer',NULL,NULL,
-                     '032ecb02-5912-42e8-9724-2cd566fc08d5','123',
+                     '6e25d097-0c73-4521-9407-d47e8dfb73e2','123',
                      '2026-07-01T00:00:00Z','2026-07-01T00:00:00Z');",
             )
             .expect("create legacy snapshot");
