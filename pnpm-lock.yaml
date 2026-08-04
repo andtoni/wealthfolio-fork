@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  ip-address: 10.2.2
+  ip-address: 10.3.1
   qs@<=6.15.1: 6.15.2
   undici@>=7.0.0 <7.28.0: 7.28.0
   '@babel/core@<=7.29.0': 7.29.7
@@ -4455,8 +4455,8 @@ packages:
   intl-messageformat@10.7.18:
     resolution: {integrity: sha512-m3Ofv/X/tV8Y3tHXLohcuVuhWKo7BBq62cqY15etqmLxg2DZ34AGGgQDeR+SCta2+zICb1NX83af0GJmbQ1++g==}
 
-  ip-address@10.2.2:
-    resolution: {integrity: sha512-aNJVEVdXTr/g5+N2VCLo+CTrFLo/Y+9rx9RC5BpxPtf7NEknmzY+UQvMO8Fjni5KFmDaHJieL8HCMJKjJXsTgg==}
+  ip-address@10.3.1:
+    resolution: {integrity: sha512-1e9d3kb97NHJTIJDZW9rKqW2h6+dFa50Dy0fpPSMQp2ADje5gvKsXmdiK6dwY5t76TaTt5+P5N1Y/LoToIxP6g==}
     engines: {node: '>= 12'}
 
   ipaddr.js@1.9.1:
@@ -10625,7 +10625,7 @@ snapshots:
   express-rate-limit@8.5.0(express@5.2.1):
     dependencies:
       express: 5.2.1
-      ip-address: 10.2.2
+      ip-address: 10.3.1
 
   express@4.22.1:
     dependencies:
@@ -11121,7 +11121,7 @@ snapshots:
       '@formatjs/icu-messageformat-parser': 2.11.4
       tslib: 2.8.1
 
-  ip-address@10.2.2: {}
+  ip-address@10.3.1: {}
 
   ipaddr.js@1.9.1: {}
 
