@@ -58,8 +58,11 @@ WHERE group_id IN (
 DELETE FROM budget_groups
 WHERE is_system = 1 AND key <> 'other';
 
--- Existing rows are now ordinary user-owned budget data.
+-- Existing groups are now ordinary user-owned budget data. Seeded category
+-- placements are not user-authored plan state; remove them so the surviving
+-- fallback group does not recreate the deleted canonical grouping.
 UPDATE budget_groups SET is_system = 0;
+DELETE FROM budget_group_assignments WHERE is_system = 1;
 
 -- Databases created by an older/custom migration may not have an Other row.
 INSERT INTO budget_groups
