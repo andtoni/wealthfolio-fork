@@ -9,7 +9,7 @@ use wealthfolio_core::{
         account_supports_purpose, AccountPurpose, AccountRepositoryTrait,
         AggregateEligibilityServiceTrait, ENTITY_ACTIVITY,
     },
-    activities::{Activity, TransferPairResolution},
+    activities::{Activity, ActivityStatus, TransferPairResolution},
 };
 
 #[derive(Debug)]
@@ -79,6 +79,11 @@ pub(crate) async fn filter_eligible_activity_rows(
     Ok(candidate_rows
         .into_iter()
         .filter(|activity| {
+            // Pending and void activities remain visible in the transaction ledger,
+            // but only posted activities may contribute to spending aggregates.
+            if activity.status != ActivityStatus::Posted {
+                return false;
+            }
             if transfer_resolution
                 .invalid_group_for_activity(&activity.id)
                 .is_some()
@@ -87,7 +92,9 @@ pub(crate) async fn filter_eligible_activity_rows(
             }
 
             if let Some(pair) = transfer_resolution.pair_for_activity(&activity.id) {
-                return allowed_ids.contains(&pair.transfer_in.id)
+                return pair.transfer_in.status == ActivityStatus::Posted
+                    && pair.transfer_out.status == ActivityStatus::Posted
+                    && allowed_ids.contains(&pair.transfer_in.id)
                     && allowed_ids.contains(&pair.transfer_out.id);
             }
 
@@ -538,6 +545,59 @@ mod tests {
                 ],
             )]
         );
+    }
+
+    #[tokio::test]
+    async fn aggregate_eligibility_filter_excludes_pending_and_void_but_keeps_posted_rows() {
+        let policy = MockAggregateEligibilityService {
+            allowed_activity_ids: HashSet::from([
+                "posted".to_string(),
+                "pending".to_string(),
+                "void".to_string(),
+            ]),
+            ..Default::default()
+        };
+        let posted = activity("posted", date(2026, 1, 1));
+        let mut pending = activity("pending", date(2026, 1, 1));
+        pending.status = ActivityStatus::Pending;
+        let mut void = activity("void", date(2026, 1, 1));
+        void.status = ActivityStatus::Void;
+
+        let filtered = filter_eligible_activity_rows(&policy, vec![posted, pending, void], &[])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            filtered
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
+            ["posted"]
+        );
+    }
+
+    #[tokio::test]
+    async fn aggregate_eligibility_filter_excludes_both_legs_when_transfer_is_pending() {
+        let policy = MockAggregateEligibilityService {
+            allowed_activity_ids: HashSet::from([
+                "transfer-in".to_string(),
+                "transfer-out".to_string(),
+            ]),
+            ..Default::default()
+        };
+        let transfer_in = transfer("transfer-in", ACTIVITY_TYPE_TRANSFER_IN, "group-1");
+        let mut transfer_out = transfer("transfer-out", ACTIVITY_TYPE_TRANSFER_OUT, "group-1");
+        transfer_out.status = ActivityStatus::Pending;
+
+        let filtered = filter_eligible_activity_rows(
+            &policy,
+            vec![transfer_in.clone(), transfer_out.clone()],
+            &[transfer_in, transfer_out],
+        )
+        .await
+        .unwrap();
+
+        assert!(filtered.is_empty());
     }
 
     #[tokio::test]

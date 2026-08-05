@@ -8,7 +8,9 @@ use wealthfolio_core::accounts::{
     account_supports_purpose, AccountPurpose, AccountRepositoryTrait,
     AggregateEligibilityServiceTrait,
 };
-use wealthfolio_core::activities::{Activity, ActivityRepositoryTrait, TransferPairResolution};
+use wealthfolio_core::activities::{
+    Activity, ActivityRepositoryTrait, ActivityStatus, TransferPairResolution,
+};
 use wealthfolio_core::taxonomies::TaxonomyServiceTrait;
 
 use super::model::{
@@ -956,6 +958,9 @@ fn group_activities_by_visible_event(
 ) -> HashMap<String, Vec<Activity>> {
     let mut by_event: HashMap<String, Vec<Activity>> = HashMap::new();
     for activity in activities {
+        if activity.status != ActivityStatus::Posted {
+            continue;
+        }
         let Some(event_id) = tag_map.get(&activity.id).cloned() else {
             continue;
         };
@@ -1444,7 +1449,13 @@ impl AnalyticsService {
             .map_err(|e| anyhow::anyhow!(e.to_string()))?
             .into_iter()
             .filter(|activity| target_account_ids.contains(activity.account_id.as_str()))
-            .collect();
+            .collect::<Vec<_>>();
+        let activities = filter_eligible_activity_rows(
+            self.aggregate_eligibility_service.as_ref(),
+            activities.clone(),
+            &activities,
+        )
+        .await?;
         let mut by_event = group_activities_by_visible_event(
             activities,
             tag_map,
@@ -3038,6 +3049,39 @@ mod tests {
             .collect::<Vec<_>>();
         ids.sort_unstable();
         assert_eq!(ids, vec!["deposit", "flight", "meal"]);
+    }
+
+    #[test]
+    fn event_summary_excludes_pending_and_void_activities() {
+        let (posted, _) = spending_activity("posted", "WITHDRAWAL", 100, "travel", 6);
+        let (mut pending, _) = spending_activity("pending", "WITHDRAWAL", 100, "travel", 6);
+        pending.status = ActivityStatus::Pending;
+        let (mut void, _) = spending_activity("void", "WITHDRAWAL", 100, "travel", 6);
+        void.status = ActivityStatus::Void;
+
+        let grouped = group_activities_by_visible_event(
+            vec![posted, pending, void],
+            HashMap::from([
+                ("posted".to_string(), "holiday".to_string()),
+                ("pending".to_string(), "holiday".to_string()),
+                ("void".to_string(), "holiday".to_string()),
+            ]),
+            &HashSet::from(["holiday".to_string()]),
+            &HashMap::from([(
+                "card-account".to_string(),
+                account_types::CREDIT_CARD.to_string(),
+            )]),
+        );
+
+        assert_eq!(
+            grouped
+                .get("holiday")
+                .unwrap()
+                .iter()
+                .map(|activity| activity.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["posted"]
+        );
     }
 
     #[test]
