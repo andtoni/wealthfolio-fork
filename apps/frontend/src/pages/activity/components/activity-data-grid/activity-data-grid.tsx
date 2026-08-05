@@ -5,7 +5,7 @@ import type { Account, ActivityDetails } from "@/lib/types";
 import { useAssets } from "@/pages/asset/hooks/use-assets";
 import type { SortingState, Updater, VisibilityState } from "@tanstack/react-table";
 import { DataGrid, useDataGrid, type SymbolSearchResult } from "@wealthfolio/ui";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { resolveSymbolQuote } from "@/adapters";
 import { CreateCustomAssetDialog } from "@/components/create-custom-asset-dialog";
@@ -58,12 +58,14 @@ function canUseResolvedCurrency(result: SymbolSearchResult): boolean {
 }
 
 const ACTIVITY_GRID_COLUMN_VISIBILITY_KEY = "activity-datagrid-column-visibility";
+const ACTIVITY_GRID_COLUMN_VISIBILITY_VERSION_KEY = "activity-datagrid-column-visibility-version";
+const ACTIVITY_GRID_COLUMN_VISIBILITY_VERSION = 1;
 
 const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
   subtype: true,
   isExternal: true,
   instrumentType: false,
-  activityStatus: false,
+  activityStatus: true,
 };
 
 /**
@@ -106,6 +108,16 @@ export function ActivityDataGrid({
     ACTIVITY_GRID_COLUMN_VISIBILITY_KEY,
     DEFAULT_COLUMN_VISIBILITY,
   );
+  const [columnVisibilityVersion, setColumnVisibilityVersion] = usePersistentState<number>(
+    ACTIVITY_GRID_COLUMN_VISIBILITY_VERSION_KEY,
+    0,
+  );
+
+  useEffect(() => {
+    if (columnVisibilityVersion >= ACTIVITY_GRID_COLUMN_VISIBILITY_VERSION) return;
+    setColumnVisibility((previous) => ({ ...previous, activityStatus: true }));
+    setColumnVisibilityVersion(ACTIVITY_GRID_COLUMN_VISIBILITY_VERSION);
+  }, [columnVisibilityVersion, setColumnVisibility, setColumnVisibilityVersion]);
 
   const { assets } = useAssets();
   const { settings } = useSettingsContext();
