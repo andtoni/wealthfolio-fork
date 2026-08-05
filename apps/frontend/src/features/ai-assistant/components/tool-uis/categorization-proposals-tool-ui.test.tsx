@@ -121,6 +121,17 @@ describe("CategorizationProposalsContentImpl", () => {
     expect(mocks.updateToolResult).not.toHaveBeenCalled();
   });
 
+  it("renders persisted apply state when the tool result is wrapped with metadata", () => {
+    const output = staleDraft("spending");
+    renderWidget({
+      data: output,
+      meta: { draftStatus: "applied", appliedCount: 1 },
+    } as unknown as ProposeCategoriesOutput);
+
+    expect(screen.getByText("1 transaction categorized")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Apply/ })).not.toBeInTheDocument();
+  });
+
   it("applies valid proposals without expiring a neutral unproposed row", async () => {
     const output = staleDraft("spending");
     output.unproposed = [

@@ -204,25 +204,23 @@ export function BudgetEditor({ mode, periodKey }: BudgetEditorProps) {
         />
       ))}
 
-      {mode === "setup" && (
-        <div className="flex items-center gap-2 pt-1">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() =>
-              mutations.createGroup.mutate({
-                name: t("spending:budgetEditor.newGroup"),
-                color: FOREST_THEME.deep,
-                icon: "Folder",
-              })
-            }
-            className="text-muted-foreground hover:text-foreground h-8 gap-1.5 px-2 text-xs"
-          >
-            <Icons.Plus className="h-3.5 w-3.5" />
-            {t("spending:budgetEditor.addGroup")}
-          </Button>
-        </div>
-      )}
+      <div className="flex items-center gap-2 pt-1">
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() =>
+            mutations.createGroup.mutate({
+              name: t("spending:budgetEditor.newGroup"),
+              color: FOREST_THEME.deep,
+              icon: "Folder",
+            })
+          }
+          className="text-muted-foreground hover:text-foreground h-8 gap-1.5 px-2 text-xs"
+        >
+          <Icons.Plus className="h-3.5 w-3.5" />
+          {t("spending:budgetEditor.addGroup")}
+        </Button>
+      </div>
     </div>
   );
 
@@ -511,31 +509,24 @@ function GroupBudgetSection({
 
         <button
           type="button"
-          onClick={() => mode === "setup" && setEditOpen(true)}
-          disabled={mode !== "setup"}
+          onClick={() => setEditOpen(true)}
           className="ring-offset-background focus-visible:ring-ring flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 enabled:hover:scale-105 disabled:cursor-default disabled:hover:scale-100"
           style={{ backgroundColor: `${accent}1f`, color: accent }}
-          aria-label={
-            mode === "setup"
-              ? t("spending:budgetEditor.editGroupName", { name: row.group.name })
-              : row.group.name
-          }
+          aria-label={t("spending:budgetEditor.editGroupName", { name: row.group.name })}
         >
           <CategoryIcon icon={row.group.icon ?? null} className="h-3.5 w-3.5" />
         </button>
 
-        {mode === "setup" && (
-          <GroupEditDialog
-            group={row.group}
-            color={accent}
-            open={editOpen}
-            onOpenChange={setEditOpen}
-            onUpdate={onUpdateGroup}
-            rolloverEnabled={groupRollover?.enabled ?? false}
-            rolloverStartingBalance={groupRollover?.startingBalance ?? "0"}
-            onSaveRollover={onSaveGroupRollover}
-          />
-        )}
+        <GroupEditDialog
+          group={row.group}
+          color={accent}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          onUpdate={onUpdateGroup}
+          rolloverEnabled={groupRollover?.enabled ?? false}
+          rolloverStartingBalance={groupRollover?.startingBalance ?? "0"}
+          onSaveRollover={onSaveGroupRollover}
+        />
 
         <button
           type="button"
@@ -569,97 +560,93 @@ function GroupBudgetSection({
           </div>
         </div>
 
-        {mode === "setup" && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground hover:text-foreground h-7 w-7 shrink-0 p-0"
-                aria-label={t("spending:budgetEditor.groupActions")}
-              >
-                <Icons.MoreVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuLabel className="text-muted-foreground/70 text-[10px] font-normal uppercase tracking-wide">
-                {t("spending:budgetEditor.categoryCount", { count: row.categories.length })}
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={(event) => {
-                  event.preventDefault();
-                  setEditOpen(true);
-                }}
-                className="text-xs"
-              >
-                <Icons.Pencil className="mr-2 h-3.5 w-3.5" />
-                {t("common:edit")}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={(event) => {
-                  event.preventDefault();
-                  onSaveGroupRollover(!groupRollover?.enabled);
-                }}
-                className="text-xs"
-              >
-                <Icons.Refresh className="mr-2 h-3.5 w-3.5" />
-                <span className="flex-1">{t("spending:budgetEditor.groupRollover")}</span>
-                <span className="text-muted-foreground text-[10px]">
-                  {groupRollover?.enabled
-                    ? t("spending:budgetEditor.on")
-                    : t("spending:budgetEditor.off")}
-                </span>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                disabled={!canDelete}
-                onSelect={(event) => {
-                  event.preventDefault();
-                  if (canDelete) setConfirmDeleteOpen(true);
-                }}
-                className="text-destructive focus:text-destructive text-xs"
-              >
-                <Icons.Trash className="mr-2 h-3.5 w-3.5" />
-                {t("spending:budgetEditor.deleteGroup")}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground h-7 w-7 shrink-0 p-0"
+              aria-label={t("spending:budgetEditor.groupActions")}
+            >
+              <Icons.MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuLabel className="text-muted-foreground/70 text-[10px] font-normal uppercase tracking-wide">
+              {t("spending:budgetEditor.categoryCount", { count: row.categories.length })}
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={(event) => {
+                event.preventDefault();
+                setEditOpen(true);
+              }}
+              className="text-xs"
+            >
+              <Icons.Pencil className="mr-2 h-3.5 w-3.5" />
+              {t("common:edit")}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={(event) => {
+                event.preventDefault();
+                onSaveGroupRollover(!groupRollover?.enabled);
+              }}
+              className="text-xs"
+            >
+              <Icons.Refresh className="mr-2 h-3.5 w-3.5" />
+              <span className="flex-1">{t("spending:budgetEditor.groupRollover")}</span>
+              <span className="text-muted-foreground text-[10px]">
+                {groupRollover?.enabled
+                  ? t("spending:budgetEditor.on")
+                  : t("spending:budgetEditor.off")}
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              disabled={!canDelete}
+              onSelect={(event) => {
+                event.preventDefault();
+                if (canDelete) setConfirmDeleteOpen(true);
+              }}
+              className="text-destructive focus:text-destructive text-xs"
+            >
+              <Icons.Trash className="mr-2 h-3.5 w-3.5" />
+              {t("spending:budgetEditor.deleteGroup")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      {mode === "setup" && (
-        <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                {t("spending:budgetEditor.deleteGroupTitle", { name: row.group.name })}
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                {row.categories.length > 0
-                  ? t("spending:budgetEditor.deleteGroupWithCategories", {
-                      count: row.categories.length,
-                    })
-                  : t("spending:budgetEditor.cannotUndo")}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t("common:cancel")}</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={(event) => {
-                  event.preventDefault();
-                  onDeleteGroup();
-                  setConfirmDeleteOpen(false);
-                }}
-                disabled={deletePending}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                {deletePending ? t("spending:budgetEditor.deleting") : t("common:delete")}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("spending:budgetEditor.deleteGroupTitle", { name: row.group.name })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {row.categories.length > 0
+                ? t("spending:budgetEditor.deleteGroupWithCategories", {
+                    count: row.categories.length,
+                  })
+                : t("spending:budgetEditor.cannotUndo")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common:cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                onDeleteGroup();
+                setConfirmDeleteOpen(false);
+              }}
+              disabled={deletePending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletePending ? t("spending:budgetEditor.deleting") : t("common:delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {open && (
         <div className="border-border/30 border-t">
@@ -693,14 +680,12 @@ function GroupBudgetSection({
               onToggleRollover={onToggleCategoryRollover}
             />
           ))}
-          {mode === "setup" && (
-            <AddCategoryRow
-              groupId={row.group.id}
-              groupName={row.group.name}
-              pool={categoryPool.filter((entry) => entry.fromGroupId !== row.group.id)}
-              onMoveCategory={onMoveCategory}
-            />
-          )}
+          <AddCategoryRow
+            groupId={row.group.id}
+            groupName={row.group.name}
+            pool={categoryPool.filter((entry) => entry.fromGroupId !== row.group.id)}
+            onMoveCategory={onMoveCategory}
+          />
         </div>
       )}
     </section>

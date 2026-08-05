@@ -252,6 +252,10 @@ impl TaxonomyServiceTrait for TaxonomyService {
     }
 
     async fn delete_category(&self, taxonomy_id: &str, category_id: &str) -> Result<usize> {
+        self.repository
+            .get_category(taxonomy_id, category_id)?
+            .ok_or_else(|| DatabaseError::NotFound("Category not found".to_string()))?;
+
         // Check for child categories
         let categories = self.repository.get_categories(taxonomy_id)?;
         let has_children = categories
@@ -436,5 +440,170 @@ impl TaxonomyServiceTrait for TaxonomyService {
             self.emit_asset_classifications_changed(Vec::new(), Vec::new());
         }
         Ok(deleted)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use chrono::Utc;
+    use std::sync::Mutex;
+
+    struct DeleteRepository {
+        category: Option<Category>,
+        delete_calls: Mutex<usize>,
+    }
+
+    #[async_trait]
+    impl TaxonomyRepositoryTrait for DeleteRepository {
+        fn get_taxonomies(&self) -> Result<Vec<Taxonomy>> {
+            unimplemented!()
+        }
+
+        fn get_taxonomy(&self, _: &str) -> Result<Option<Taxonomy>> {
+            unimplemented!()
+        }
+
+        async fn create_taxonomy(&self, _: NewTaxonomy) -> Result<Taxonomy> {
+            unimplemented!()
+        }
+
+        async fn update_taxonomy(&self, _: Taxonomy) -> Result<Taxonomy> {
+            unimplemented!()
+        }
+
+        async fn delete_taxonomy(&self, _: &str) -> Result<usize> {
+            unimplemented!()
+        }
+
+        fn get_categories(&self, _: &str) -> Result<Vec<Category>> {
+            Ok(self.category.clone().into_iter().collect())
+        }
+
+        fn get_category(&self, _: &str, category_id: &str) -> Result<Option<Category>> {
+            Ok(self
+                .category
+                .as_ref()
+                .filter(|category| category.id == category_id)
+                .cloned())
+        }
+
+        fn get_category_allocation_target_weight_count(&self, _: &str, _: &str) -> Result<usize> {
+            Ok(0)
+        }
+
+        async fn create_category(&self, _: NewCategory) -> Result<Category> {
+            unimplemented!()
+        }
+
+        async fn update_category(&self, _: Category) -> Result<Category> {
+            unimplemented!()
+        }
+
+        async fn delete_category(&self, _: &str, _: &str) -> Result<usize> {
+            *self.delete_calls.lock().unwrap() += 1;
+            Ok(1)
+        }
+
+        async fn bulk_create_categories(&self, _: Vec<NewCategory>) -> Result<usize> {
+            unimplemented!()
+        }
+
+        fn get_asset_assignments(&self, _: &str) -> Result<Vec<AssetTaxonomyAssignment>> {
+            unimplemented!()
+        }
+
+        fn get_category_assignments(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> Result<Vec<AssetTaxonomyAssignment>> {
+            Ok(Vec::new())
+        }
+
+        async fn upsert_assignment(
+            &self,
+            _: NewAssetTaxonomyAssignment,
+        ) -> Result<AssetTaxonomyAssignment> {
+            unimplemented!()
+        }
+
+        async fn replace_asset_assignments(
+            &self,
+            _: &str,
+            _: &str,
+            _: Vec<NewAssetTaxonomyAssignment>,
+        ) -> Result<Vec<AssetTaxonomyAssignment>> {
+            unimplemented!()
+        }
+
+        async fn delete_assignment(&self, _: &str) -> Result<usize> {
+            unimplemented!()
+        }
+
+        async fn delete_asset_assignments(&self, _: &str, _: &str) -> Result<usize> {
+            unimplemented!()
+        }
+
+        fn get_taxonomy_with_categories(&self, _: &str) -> Result<Option<TaxonomyWithCategories>> {
+            unimplemented!()
+        }
+
+        fn get_all_taxonomies_with_categories(&self) -> Result<Vec<TaxonomyWithCategories>> {
+            unimplemented!()
+        }
+    }
+
+    fn category() -> Category {
+        let now = Utc::now().naive_utc();
+        Category {
+            id: "category-1".to_string(),
+            taxonomy_id: "spending_categories".to_string(),
+            parent_id: None,
+            name: "Groceries".to_string(),
+            key: "groceries".to_string(),
+            color: "#fff".to_string(),
+            description: None,
+            sort_order: 0,
+            created_at: now,
+            updated_at: now,
+            icon: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn deleting_missing_category_fails_before_cleanup_or_delete() {
+        let repository = Arc::new(DeleteRepository {
+            category: None,
+            delete_calls: Mutex::new(0),
+        });
+        let service = TaxonomyService::new(repository.clone());
+
+        let error = service
+            .delete_category("spending_categories", "missing")
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("Category not found"));
+        assert_eq!(*repository.delete_calls.lock().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn deleting_existing_category_reaches_repository() {
+        let repository = Arc::new(DeleteRepository {
+            category: Some(category()),
+            delete_calls: Mutex::new(0),
+        });
+        let service = TaxonomyService::new(repository.clone());
+
+        assert_eq!(
+            service
+                .delete_category("spending_categories", "category-1")
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(*repository.delete_calls.lock().unwrap(), 1);
     }
 }

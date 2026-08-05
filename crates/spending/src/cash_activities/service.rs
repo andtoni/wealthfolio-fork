@@ -1567,6 +1567,7 @@ mod tests {
 
     #[derive(Default)]
     struct MockAssignmentRepo {
+        assigned: Mutex<Vec<NewActivityTaxonomyAssignment>>,
         cleared: Mutex<Vec<(String, String)>>,
     }
 
@@ -1603,9 +1604,22 @@ mod tests {
 
         async fn assign_many_single_select_clearing_splits(
             &self,
-            _: Vec<NewActivityTaxonomyAssignment>,
+            items: Vec<NewActivityTaxonomyAssignment>,
         ) -> Result<Vec<ActivityTaxonomyAssignment>> {
-            unimplemented!()
+            self.assigned.lock().unwrap().extend(items.clone());
+            Ok(items
+                .into_iter()
+                .map(|item| ActivityTaxonomyAssignment {
+                    id: item.id.unwrap_or_else(|| "assignment-1".to_string()),
+                    activity_id: item.activity_id,
+                    taxonomy_id: item.taxonomy_id,
+                    category_id: item.category_id,
+                    weight: item.weight,
+                    source: item.source,
+                    created_at: now_naive(),
+                    updated_at: now_naive(),
+                })
+                .collect())
         }
 
         async fn assign_rule_many_single_select(
@@ -2123,6 +2137,38 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert!(policy.account_calls.lock().unwrap().is_empty());
         assert!(policy.row_calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn linked_cash_outflow_accepts_savings_category_and_persists_assignment() {
+        let mut transfer = activity("TRANSFER_OUT");
+        transfer.source_group_id = Some("investment-transfer".to_string());
+        let (service, assignment_repo, _, _) = make_service(transfer);
+
+        let assignment = service
+            .assign_category("activity-1", SAVINGS_TAXONOMY, "saving-category")
+            .await
+            .unwrap();
+
+        assert_eq!(assignment.taxonomy_id, SAVINGS_TAXONOMY);
+        assert_eq!(assignment.category_id, "saving-category");
+        let saved = assignment_repo.assigned.lock().unwrap();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].taxonomy_id, SAVINGS_TAXONOMY);
+        assert_eq!(saved[0].category_id, "saving-category");
+    }
+
+    #[tokio::test]
+    async fn ordinary_cash_outflow_rejects_savings_category() {
+        let (service, assignment_repo, _, _) = make_service(activity("WITHDRAWAL"));
+
+        let err = service
+            .assign_category("activity-1", SAVINGS_TAXONOMY, "saving-category")
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("spending categories"));
+        assert!(assignment_repo.assigned.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

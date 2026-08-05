@@ -40,6 +40,61 @@ type CategorizationProposalsToolUIContentProps = ToolCallMessagePartProps<
   ProposeCategoriesOutput
 >;
 
+type UnknownRecord = Record<string, unknown>;
+
+const TOOL_RESULT_PATCH_RETRY_DELAYS_MS = [500, 1500, 3000, 6000];
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeCategorizationResult(value: unknown): ProposeCategoriesOutput | undefined {
+  if (!isRecord(value)) return undefined;
+
+  if ("data" in value) {
+    const nested = normalizeCategorizationResult(value.data);
+    if (!nested) return undefined;
+    const meta = isRecord(value.meta) ? value.meta : {};
+    return {
+      ...nested,
+      ...(typeof meta.submitted === "boolean" ? { submitted: meta.submitted } : {}),
+      ...(typeof meta.appliedCount === "number" ? { appliedCount: meta.appliedCount } : {}),
+      ...(meta.draftStatus === "draft" || meta.draftStatus === "applied"
+        ? { draftStatus: meta.draftStatus }
+        : {}),
+      ...(typeof meta.submittedAt === "string" ? { submittedAt: meta.submittedAt } : {}),
+    };
+  }
+
+  if (Array.isArray(value.proposals) && Array.isArray(value.taxonomies)) {
+    return value as unknown as ProposeCategoriesOutput;
+  }
+
+  return undefined;
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function persistCategorizationToolResult(
+  request: Parameters<typeof updateToolResult>[0],
+): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= TOOL_RESULT_PATCH_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      await updateToolResult(request);
+      return;
+    } catch (error) {
+      lastError = error;
+      const retryDelay = TOOL_RESULT_PATCH_RETRY_DELAYS_MS[attempt];
+      if (retryDelay === undefined) break;
+      await delay(retryDelay);
+    }
+  }
+  throw lastError;
+}
+
 interface RowDraft {
   activityId: string;
   activityDate: string;
@@ -88,11 +143,12 @@ function ProposalsLoadingState() {
 }
 
 export function CategorizationProposalsContentImpl({
-  result,
+  result: rawResult,
   status,
   toolCallId,
 }: CategorizationProposalsToolUIContentProps) {
   const { t } = useTranslation();
+  const result = useMemo(() => normalizeCategorizationResult(rawResult) ?? rawResult, [rawResult]);
   const { settings } = useSettingsContext();
   const baseCurrency = settings?.baseCurrency ?? "USD";
   const { isBalanceHidden } = useBalancePrivacy();
@@ -154,6 +210,7 @@ export function CategorizationProposalsContentImpl({
   const [rows, setRows] = useState<RowDraft[]>(initialRows);
   const [pickedUnproposedIds, setPickedUnproposedIds] = useState<Set<string>>(new Set());
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [persistError, setPersistError] = useState(false);
   const [localSubmitted, setLocalSubmitted] = useState(false);
   const [localAppliedCount, setLocalAppliedCount] = useState<number | null>(null);
 
@@ -167,7 +224,8 @@ export function CategorizationProposalsContentImpl({
     [result?.unproposed, pickedUnproposedIds],
   );
 
-  const isSubmitted = localSubmitted || result?.submitted === true;
+  const isSubmitted =
+    localSubmitted || result?.submitted === true || result?.draftStatus === "applied";
   const selectedCount = rows.filter((r) => r.selected).length;
   // Unproposed rows are intentionally non-selectable and may be neutral (or
   // legacy bucketless rows). They must not block valid proposals from being
@@ -269,6 +327,7 @@ export function CategorizationProposalsContentImpl({
   const handleSubmit = async () => {
     if (!canSubmit) return;
     setSubmitError(null);
+    setPersistError(false);
 
     const accepted = rows.filter((r) => r.selected);
     try {
@@ -283,21 +342,25 @@ export function CategorizationProposalsContentImpl({
       setLocalSubmitted(true);
       setLocalAppliedCount(applied.length);
 
-      if (threadId && toolCallId) {
-        try {
-          await updateToolResult({
-            threadId,
-            toolCallId,
-            resultPatch: {
-              submitted: true,
-              draftStatus: "applied",
-              appliedCount: applied.length,
-              submittedAt: new Date().toISOString(),
-            },
-          });
-        } catch (error) {
-          console.error("Failed to persist categorization tool state:", error);
-        }
+      if (!threadId || !toolCallId) {
+        setPersistError(true);
+        return;
+      }
+
+      try {
+        await persistCategorizationToolResult({
+          threadId,
+          toolCallId,
+          resultPatch: {
+            submitted: true,
+            draftStatus: "applied",
+            appliedCount: applied.length,
+            submittedAt: new Date().toISOString(),
+          },
+        });
+      } catch (error) {
+        setPersistError(true);
+        console.error("Failed to persist categorization tool state:", error);
       }
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : t("ai:categorization.failedApply"));
@@ -537,6 +600,12 @@ export function CategorizationProposalsContentImpl({
               <AlertDescription className="break-words text-xs">{submitError}</AlertDescription>
             </Alert>
           </div>
+        )}
+
+        {persistError && (
+          <p className="text-destructive px-3 text-xs sm:px-6">
+            {t("ai:assetClassification.chatNotUpdated")}
+          </p>
         )}
 
         {isSubmitted && (
