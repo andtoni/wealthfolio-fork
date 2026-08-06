@@ -92,6 +92,11 @@ pub struct DisclosureOperation {
     /// When present, signals a pending->posted lifecycle migration from
     /// resource_id (pending) to lifecycle_successor_id (posted).
     pub lifecycle_successor_id: Option<String>,
+    /// Provider identity corrections that must be merged into resource_id before
+    /// the provider-owned upsert is exposed. The receiver migrates user overlays
+    /// and child rows atomically, then removes each superseded local resource.
+    #[serde(default)]
+    pub superseded_resource_ids: Vec<String>,
     #[serde(default)]
     pub semantic_hash: Option<String>,
     #[serde(default)]
@@ -113,6 +118,7 @@ impl DisclosureOperation {
             resource_id: r.into(),
             activity: None,
             lifecycle_successor_id: None,
+            superseded_resource_ids: Vec::new(),
             semantic_hash: None,
             current_state: None,
         }
@@ -125,6 +131,14 @@ impl DisclosureOperation {
 
     pub fn with_lifecycle(mut self, successor: impl Into<String>) -> Self {
         self.lifecycle_successor_id = Some(successor.into());
+        self
+    }
+
+    pub fn with_superseded_resources(
+        mut self,
+        resources: impl IntoIterator<Item = String>,
+    ) -> Self {
+        self.superseded_resource_ids = resources.into_iter().collect();
         self
     }
 }
@@ -161,6 +175,8 @@ pub enum BridgePolicyError {
     IdempotencyConflict,
     #[error("activity account does not match the authorized resource")]
     ActivityAccountMismatch,
+    #[error("activity supersession is invalid: {0}")]
+    InvalidActivitySupersession(String),
     #[error("current state payload is invalid: {0}")]
     InvalidCurrentState(String),
     #[error("current state semantic hash does not match payload")]
@@ -379,6 +395,15 @@ pub fn disclosure_payload_digest(op: &DisclosureOperation) -> String {
     field(&mut hasher, op.kind.as_str());
     field(&mut hasher, &op.resource_id);
     optional_field(&mut hasher, op.lifecycle_successor_id.as_deref());
+    if !op.superseded_resource_ids.is_empty() {
+        let mut superseded_resource_ids = op.superseded_resource_ids.clone();
+        superseded_resource_ids.sort();
+        field(&mut hasher, "superseded-resource-ids-v1");
+        field(&mut hasher, &superseded_resource_ids.len().to_string());
+        for resource_id in superseded_resource_ids {
+            field(&mut hasher, &resource_id);
+        }
+    }
     field(&mut hasher, if op.activity.is_some() { "1" } else { "0" });
     if let Some(activity) = &op.activity {
         field(&mut hasher, &activity.account_id);
@@ -505,6 +530,44 @@ pub fn current_state_semantic_hash(state: &CurrentStatePayload) -> String {
         "positions": positions,
     });
     format!("{:x}", Sha256::digest(canonical_json(&value).as_bytes()))
+}
+
+fn validate_activity_supersession(op: &DisclosureOperation) -> Result<()> {
+    if op.superseded_resource_ids.is_empty() {
+        return Ok(());
+    }
+    if op.kind != DisclosureKind::ActivityUpsert {
+        return Err(BridgePolicyError::InvalidActivitySupersession(
+            "only ActivityUpsert may supersede provider resources".into(),
+        ));
+    }
+    if op.activity.is_none() {
+        return Err(BridgePolicyError::InvalidActivitySupersession(
+            "activity payload is required".into(),
+        ));
+    }
+    if op.lifecycle_successor_id.is_some() {
+        return Err(BridgePolicyError::InvalidActivitySupersession(
+            "pending lifecycle and provider identity supersession cannot be combined".into(),
+        ));
+    }
+    if op.superseded_resource_ids.len() > 64 {
+        return Err(BridgePolicyError::InvalidActivitySupersession(
+            "too many superseded resources".into(),
+        ));
+    }
+    let mut seen = std::collections::HashSet::new();
+    for resource_id in &op.superseded_resource_ids {
+        if resource_id.trim().is_empty()
+            || resource_id == &op.resource_id
+            || !seen.insert(resource_id)
+        {
+            return Err(BridgePolicyError::InvalidActivitySupersession(
+                "resource IDs must be non-empty, distinct, and different from the canonical resource".into(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn validate_current_state_operation(op: &DisclosureOperation) -> Result<()> {
@@ -664,6 +727,213 @@ fn upsert_activity_row(
         .bind::<Text, _>(resource_id)
         .bind::<Text, _>(resource_id)
         .bind::<Text, _>(subject)
+        .execute(c)?;
+    Ok(())
+}
+
+#[derive(QueryableByName)]
+struct ActivitySupersessionRow {
+    #[diesel(sql_type = Text)]
+    account_id: String,
+    #[diesel(sql_type = Nullable<Text>)]
+    notes: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    activity_type_override: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    subtype: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    metadata: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    source_group_id: Option<String>,
+    #[diesel(sql_type = Integer)]
+    is_user_modified: i32,
+    #[diesel(sql_type = Integer)]
+    needs_review: i32,
+}
+
+fn activity_supersession_row(
+    c: &mut SqliteConnection,
+    id: &str,
+) -> std::result::Result<Option<ActivitySupersessionRow>, diesel::result::Error> {
+    sql_query("SELECT account_id,notes,activity_type_override,subtype,metadata,source_group_id,is_user_modified,needs_review FROM activities WHERE id=?")
+        .bind::<Text, _>(id)
+        .get_result::<ActivitySupersessionRow>(c)
+        .optional()
+}
+
+fn merge_activity_metadata(target: Option<&str>, loser: Option<&str>) -> Option<String> {
+    let mut target_value = target
+        .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}));
+    let loser_value = loser
+        .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
+        .filter(serde_json::Value::is_object);
+    if let (Some(target_object), Some(loser_object)) = (
+        target_value.as_object_mut(),
+        loser_value.as_ref().and_then(serde_json::Value::as_object),
+    ) {
+        for (key, value) in loser_object {
+            target_object
+                .entry(key.clone())
+                .or_insert_with(|| value.clone());
+        }
+    }
+    if target_value
+        .as_object()
+        .is_some_and(|value| !value.is_empty())
+    {
+        Some(target_value.to_string())
+    } else {
+        None
+    }
+}
+
+fn child_count(
+    c: &mut SqliteConnection,
+    sql: &str,
+    loser: &str,
+    canonical: &str,
+) -> std::result::Result<i64, diesel::result::Error> {
+    Ok(sql_query(sql)
+        .bind::<Text, _>(loser)
+        .bind::<Text, _>(canonical)
+        .get_result::<Count>(c)?
+        .count)
+}
+
+fn move_activity_children(
+    c: &mut SqliteConnection,
+    loser: &str,
+    canonical: &str,
+    deployment_id: &str,
+    subject: &str,
+) -> std::result::Result<(), diesel::result::Error> {
+    let assignment_conflicts = child_count(
+        c,
+        "SELECT count(*) AS count FROM activity_taxonomy_assignments loser JOIN activity_taxonomy_assignments canonical ON loser.activity_id=? AND canonical.activity_id=? AND canonical.taxonomy_id=loser.taxonomy_id",
+        loser,
+        canonical,
+    )?;
+    if assignment_conflicts > 0 {
+        return Err(diesel::result::Error::RollbackTransaction);
+    }
+    if child_count(c, "SELECT count(*) AS count FROM spending_activity_splits loser WHERE loser.activity_id=? AND EXISTS (SELECT 1 FROM spending_activity_splits canonical WHERE canonical.activity_id=?)", loser, canonical)? > 0 {
+        return Err(diesel::result::Error::RollbackTransaction);
+    }
+    if child_count(c, "SELECT count(*) AS count FROM spending_activity_events loser WHERE loser.activity_id=? AND EXISTS (SELECT 1 FROM spending_activity_events canonical WHERE canonical.activity_id=?)", loser, canonical)? > 0 {
+        return Err(diesel::result::Error::RollbackTransaction);
+    }
+    if child_count(c, "SELECT count(*) AS count FROM activity_attribution_overlays loser WHERE loser.activity_id=? AND EXISTS (SELECT 1 FROM activity_attribution_overlays canonical WHERE canonical.activity_id=?)", loser, canonical)? > 0 {
+        return Err(diesel::result::Error::RollbackTransaction);
+    }
+
+    sql_query("UPDATE activity_taxonomy_assignments SET activity_id=? WHERE activity_id=?")
+        .bind::<Text, _>(canonical)
+        .bind::<Text, _>(loser)
+        .execute(c)?;
+    sql_query("UPDATE spending_activity_splits SET activity_id=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE activity_id=?")
+        .bind::<Text, _>(canonical)
+        .bind::<Text, _>(loser)
+        .execute(c)?;
+    sql_query("UPDATE spending_activity_events SET activity_id=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE activity_id=?")
+        .bind::<Text, _>(canonical)
+        .bind::<Text, _>(loser)
+        .execute(c)?;
+    sql_query("UPDATE activity_attribution_overlays SET activity_id=? WHERE deployment_id=? AND activity_id=?")
+        .bind::<Text, _>(canonical)
+        .bind::<Text, _>(deployment_id)
+        .bind::<Text, _>(loser)
+        .execute(c)?;
+
+    // Disclosure projections may exist for more than the currently delivering
+    // subject. Move all non-conflicting rows, then let the current operation
+    // refresh its own generation below.
+    sql_query("INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) SELECT old.deployment_id,old.person_subject_id,?,old.account_id,old.access_generation FROM activity_disclosure_projections old WHERE old.activity_id=? AND NOT EXISTS (SELECT 1 FROM activity_disclosure_projections current WHERE current.deployment_id=old.deployment_id AND current.person_subject_id=old.person_subject_id AND current.activity_id=?)")
+        .bind::<Text, _>(canonical)
+        .bind::<Text, _>(loser)
+        .bind::<Text, _>(canonical)
+        .execute(c)?;
+    sql_query("DELETE FROM activity_disclosure_projections WHERE deployment_id=? AND person_subject_id=? AND activity_id=?")
+        .bind::<Text, _>(deployment_id)
+        .bind::<Text, _>(subject)
+        .bind::<Text, _>(loser)
+        .execute(c)?;
+    Ok(())
+}
+
+fn supersede_activity_identity(
+    c: &mut SqliteConnection,
+    loser: &str,
+    canonical: &str,
+    account_id: &str,
+    deployment_id: &str,
+    subject: &str,
+) -> std::result::Result<(), diesel::result::Error> {
+    if loser == canonical {
+        return Err(diesel::result::Error::RollbackTransaction);
+    }
+    let Some(loser_row) = activity_supersession_row(c, loser)? else {
+        return Ok(());
+    };
+    let canonical_row =
+        activity_supersession_row(c, canonical)?.ok_or(diesel::result::Error::NotFound)?;
+    if loser_row.account_id != account_id || canonical_row.account_id != account_id {
+        return Err(diesel::result::Error::RollbackTransaction);
+    }
+    if loser_row.is_user_modified == 1 && canonical_row.is_user_modified == 1 {
+        for (left, right) in [
+            (&loser_row.notes, &canonical_row.notes),
+            (
+                &loser_row.activity_type_override,
+                &canonical_row.activity_type_override,
+            ),
+            (&loser_row.subtype, &canonical_row.subtype),
+            (&loser_row.source_group_id, &canonical_row.source_group_id),
+        ] {
+            if left.is_some() && right.is_some() && left != right {
+                return Err(diesel::result::Error::RollbackTransaction);
+            }
+        }
+    }
+    if loser_row.source_group_id.is_some()
+        && canonical_row.source_group_id.is_some()
+        && loser_row.source_group_id != canonical_row.source_group_id
+    {
+        return Err(diesel::result::Error::RollbackTransaction);
+    }
+
+    move_activity_children(c, loser, canonical, deployment_id, subject)?;
+    let notes = if canonical_row.is_user_modified == 0 || canonical_row.notes.is_none() {
+        loser_row.notes.clone().or(canonical_row.notes.clone())
+    } else {
+        canonical_row.notes.clone()
+    };
+    let activity_type_override = canonical_row
+        .activity_type_override
+        .clone()
+        .or(loser_row.activity_type_override.clone());
+    let subtype = canonical_row.subtype.clone().or(loser_row.subtype.clone());
+    let metadata = merge_activity_metadata(
+        canonical_row.metadata.as_deref(),
+        loser_row.metadata.as_deref(),
+    );
+    let source_group_id = canonical_row
+        .source_group_id
+        .clone()
+        .or(loser_row.source_group_id.clone());
+    sql_query("UPDATE activities SET notes=?,activity_type_override=?,subtype=?,metadata=?,source_group_id=?,is_user_modified=max(is_user_modified,?),needs_review=max(needs_review,?),updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?")
+        .bind::<Nullable<Text>, _>(notes.as_deref())
+        .bind::<Nullable<Text>, _>(activity_type_override.as_deref())
+        .bind::<Nullable<Text>, _>(subtype.as_deref())
+        .bind::<Nullable<Text>, _>(metadata.as_deref())
+        .bind::<Nullable<Text>, _>(source_group_id.as_deref())
+        .bind::<Integer, _>(loser_row.is_user_modified)
+        .bind::<Integer, _>(loser_row.needs_review)
+        .bind::<Text, _>(canonical)
+        .execute(c)?;
+    sql_query("DELETE FROM activities WHERE id=?")
+        .bind::<Text, _>(loser)
         .execute(c)?;
     Ok(())
 }
@@ -1025,6 +1295,7 @@ impl BridgePolicyStore {
         fault: CommitFault,
     ) -> Result<DisclosureReceipt> {
         validate_current_state_operation(&op)?;
+        validate_activity_supersession(&op)?;
         let d = self.deployment_id.clone();
         let result: std::result::Result<DisclosureReceipt, BridgePolicyError> = self.writer.exec(move |c| {
             let inner: std::result::Result<DisclosureReceipt, BridgePolicyError> = c.transaction::<_, crate::StorageError, _>(|c| {
@@ -1142,7 +1413,18 @@ impl BridgePolicyStore {
                     Vec::new()
                 };
 
-                // 4. Handle lifecycle migration (pending->posted) atomically
+                // 4. Handle provider identity supersession atomically. The new
+                // resource is materialized first, then user overlays and child
+                // rows move from every still-present legacy identity.
+                if !op.superseded_resource_ids.is_empty() {
+                    let activity = op.activity.as_ref().expect("validated activity supersession");
+                    upsert_activity_row(c, &op.resource_id, &op.subject, activity)?;
+                    for loser in &op.superseded_resource_ids {
+                        supersede_activity_identity(c, loser, &op.resource_id, &account.account_id, &d, &op.subject)?;
+                    }
+                }
+
+                // 5. Handle lifecycle migration (pending->posted) atomically
                 if let Some(ref successor) = op.lifecycle_successor_id {
                     let p = &op.resource_id;
                     let n = successor;

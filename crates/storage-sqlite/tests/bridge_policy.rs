@@ -1300,3 +1300,115 @@ async fn replay_rejects_changed_provider_payload() {
         BridgePolicyError::IdempotencyConflict
     ));
 }
+
+#[tokio::test]
+async fn provider_identity_supersession_preserves_user_overlay_and_projection() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let connection = Connection::open(&path).unwrap();
+    connection
+        .execute(
+            "UPDATE activities SET notes='user note',activity_type_override='TRANSFER_IN',source_group_id='group-1',is_user_modified=1 WHERE id='x1'",
+            [],
+        )
+        .unwrap();
+    let generation = store.grant("alice", "a1").await.unwrap();
+    connection
+        .execute(
+            "INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?)",
+            params![D1, "alice", "x1", "a1", generation],
+        )
+        .unwrap();
+
+    let operation = DisclosureOperation::new(
+        "prime-saver-supersession",
+        "alice",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "stable-prime-resource",
+    )
+    .with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "DEPOSIT".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-07-18".into(),
+        amount: "10.00".into(),
+        currency: "USD".into(),
+        notes: Some("provider note".into()),
+        activity_type_override: None,
+        needs_review: None,
+        merchant_context: None,
+    })
+    .with_superseded_resources(["x1".to_string()]);
+    store.commit(operation.clone()).await.unwrap();
+
+    let result: (i64, i64, String, Option<String>, Option<String>, i64) = connection
+        .query_row(
+            "SELECT (SELECT count(*) FROM activities WHERE id='x1'), (SELECT count(*) FROM activities WHERE id='stable-prime-resource'), (SELECT notes FROM activities WHERE id='stable-prime-resource'), (SELECT activity_type_override FROM activities WHERE id='stable-prime-resource'), (SELECT source_group_id FROM activities WHERE id='stable-prime-resource'), (SELECT count(*) FROM activity_disclosure_projections WHERE activity_id='stable-prime-resource' AND person_subject_id='alice')",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        result,
+        (
+            0,
+            1,
+            "user note".into(),
+            Some("TRANSFER_IN".into()),
+            Some("group-1".into()),
+            1
+        )
+    );
+    assert_eq!(
+        store.commit(operation).await.unwrap().outcome,
+        ReceiptOutcome::Accepted
+    );
+}
+
+#[tokio::test]
+async fn provider_identity_supersession_moves_overlay_children_atomically() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    store
+        .seed_migration_fixture("old-provider", "new-provider")
+        .await
+        .unwrap();
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let connection = Connection::open(&path).unwrap();
+    connection
+        .execute(
+            "INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?)",
+            params![D1, "alice", "old-provider", "a1", generation],
+        )
+        .unwrap();
+    let operation = DisclosureOperation::new(
+        "provider-children",
+        "alice",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "new-provider",
+    )
+    .with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "DEPOSIT".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-07-18".into(),
+        amount: "1".into(),
+        currency: "USD".into(),
+        notes: Some("provider correction".into()),
+        activity_type_override: None,
+        needs_review: None,
+        merchant_context: None,
+    })
+    .with_superseded_resources(["old-provider".to_string()]);
+    store.commit(operation).await.unwrap();
+    let counts: (i64, i64, i64, i64, i64, i64) = connection
+        .query_row(
+            "SELECT (SELECT count(*) FROM activities WHERE id='old-provider'), (SELECT count(*) FROM activity_taxonomy_assignments WHERE activity_id='new-provider'), (SELECT count(*) FROM spending_activity_splits WHERE activity_id='new-provider'), (SELECT count(*) FROM spending_activity_events WHERE activity_id='new-provider'), (SELECT count(*) FROM activity_attribution_overlays WHERE activity_id='new-provider'), (SELECT count(*) FROM activity_disclosure_projections WHERE activity_id='new-provider' AND person_subject_id='alice')",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+        )
+        .unwrap();
+    assert_eq!(counts, (0, 1, 1, 1, 1, 1));
+}
