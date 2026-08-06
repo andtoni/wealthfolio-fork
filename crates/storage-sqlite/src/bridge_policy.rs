@@ -37,17 +37,49 @@ pub struct MerchantContextV1 {
 }
 
 /// Payload for creating or updating an activity row via the bridge.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ActivityPayload {
     pub account_id: String,
     pub activity_type: String,
     pub status: String,
     pub activity_date: String,
+    #[serde(default)]
+    pub settlement_date: Option<String>,
     pub amount: String,
     pub currency: String,
+    #[serde(default)]
+    pub fee: Option<String>,
+    #[serde(default)]
+    pub tax: Option<String>,
+    #[serde(default)]
+    pub fx_rate: Option<String>,
+    #[serde(default)]
+    pub source_type: Option<String>,
+    #[serde(default)]
+    pub subtype: Option<String>,
+    #[serde(default)]
+    pub source_record_id: Option<String>,
+    #[serde(default)]
+    pub source_group_id: Option<String>,
+    #[serde(default)]
     pub notes: Option<String>,
+    #[serde(default)]
     pub activity_type_override: Option<String>,
+    #[serde(default)]
     pub needs_review: Option<bool>,
+    /// Provider-owned JSON evidence. User-owned metadata is never accepted from this boundary.
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
+    /// Original/card amount and currency when `amount`/`currency` represent settlement.
+    #[serde(default)]
+    pub original_amount: Option<String>,
+    #[serde(default)]
+    pub original_currency: Option<String>,
+    /// Account/pocket settlement amount and currency when they differ from the activity.
+    #[serde(default)]
+    pub settlement_amount: Option<String>,
+    #[serde(default)]
+    pub settlement_currency: Option<String>,
     #[serde(default)]
     pub merchant_context: Option<MerchantContextV1>,
 }
@@ -175,6 +207,8 @@ pub enum BridgePolicyError {
     IdempotencyConflict,
     #[error("activity account does not match the authorized resource")]
     ActivityAccountMismatch,
+    #[error("activity payload is invalid: {0}")]
+    InvalidActivity(String),
     #[error("activity supersession is invalid: {0}")]
     InvalidActivitySupersession(String),
     #[error("current state payload is invalid: {0}")]
@@ -218,6 +252,11 @@ struct ActivityIdentity {
     account_id: String,
     #[diesel(sql_type=Text)]
     status: String,
+}
+#[derive(QueryableByName)]
+struct ActivityIdRow {
+    #[diesel(sql_type=Text)]
+    id: String,
 }
 #[derive(QueryableByName)]
 struct Household {
@@ -431,6 +470,36 @@ pub fn disclosure_payload_digest(op: &DisclosureOperation) -> String {
             field(&mut hasher, &context.merchant_key_version.to_string());
             field(&mut hasher, &context.normalization_version.to_string());
         }
+        let has_extended_fields = activity.settlement_date.is_some()
+            || activity.fee.is_some()
+            || activity.tax.is_some()
+            || activity.fx_rate.is_some()
+            || activity.source_type.is_some()
+            || activity.subtype.is_some()
+            || activity.source_record_id.is_some()
+            || activity.source_group_id.is_some()
+            || activity.metadata.is_some()
+            || activity.original_amount.is_some()
+            || activity.original_currency.is_some()
+            || activity.settlement_amount.is_some()
+            || activity.settlement_currency.is_some();
+        if has_extended_fields {
+            field(&mut hasher, "extended-activity-fields-v1");
+            optional_field(&mut hasher, activity.settlement_date.as_deref());
+            optional_field(&mut hasher, activity.fee.as_deref());
+            optional_field(&mut hasher, activity.tax.as_deref());
+            optional_field(&mut hasher, activity.fx_rate.as_deref());
+            optional_field(&mut hasher, activity.source_type.as_deref());
+            optional_field(&mut hasher, activity.subtype.as_deref());
+            optional_field(&mut hasher, activity.source_record_id.as_deref());
+            optional_field(&mut hasher, activity.source_group_id.as_deref());
+            let metadata = activity.metadata.as_ref().map(canonical_json);
+            optional_field(&mut hasher, metadata.as_deref());
+            optional_field(&mut hasher, activity.original_amount.as_deref());
+            optional_field(&mut hasher, activity.original_currency.as_deref());
+            optional_field(&mut hasher, activity.settlement_amount.as_deref());
+            optional_field(&mut hasher, activity.settlement_currency.as_deref());
+        }
     }
     optional_field(&mut hasher, op.semantic_hash.as_deref());
     field(
@@ -530,6 +599,99 @@ pub fn current_state_semantic_hash(state: &CurrentStatePayload) -> String {
         "positions": positions,
     });
     format!("{:x}", Sha256::digest(canonical_json(&value).as_bytes()))
+}
+
+fn validate_activity_payload(activity: &ActivityPayload) -> Result<()> {
+    use chrono::{DateTime, NaiveDate};
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    if activity.account_id.trim().is_empty()
+        || activity.activity_type.trim().is_empty()
+        || activity.activity_date.trim().is_empty()
+    {
+        return Err(BridgePolicyError::InvalidActivity(
+            "account, type, and activity date are required".into(),
+        ));
+    }
+    if !matches!(
+        activity.status.as_str(),
+        "POSTED" | "PENDING" | "DRAFT" | "VOID"
+    ) {
+        return Err(BridgePolicyError::InvalidActivity(
+            "invalid activity status".into(),
+        ));
+    }
+    let valid_date = |value: &str| {
+        NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok()
+            || DateTime::parse_from_rfc3339(value).is_ok()
+    };
+    if !valid_date(&activity.activity_date)
+        || activity
+            .settlement_date
+            .as_deref()
+            .is_some_and(|value| !valid_date(value))
+    {
+        return Err(BridgePolicyError::InvalidActivity(
+            "invalid activity date".into(),
+        ));
+    }
+    let valid_currency = |value: &str| value.len() == 3 && value == value.to_uppercase();
+    if !valid_currency(&activity.currency)
+        || activity
+            .original_currency
+            .as_deref()
+            .is_some_and(|value| !valid_currency(value))
+        || activity
+            .settlement_currency
+            .as_deref()
+            .is_some_and(|value| !valid_currency(value))
+    {
+        return Err(BridgePolicyError::InvalidActivity(
+            "invalid activity currency".into(),
+        ));
+    }
+    let decimal = |value: &str, allow_zero: bool| {
+        Decimal::from_str(value)
+            .ok()
+            .filter(|number| !number.is_sign_negative() && (allow_zero || !number.is_zero()))
+    };
+    if decimal(&activity.amount, false).is_none()
+        || activity
+            .fee
+            .as_deref()
+            .is_some_and(|value| decimal(value, true).is_none())
+        || activity
+            .tax
+            .as_deref()
+            .is_some_and(|value| decimal(value, true).is_none())
+        || activity
+            .fx_rate
+            .as_deref()
+            .is_some_and(|value| decimal(value, false).is_none())
+        || activity
+            .original_amount
+            .as_deref()
+            .is_some_and(|value| decimal(value, false).is_none())
+        || activity
+            .settlement_amount
+            .as_deref()
+            .is_some_and(|value| decimal(value, false).is_none())
+    {
+        return Err(BridgePolicyError::InvalidActivity(
+            "invalid activity decimal".into(),
+        ));
+    }
+    if activity
+        .metadata
+        .as_ref()
+        .is_some_and(|value| !value.is_object())
+    {
+        return Err(BridgePolicyError::InvalidActivity(
+            "activity metadata must be an object".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn validate_activity_supersession(op: &DisclosureOperation) -> Result<()> {
@@ -681,51 +843,93 @@ fn upsert_activity_row(
         return Err(diesel::result::Error::RollbackTransaction);
     }
 
-    let metadata = if let Some(context) = &act.merchant_context {
-        let mut metadata = existing
-            .and_then(|row| row.metadata)
-            .and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
-            .filter(serde_json::Value::is_object)
-            .unwrap_or_else(|| serde_json::json!({}));
-        let root = metadata.as_object_mut().expect("metadata object");
-        let provider_owned = root
-            .entry("providerOwned")
-            .or_insert_with(|| serde_json::json!({}));
-        if !provider_owned.is_object() {
-            *provider_owned = serde_json::json!({});
-        }
-        provider_owned
-            .as_object_mut()
-            .expect("provider-owned object")
-            .insert(
-                "merchantContext".into(),
-                serde_json::json!({
-                    "merchantKey": context.merchant_key,
-                    "merchantKeyVersion": context.merchant_key_version,
-                    "normalizationVersion": context.normalization_version,
-                }),
-            );
-        Some(metadata.to_string())
+    let mut metadata = existing
+        .as_ref()
+        .and_then(|row| row.metadata.as_deref())
+        .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}));
+    let root = metadata.as_object_mut().expect("metadata object");
+    let incoming_provider_owned = act
+        .metadata
+        .as_ref()
+        .and_then(serde_json::Value::as_object)
+        .and_then(|value| value.get("providerOwned"))
+        .filter(|value| value.is_object())
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    root.insert("providerOwned".into(), incoming_provider_owned);
+    let provider_owned = root
+        .get_mut("providerOwned")
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("provider-owned object");
+    if let Some(context) = &act.merchant_context {
+        provider_owned.insert(
+            "merchantContext".into(),
+            serde_json::json!({
+                "merchantKey": context.merchant_key,
+                "merchantKeyVersion": context.merchant_key_version,
+                "normalizationVersion": context.normalization_version,
+            }),
+        );
     } else {
+        provider_owned.remove("merchantContext");
+    }
+    let mut original = serde_json::Map::new();
+    if let Some(value) = &act.original_amount {
+        original.insert("amount".into(), serde_json::Value::String(value.clone()));
+    }
+    if let Some(value) = &act.original_currency {
+        original.insert("currency".into(), serde_json::Value::String(value.clone()));
+    }
+    if !original.is_empty() {
+        provider_owned.insert("original".into(), serde_json::Value::Object(original));
+    } else {
+        provider_owned.remove("original");
+    }
+    let mut settlement = serde_json::Map::new();
+    if let Some(value) = &act.settlement_amount {
+        settlement.insert("amount".into(), serde_json::Value::String(value.clone()));
+    }
+    if let Some(value) = &act.settlement_currency {
+        settlement.insert("currency".into(), serde_json::Value::String(value.clone()));
+    }
+    if !settlement.is_empty() {
+        provider_owned.insert("settlement".into(), serde_json::Value::Object(settlement));
+    } else {
+        provider_owned.remove("settlement");
+    }
+    let metadata = if provider_owned.is_empty() && root.len() == 1 {
         None
+    } else {
+        Some(metadata.to_string())
     };
 
     sql_query(
-        "INSERT INTO activities(id,account_id,activity_type,status,activity_date,amount,currency,notes,activity_type_override,metadata,is_user_modified,needs_review,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,NULL,?,0,0,strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,activity_type=CASE WHEN activities.is_user_modified=1 THEN activities.activity_type ELSE excluded.activity_type END,status=excluded.status,activity_date=excluded.activity_date,amount=excluded.amount,currency=excluded.currency,notes=CASE WHEN activities.is_user_modified=1 THEN activities.notes ELSE excluded.notes END,metadata=coalesce(excluded.metadata,activities.metadata),updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')"
+        "INSERT INTO activities(id,account_id,activity_type,status,activity_date,settlement_date,source_type,subtype,amount,fee,tax,currency,fx_rate,notes,activity_type_override,metadata,source_system,source_record_id,source_group_id,is_user_modified,needs_review,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?,'FINANCE',?,?,0,COALESCE(?,0),strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,activity_type=CASE WHEN activities.is_user_modified=1 THEN activities.activity_type ELSE excluded.activity_type END,status=excluded.status,activity_date=excluded.activity_date,settlement_date=excluded.settlement_date,source_type=excluded.source_type,subtype=CASE WHEN activities.is_user_modified=1 THEN activities.subtype ELSE excluded.subtype END,amount=excluded.amount,fee=excluded.fee,tax=excluded.tax,currency=excluded.currency,fx_rate=excluded.fx_rate,notes=CASE WHEN activities.is_user_modified=1 THEN activities.notes ELSE excluded.notes END,metadata=coalesce(excluded.metadata,activities.metadata),source_system=excluded.source_system,source_record_id=excluded.source_record_id,source_group_id=CASE WHEN activities.is_user_modified=1 THEN activities.source_group_id ELSE excluded.source_group_id END,needs_review=CASE WHEN activities.is_user_modified=1 THEN activities.needs_review ELSE COALESCE(excluded.needs_review,0) END,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')"
     )
         .bind::<Text,_>(resource_id)
         .bind::<Text,_>(&act.account_id)
         .bind::<Text,_>(&act.activity_type)
         .bind::<Text,_>(&act.status)
         .bind::<Text,_>(&act.activity_date)
+        .bind::<Nullable<Text>,_>(act.settlement_date.as_deref())
+        .bind::<Nullable<Text>,_>(act.source_type.as_deref())
+        .bind::<Nullable<Text>,_>(act.subtype.as_deref())
         .bind::<Text,_>(&act.amount)
+        .bind::<Nullable<Text>,_>(act.fee.as_deref())
+        .bind::<Nullable<Text>,_>(act.tax.as_deref())
         .bind::<Text,_>(&act.currency)
+        .bind::<Nullable<Text>,_>(act.fx_rate.as_deref())
         .bind::<Nullable<Text>,_>(act.notes.as_deref())
         .bind::<Nullable<Text>,_>(metadata)
+        .bind::<Nullable<Text>,_>(act.source_record_id.as_deref())
+        .bind::<Nullable<Text>,_>(act.source_group_id.as_deref())
+        .bind::<Nullable<Integer>,_>(act.needs_review.map(i32::from))
         .execute(c)?;
     sql_query("INSERT INTO provenance_records(entity_type,entity_id,role,source_system,source_record_id,actor_id) VALUES('activity',?,'live_canonical','finance',?,?) ON CONFLICT(entity_type,entity_id) DO UPDATE SET role='live_canonical',source_system='finance',source_record_id=excluded.source_record_id,actor_id=excluded.actor_id,updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')")
         .bind::<Text, _>(resource_id)
-        .bind::<Text, _>(resource_id)
+        .bind::<Text, _>(act.source_record_id.as_deref().unwrap_or(resource_id))
         .bind::<Text, _>(subject)
         .execute(c)?;
     Ok(())
@@ -763,7 +967,45 @@ fn activity_supersession_row(
         .optional()
 }
 
-fn merge_activity_metadata(target: Option<&str>, loser: Option<&str>) -> Option<String> {
+fn user_metadata_conflict(target: &serde_json::Value, loser: &serde_json::Value) -> bool {
+    match (target, loser) {
+        (serde_json::Value::Object(target), serde_json::Value::Object(loser)) => loser
+            .iter()
+            .filter(|(key, _)| key.as_str() != "providerOwned")
+            .any(|(key, value)| {
+                target
+                    .get(key)
+                    .is_some_and(|existing| user_metadata_conflict(existing, value))
+            }),
+        _ => target != loser,
+    }
+}
+
+fn merge_metadata_value(target: &mut serde_json::Value, loser: &serde_json::Value) {
+    match (target, loser) {
+        (serde_json::Value::Object(target), serde_json::Value::Object(loser)) => {
+            for (key, value) in loser {
+                if key == "providerOwned" {
+                    continue;
+                }
+                match target.get_mut(key) {
+                    Some(existing) => merge_metadata_value(existing, value),
+                    None => {
+                        target.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+        }
+        // The canonical successor wins whenever both sides contain a scalar or
+        // incompatible object. The loser only fills absent nested provider/user keys.
+        _ => {}
+    }
+}
+
+fn merge_activity_metadata(
+    target: Option<&str>,
+    loser: Option<&str>,
+) -> std::result::Result<Option<String>, diesel::result::Error> {
     let mut target_value = target
         .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
         .filter(serde_json::Value::is_object)
@@ -771,23 +1013,19 @@ fn merge_activity_metadata(target: Option<&str>, loser: Option<&str>) -> Option<
     let loser_value = loser
         .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
         .filter(serde_json::Value::is_object);
-    if let (Some(target_object), Some(loser_object)) = (
-        target_value.as_object_mut(),
-        loser_value.as_ref().and_then(serde_json::Value::as_object),
-    ) {
-        for (key, value) in loser_object {
-            target_object
-                .entry(key.clone())
-                .or_insert_with(|| value.clone());
+    if let Some(loser_value) = loser_value {
+        if user_metadata_conflict(&target_value, &loser_value) {
+            return Err(diesel::result::Error::RollbackTransaction);
         }
+        merge_metadata_value(&mut target_value, &loser_value);
     }
     if target_value
         .as_object()
         .is_some_and(|value| !value.is_empty())
     {
-        Some(target_value.to_string())
+        Ok(Some(target_value.to_string()))
     } else {
-        None
+        Ok(None)
     }
 }
 
@@ -883,6 +1121,16 @@ fn supersede_activity_identity(
     if loser_row.account_id != account_id || canonical_row.account_id != account_id {
         return Err(diesel::result::Error::RollbackTransaction);
     }
+    let loser_is_provider_owned = sql_query(
+        "SELECT count(*) AS count FROM provenance_records WHERE entity_type='activity' AND entity_id=? AND role='live_canonical' AND source_system='finance'",
+    )
+    .bind::<Text, _>(loser)
+    .get_result::<Count>(c)?
+    .count
+        == 1;
+    if !loser_is_provider_owned {
+        return Err(diesel::result::Error::RollbackTransaction);
+    }
     let loser_effective_activity_type = loser_row
         .activity_type_override
         .clone()
@@ -917,10 +1165,12 @@ fn supersede_activity_identity(
     }
 
     move_activity_children(c, loser, canonical, deployment_id, subject)?;
-    let notes = if canonical_row.is_user_modified == 0 || canonical_row.notes.is_none() {
+    let notes = if canonical_row.is_user_modified == 1 {
+        canonical_row.notes.clone().or(loser_row.notes.clone())
+    } else if loser_row.is_user_modified == 1 {
         loser_row.notes.clone().or(canonical_row.notes.clone())
     } else {
-        canonical_row.notes.clone()
+        canonical_row.notes.clone().or(loser_row.notes.clone())
     };
     let activity_type_override =
         if canonical_row.is_user_modified == 0 && loser_row.is_user_modified == 1 {
@@ -934,11 +1184,17 @@ fn supersede_activity_identity(
                 .clone()
                 .or(loser_row.activity_type_override.clone())
         };
-    let subtype = canonical_row.subtype.clone().or(loser_row.subtype.clone());
+    let subtype = if canonical_row.is_user_modified == 1 {
+        canonical_row.subtype.clone().or(loser_row.subtype.clone())
+    } else if loser_row.is_user_modified == 1 {
+        loser_row.subtype.clone().or(canonical_row.subtype.clone())
+    } else {
+        canonical_row.subtype.clone().or(loser_row.subtype.clone())
+    };
     let metadata = merge_activity_metadata(
         canonical_row.metadata.as_deref(),
         loser_row.metadata.as_deref(),
-    );
+    )?;
     let source_group_id = canonical_row
         .source_group_id
         .clone()
@@ -968,7 +1224,7 @@ fn reject_conflicting_activity_overlays(
     let conflicts = sql_query(
         "SELECT count(*) count FROM activities pending JOIN activities posted \
          WHERE pending.id=? AND posted.id=? AND (\
-           (pending.notes IS NOT NULL AND posted.notes IS NOT NULL AND pending.notes<>posted.notes) OR \
+           (pending.is_user_modified=1 AND posted.is_user_modified=1 AND pending.notes IS NOT NULL AND posted.notes IS NOT NULL AND pending.notes<>posted.notes) OR \
            (pending.activity_type_override IS NOT NULL AND posted.activity_type_override IS NOT NULL AND pending.activity_type_override<>posted.activity_type_override) OR \
            (pending.is_user_modified=1 AND posted.is_user_modified=1 AND pending.subtype IS NOT NULL AND posted.subtype IS NOT NULL AND pending.subtype<>posted.subtype) OR \
            EXISTS (SELECT 1 FROM activity_attribution_overlays predecessor \
@@ -1019,9 +1275,21 @@ fn do_delete_activity(
     op: &DisclosureOperation,
     d: &str,
 ) -> std::result::Result<(), diesel::result::Error> {
-    sql_query("DELETE FROM activities WHERE id=?")
+    let provider_owned = sql_query("SELECT count(*) AS count FROM provenance_records WHERE entity_type='activity' AND entity_id=? AND role='live_canonical' AND source_system='finance'")
         .bind::<Text, _>(&op.resource_id)
-        .execute(c)?;
+        .get_result::<Count>(c)?
+        .count > 0;
+    if provider_owned {
+        // Keep provider-owned rows as reversible tombstones. A later unchanged
+        // ActivityUpsert can restore the row and all user-owned child overlays.
+        sql_query("UPDATE activities SET status='VOID',needs_review=0,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?")
+            .bind::<Text, _>(&op.resource_id)
+            .execute(c)?;
+    } else {
+        sql_query("DELETE FROM activities WHERE id=?")
+            .bind::<Text, _>(&op.resource_id)
+            .execute(c)?;
+    }
     sql_query("DELETE FROM activity_disclosure_projections WHERE deployment_id=? AND person_subject_id=? AND activity_id=?")
         .bind::<Text,_>(d)
         .bind::<Text,_>(&op.subject)
@@ -1315,8 +1583,6 @@ impl BridgePolicyStore {
         op: DisclosureOperation,
         fault: CommitFault,
     ) -> Result<DisclosureReceipt> {
-        validate_current_state_operation(&op)?;
-        validate_activity_supersession(&op)?;
         let d = self.deployment_id.clone();
         let result: std::result::Result<DisclosureReceipt, BridgePolicyError> = self.writer.exec(move |c| {
             let inner: std::result::Result<DisclosureReceipt, BridgePolicyError> = c.transaction::<_, crate::StorageError, _>(|c| {
@@ -1346,6 +1612,21 @@ impl BridgePolicyStore {
                         return Ok(Err(BridgePolicyError::IdempotencyConflict));
                     }
                     return Ok(Ok(receipt(&d, existing)));
+                }
+
+                // Validation applies only to new work. Exact durable replays must
+                // remain idempotent even when a later schema rule rejects their
+                // historical payload shape.
+                if let Err(error) = validate_current_state_operation(&op) {
+                    return Ok(Err(error));
+                }
+                if let Some(activity) = op.activity.as_ref() {
+                    if let Err(error) = validate_activity_payload(activity) {
+                        return Ok(Err(error));
+                    }
+                }
+                if let Err(error) = validate_activity_supersession(&op) {
+                    return Ok(Err(error));
                 }
 
                 // Reject new work at a stale generation.
@@ -1434,6 +1715,32 @@ impl BridgePolicyStore {
                     Vec::new()
                 };
 
+                if let Some(activity) = op.activity.as_ref() {
+                    if let Some(source_record_id) = activity.source_record_id.as_deref() {
+                        let existing_provider_rows = sql_query(
+                            "SELECT activities.id FROM activities LEFT JOIN provenance_records ON provenance_records.entity_type='activity' AND provenance_records.entity_id=activities.id WHERE activities.account_id=? AND activities.source_record_id=? AND activities.id<>? AND (activities.source_system='FINANCE' OR (provenance_records.role='live_canonical' AND provenance_records.source_system='finance'))",
+                        )
+                        .bind::<Text, _>(&activity.account_id)
+                        .bind::<Text, _>(source_record_id)
+                        .bind::<Text, _>(&op.resource_id)
+                        .load::<ActivityIdRow>(c)?;
+                        let allowed_ids = op
+                            .superseded_resource_ids
+                            .iter()
+                            .chain(op.lifecycle_successor_id.iter())
+                            .cloned()
+                            .collect::<std::collections::HashSet<_>>();
+                        if existing_provider_rows
+                            .iter()
+                            .any(|row| !allowed_ids.contains(&row.id))
+                        {
+                            return Ok(Err(BridgePolicyError::InvalidActivity(
+                                "provider record identity already belongs to another activity".into(),
+                            )));
+                        }
+                    }
+                }
+
                 // 4. Handle provider identity supersession atomically. The new
                 // resource is materialized first, then user overlays and child
                 // rows move from every still-present legacy identity.
@@ -1469,6 +1776,41 @@ impl BridgePolicyStore {
                         return Err(diesel::result::Error::NotFound.into());
                     }
                     reject_conflicting_activity_overlays(c, p, n, &d)?;
+                    let pending_overlay = activity_supersession_row(c, p)?.ok_or(diesel::result::Error::NotFound)?;
+                    let posted_overlay = activity_supersession_row(c, n)?.ok_or(diesel::result::Error::NotFound)?;
+                    if pending_overlay.source_group_id.is_some()
+                        && posted_overlay.source_group_id.is_some()
+                        && pending_overlay.source_group_id != posted_overlay.source_group_id
+                    {
+                        return Err(diesel::result::Error::RollbackTransaction.into());
+                    }
+                    let pending_effective_type = pending_overlay
+                        .activity_type_override
+                        .clone()
+                        .unwrap_or_else(|| pending_overlay.activity_type.clone());
+                    let activity_type_override = if posted_overlay.is_user_modified == 0
+                        && pending_overlay.is_user_modified == 1
+                    {
+                        Some(pending_effective_type)
+                    } else {
+                        posted_overlay
+                            .activity_type_override
+                            .clone()
+                            .or(pending_overlay.activity_type_override.clone())
+                    };
+                    let subtype = if pending_overlay.is_user_modified == 1 {
+                        pending_overlay.subtype.clone().or(posted_overlay.subtype.clone())
+                    } else {
+                        posted_overlay.subtype.clone()
+                    };
+                    let metadata = merge_activity_metadata(
+                        posted_overlay.metadata.as_deref(),
+                        pending_overlay.metadata.as_deref(),
+                    )?;
+                    let source_group_id = posted_overlay
+                        .source_group_id
+                        .clone()
+                        .or(pending_overlay.source_group_id.clone());
                     let projection_count = sql_query("SELECT count(*) AS count FROM activity_disclosure_projections WHERE deployment_id=? AND person_subject_id=? AND activity_id=? AND account_id=? AND access_generation=?")
                         .bind::<Text,_>(&d)
                         .bind::<Text,_>(&op.subject)
@@ -1485,13 +1827,30 @@ impl BridgePolicyStore {
                             .bind::<Text,_>(p)
                             .execute(c)?;
                     }
-                    sql_query("UPDATE activities SET notes=coalesce((SELECT notes FROM activities WHERE id=?),notes),activity_type_override=coalesce((SELECT activity_type_override FROM activities WHERE id=?),activity_type_override),subtype=CASE WHEN coalesce((SELECT is_user_modified FROM activities WHERE id=?),0)=1 THEN coalesce((SELECT subtype FROM activities WHERE id=?),subtype) ELSE subtype END,is_user_modified=max(is_user_modified,coalesce((SELECT is_user_modified FROM activities WHERE id=?),0)),needs_review=max(needs_review,coalesce((SELECT needs_review FROM activities WHERE id=?),0)) WHERE id=?")
-                        .bind::<Text,_>(p)
-                        .bind::<Text,_>(p)
-                        .bind::<Text,_>(p)
-                        .bind::<Text,_>(p)
-                        .bind::<Text,_>(p)
-                        .bind::<Text,_>(p)
+                    let notes = if pending_overlay.is_user_modified == 1 {
+                        pending_overlay.notes.as_deref().or(posted_overlay.notes.as_deref())
+                    } else {
+                        posted_overlay.notes.as_deref().or(pending_overlay.notes.as_deref())
+                    };
+                    let needs_review = if posted_overlay.is_user_modified == 1
+                        && pending_overlay.is_user_modified == 1
+                    {
+                        std::cmp::max(posted_overlay.needs_review, pending_overlay.needs_review)
+                    } else if posted_overlay.is_user_modified == 1 {
+                        posted_overlay.needs_review
+                    } else if pending_overlay.is_user_modified == 1 {
+                        pending_overlay.needs_review
+                    } else {
+                        std::cmp::max(posted_overlay.needs_review, pending_overlay.needs_review)
+                    };
+                    sql_query("UPDATE activities SET notes=coalesce(?,notes),activity_type_override=coalesce(?,activity_type_override),subtype=?,metadata=?,source_group_id=?,is_user_modified=max(is_user_modified,?),needs_review=? WHERE id=?")
+                        .bind::<Nullable<Text>,_>(notes)
+                        .bind::<Nullable<Text>,_>(activity_type_override.as_deref())
+                        .bind::<Nullable<Text>,_>(subtype.as_deref())
+                        .bind::<Nullable<Text>,_>(metadata.as_deref())
+                        .bind::<Nullable<Text>,_>(source_group_id.as_deref())
+                        .bind::<Integer,_>(pending_overlay.is_user_modified)
+                        .bind::<Integer,_>(needs_review)
                         .bind::<Text,_>(n)
                         .execute(c)?;
                     sql_query("UPDATE activity_disclosure_projections SET activity_id=? WHERE deployment_id=? AND person_subject_id=? AND activity_id=?")
@@ -1707,6 +2066,8 @@ impl BridgePolicyStore {
             for (id, status, review) in [(&p, "PENDING", 1_i32), (&n, "POSTED", 0_i32)] {
                 sql_query("INSERT INTO activities(id,account_id,activity_type,status,activity_date,amount,currency,notes,activity_type_override,is_user_modified,needs_review,created_at,updated_at) VALUES(?,'a1', 'DEPOSIT',?,'2026-01-01','1','USD',?,'IGNORE',1,?,'now','now')")
                     .bind::<Text,_>(id).bind::<Text,_>(status).bind::<Nullable<Text>,_>(if id == &p { Some("pending note") } else { None }).bind::<Integer,_>(review).execute(c)?;
+                sql_query("INSERT INTO provenance_records(entity_type,entity_id,role,source_system,source_record_id,actor_id) VALUES('activity',?,'live_canonical','finance',?,?)")
+                    .bind::<Text,_>(id).bind::<Text,_>(id).bind::<Text,_>(&d).execute(c)?;
             }
             sql_query("INSERT INTO activity_attribution_overlays(deployment_id,activity_id,account_id,attributed_person_subject_id,revision) VALUES(?,?,'a1','alice',1)").bind::<Text,_>(&d).bind::<Text,_>(&p).execute(c)?;
             sql_query("INSERT INTO activity_taxonomy_assignments(id,activity_id,taxonomy_id,category_id) VALUES('bridge-assignment',?,'bridge-taxonomy','bridge-category')").bind::<Text,_>(&p).execute(c)?;

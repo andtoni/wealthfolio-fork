@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use rust_decimal::Decimal;
 
 use super::{
-    activities_constants::is_cash_symbol, Activity, ACTIVITY_TYPE_TRANSFER_IN,
+    activities_constants::is_cash_symbol, Activity, ActivityStatus, ACTIVITY_TYPE_TRANSFER_IN,
     ACTIVITY_TYPE_TRANSFER_OUT,
 };
 
@@ -57,7 +57,7 @@ impl TransferPairResolution {
         let mut ungrouped_transfer_ids = HashSet::new();
 
         for activity in activities {
-            if !is_transfer(activity) {
+            if matches!(activity.status, ActivityStatus::Void) || !is_transfer(activity) {
                 continue;
             }
 
@@ -158,6 +158,16 @@ fn is_cash_transfer(activity: &Activity) -> bool {
     non_cash_transfer_asset_key(activity).is_none()
 }
 
+fn is_investec_pocket_transfer(activity: &Activity) -> bool {
+    [activity.source_type.as_deref(), activity.subtype.as_deref()]
+        .into_iter()
+        .flatten()
+        .any(|value| {
+            let normalized = value.to_ascii_uppercase();
+            normalized == "MCPBAPOCKETTRANSFERS" || normalized == "POCKET_TRANSFER"
+        })
+}
+
 fn has_positive_cash_amount(activity: &Activity) -> bool {
     activity.amount.is_some_and(|amount| !amount.is_zero())
 }
@@ -206,6 +216,7 @@ fn build_transfer_pair(group_id: &str, activities: &[Activity]) -> Result<Transf
 
     if transfer_in.account_id == transfer_out.account_id
         && !is_same_account_cash_fx_conversion(transfer_in, transfer_out)
+        && !(is_investec_pocket_transfer(transfer_in) && is_investec_pocket_transfer(transfer_out))
     {
         return Err(
             "same-account transfer legs must be cash FX conversions with different currencies"
@@ -327,6 +338,19 @@ mod tests {
         transfer_out.asset_id = Some("$CASH-USD".to_string());
         let mut transfer_in = activity("in", ACTIVITY_TYPE_TRANSFER_IN, "a1", Some("g1"), "CAD");
         transfer_in.asset_id = Some("CASH:CAD".to_string());
+
+        let resolution = TransferPairResolution::from_activities(&[transfer_out, transfer_in]);
+
+        assert_eq!(resolution.pairs().len(), 1);
+        assert!(resolution.invalid_group_for_activity("out").is_none());
+    }
+
+    #[test]
+    fn same_account_investec_pocket_group_is_valid_pair() {
+        let mut transfer_out = activity("out", ACTIVITY_TYPE_TRANSFER_OUT, "a1", Some("g1"), "ZAR");
+        transfer_out.source_type = Some("MCPBAPocketTransfers".to_string());
+        let mut transfer_in = activity("in", ACTIVITY_TYPE_TRANSFER_IN, "a1", Some("g1"), "ZAR");
+        transfer_in.subtype = Some("POCKET_TRANSFER".to_string());
 
         let resolution = TransferPairResolution::from_activities(&[transfer_out, transfer_in]);
 

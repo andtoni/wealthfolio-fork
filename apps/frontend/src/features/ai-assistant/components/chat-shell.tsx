@@ -182,19 +182,28 @@ const consumedPromptKeys = new Set<string>();
  * then clears the state so it isn't resent on refresh or back navigation.
  * Renders nothing; must live under AssistantRuntimeProvider.
  */
-function InitialPromptSender() {
+function InitialPromptSender({ ready }: { ready: boolean }) {
   const location = useLocation();
   const navigate = useNavigate();
   const threadRuntime = useThreadRuntime();
 
   useEffect(() => {
     const prompt = (location.state as { aiPrompt?: string } | null)?.aiPrompt;
-    if (!prompt || consumedPromptKeys.has(location.key)) return;
-    consumedPromptKeys.add(location.key);
-    // Clear navigation state first so a refresh or back nav won't resend.
-    navigate(location.pathname, { replace: true, state: null });
-    threadRuntime.append(prompt);
-  }, [location, navigate, threadRuntime]);
+    if (!prompt || !ready || consumedPromptKeys.has(location.key)) return;
+
+    // Wait one task after the provider/model becomes available. This lets the
+    // external-store runtime bind its callbacks before the first append.
+    const timeoutId = window.setTimeout(() => {
+      if (consumedPromptKeys.has(location.key)) return;
+      consumedPromptKeys.add(location.key);
+      threadRuntime.append(prompt);
+      // Clear navigation state after append starts so route replacement cannot
+      // race the first request.
+      navigate(location.pathname, { replace: true, state: null });
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [location, navigate, ready, threadRuntime]);
 
   return null;
 }
@@ -207,6 +216,7 @@ function ChatShellInner({ className }: ChatShellProps) {
   const {
     currentProviderId,
     currentModelId,
+    currentProvider,
     enabledProviders,
     isLoading,
     thinkingEnabled,
@@ -259,7 +269,11 @@ function ChatShellInner({ className }: ChatShellProps) {
         {/* Do not auto-submit navigation prompts until the provider/model query
             has resolved. Sending while chatConfig is undefined produces the
             one-time "cannot connect" error seen when opening from spending. */}
-        {chatConfig ? <InitialPromptSender /> : null}
+        {chatConfig ? (
+          <InitialPromptSender
+            ready={!isLoading && Boolean(currentProvider && currentProviderId && currentModelId)}
+          />
+        ) : null}
 
         <div className={cn("bg-background flex h-full min-h-0 w-full", className)}>
           {/* Desktop Sidebar */}

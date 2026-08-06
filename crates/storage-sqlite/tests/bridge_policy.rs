@@ -538,6 +538,7 @@ async fn existing_activity_payload_account_mismatch_is_rejected_without_mutation
         activity_type_override: None,
         needs_review: Some(true),
         merchant_context: None,
+        ..Default::default()
     };
     let error = store
         .commit(
@@ -595,6 +596,7 @@ async fn repeated_provider_upsert_preserves_user_owned_overlays() {
                 activity_type_override: Some("PROVIDER_OVERRIDE".into()),
                 needs_review: Some(false),
                 merchant_context: None,
+                ..Default::default()
             }),
         )
         .await
@@ -644,6 +646,7 @@ async fn provider_can_seed_description_but_not_user_owned_classification_overlay
                 activity_type_override: Some("PROVIDER_OVERRIDE".into()),
                 needs_review: Some(true),
                 merchant_context: None,
+                ..Default::default()
             }),
         )
         .await
@@ -655,10 +658,78 @@ async fn provider_can_seed_description_but_not_user_owned_classification_overlay
     ).unwrap();
     assert_eq!(overlays.0, Some("provider note".into()));
     assert_eq!(overlays.1, None);
-    assert_eq!(overlays.2, 0);
+    assert_eq!(overlays.2, 1);
     chrono::DateTime::parse_from_rfc3339(&overlays.3).unwrap();
     chrono::DateTime::parse_from_rfc3339(&overlays.4).unwrap();
     assert_eq!(overlays.5, 1);
+}
+
+#[tokio::test]
+async fn provider_extended_fields_round_trip_without_touching_user_overlays() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let generation = store.grant("alice", "a1").await.unwrap();
+    store
+        .commit(
+            DisclosureOperation::new(
+                "provider-extended",
+                "alice",
+                generation,
+                DisclosureKind::ActivityUpsert,
+                "provider-extended-row",
+            )
+            .with_activity(ActivityPayload {
+                account_id: "a1".into(),
+                activity_type: "WITHDRAWAL".into(),
+                status: "POSTED".into(),
+                activity_date: "2026-08-05T16:07:00Z".into(),
+                settlement_date: Some("2026-08-06".into()),
+                amount: "193.91".into(),
+                currency: "ZAR".into(),
+                fee: Some("1.25".into()),
+                tax: Some("0.10".into()),
+                fx_rate: Some("18.25".into()),
+                source_type: Some("CardPurchases".into()),
+                subtype: Some("CARD_PURCHASE".into()),
+                source_record_id: Some("settled-1".into()),
+                source_group_id: None,
+                notes: Some("provider note".into()),
+                activity_type_override: None,
+                needs_review: Some(true),
+                metadata: Some(
+                    serde_json::json!({"providerOwned":{"evidence":{"reference":"ref-1"}}}),
+                ),
+                original_amount: Some("11.50".into()),
+                original_currency: Some("USD".into()),
+                settlement_amount: Some("193.91".into()),
+                settlement_currency: Some("ZAR".into()),
+                merchant_context: None,
+            }),
+        )
+        .await
+        .unwrap();
+    let c = Connection::open(&path).unwrap();
+    let row: (String, String, String, String, String, String, String, String, String, i64) = c
+        .query_row(
+            "SELECT settlement_date,source_type,subtype,fee,tax,fx_rate,currency,source_record_id,metadata,needs_review FROM activities WHERE id='provider-extended-row'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?, row.get(9)?)),
+        )
+        .unwrap();
+    assert_eq!(row.0, "2026-08-06");
+    assert_eq!(row.1, "CardPurchases");
+    assert_eq!(row.2, "CARD_PURCHASE");
+    assert_eq!(row.3, "1.25");
+    assert_eq!(row.4, "0.10");
+    assert_eq!(row.5, "18.25");
+    assert_eq!(row.6, "ZAR");
+    assert_eq!(row.7, "settled-1");
+    let metadata: serde_json::Value = serde_json::from_str(&row.8).unwrap();
+    assert_eq!(metadata["user"], serde_json::Value::Null);
+    assert_eq!(metadata["providerOwned"]["evidence"]["reference"], "ref-1");
+    assert_eq!(metadata["providerOwned"]["original"]["currency"], "USD");
+    assert_eq!(metadata["providerOwned"]["settlement"]["currency"], "ZAR");
+    assert_eq!(row.9, 1);
 }
 
 #[tokio::test]
@@ -697,6 +768,7 @@ async fn merchant_context_is_provider_owned_preserves_user_state_and_binds_retri
             merchant_key_version: 1,
             normalization_version: 1,
         }),
+        ..Default::default()
     });
     let first = store.commit(op.clone()).await.unwrap();
     assert_eq!(store.commit(op.clone()).await.unwrap(), first);
@@ -710,7 +782,7 @@ async fn merchant_context_is_provider_owned_preserves_user_state_and_binds_retri
         .unwrap();
     let metadata: serde_json::Value = serde_json::from_str(&metadata).unwrap();
     assert_eq!(metadata["user"]["memo"], "keep");
-    assert_eq!(metadata["providerOwned"]["other"], true);
+    assert_eq!(metadata["providerOwned"]["other"], serde_json::Value::Null);
     assert_eq!(
         metadata["providerOwned"]["merchantContext"],
         serde_json::json!({
@@ -1056,6 +1128,7 @@ async fn lifecycle_replay_rejects_different_successor_and_account() {
         activity_type_override: None,
         needs_review: None,
         merchant_context: None,
+        ..Default::default()
     });
     store.commit(first.clone()).await.unwrap();
     assert!(matches!(
@@ -1075,6 +1148,7 @@ async fn lifecycle_replay_rejects_different_successor_and_account() {
         activity_type_override: None,
         needs_review: None,
         merchant_context: None,
+        ..Default::default()
     });
     assert!(matches!(
         store.commit(changed_payload).await,
@@ -1091,6 +1165,7 @@ async fn lifecycle_replay_rejects_different_successor_and_account() {
         activity_type_override: None,
         needs_review: None,
         merchant_context: None,
+        ..Default::default()
     });
     assert!(matches!(
         store.commit(wrong_account).await,
@@ -1292,6 +1367,7 @@ async fn replay_rejects_changed_provider_payload() {
         activity_type_override: None,
         needs_review: None,
         merchant_context: None,
+        ..Default::default()
     });
     store.commit(operation.clone()).await.unwrap();
     let mut changed = operation;
@@ -1307,6 +1383,10 @@ async fn provider_identity_supersession_preserves_user_overlay_and_projection() 
     let (_dir, path, store) = store(D1).await;
     seed(&path, &[D1], &["alice"]);
     let connection = Connection::open(&path).unwrap();
+    connection.execute(
+        "INSERT INTO provenance_records(entity_type,entity_id,role,source_system,source_record_id,actor_id) VALUES('activity','x1','live_canonical','finance','x1','alice')",
+        [],
+    ).unwrap();
     connection
         .execute(
             "UPDATE activities SET notes='user note',activity_type_override='TRANSFER_IN',source_group_id='group-1',is_user_modified=1 WHERE id='x1'",
@@ -1339,6 +1419,7 @@ async fn provider_identity_supersession_preserves_user_overlay_and_projection() 
         activity_type_override: None,
         needs_review: None,
         merchant_context: None,
+        ..Default::default()
     })
     .with_superseded_resources(["x1".to_string()]);
     store.commit(operation.clone()).await.unwrap();
@@ -1372,6 +1453,10 @@ async fn provider_identity_supersession_preserves_effective_activity_type() {
     let (_dir, path, store) = store(D1).await;
     seed(&path, &[D1], &["alice"]);
     let connection = Connection::open(&path).unwrap();
+    connection.execute(
+        "INSERT INTO provenance_records(entity_type,entity_id,role,source_system,source_record_id,actor_id) VALUES('activity','x1','live_canonical','finance','x1','alice')",
+        [],
+    ).unwrap();
     connection
         .execute(
             "UPDATE activities SET activity_type='TRANSFER_IN',activity_type_override=NULL,source_group_id='group-1',is_user_modified=1 WHERE id='x1'",
@@ -1397,6 +1482,7 @@ async fn provider_identity_supersession_preserves_effective_activity_type() {
         activity_type_override: None,
         needs_review: None,
         merchant_context: None,
+        ..Default::default()
     })
     .with_superseded_resources(["x1".to_string()]);
     store.commit(operation).await.unwrap();
@@ -1453,6 +1539,7 @@ async fn provider_identity_supersession_moves_overlay_children_atomically() {
         activity_type_override: None,
         needs_review: None,
         merchant_context: None,
+        ..Default::default()
     })
     .with_superseded_resources(["old-provider".to_string()]);
     store.commit(operation).await.unwrap();

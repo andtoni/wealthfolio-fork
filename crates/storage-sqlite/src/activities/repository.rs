@@ -328,6 +328,16 @@ fn effective_activity_type(activity: &ActivityDB) -> &str {
         .unwrap_or(activity.activity_type.as_str())
 }
 
+fn is_investec_pocket_transfer_db(activity: &ActivityDB) -> bool {
+    [activity.source_type.as_deref(), activity.subtype.as_deref()]
+        .into_iter()
+        .flatten()
+        .any(|value| {
+            let normalized = value.to_ascii_uppercase();
+            normalized == "MCPBAPOCKETTRANSFERS" || normalized == "POCKET_TRANSFER"
+        })
+}
+
 fn source_group_blocks_transfer_link(
     conn: &mut SqliteConnection,
     source_group_id: Option<&str>,
@@ -341,11 +351,17 @@ fn source_group_blocks_transfer_link(
 
     let group_activities = activities::table
         .filter(activities::source_group_id.eq(group_id))
+        .filter(activities::status.ne("VOID"))
         .select(ActivityDB::as_select())
         .load::<ActivityDB>(conn)
         .map_err(StorageError::from)?;
-    if group_activities.len() != 2 {
+    // A one-row group is an orphan that may be repaired by a user linking the
+    // activity. More than two rows is ambiguous and must fail closed.
+    if group_activities.len() < 2 {
         return Ok(false);
+    }
+    if group_activities.len() > 2 {
+        return Ok(true);
     }
 
     let transfer_in = group_activities
@@ -356,13 +372,14 @@ fn source_group_blocks_transfer_link(
         .find(|activity| effective_activity_type(activity) == ACTIVITY_TYPE_TRANSFER_OUT);
 
     let (Some(transfer_in), Some(transfer_out)) = (transfer_in, transfer_out) else {
-        return Ok(false);
+        return Ok(true);
     };
     if transfer_in.account_id == transfer_out.account_id {
-        return Ok(is_same_account_cash_fx_conversion_db(
-            transfer_in,
-            transfer_out,
-        ));
+        return Ok(
+            is_same_account_cash_fx_conversion_db(transfer_in, transfer_out)
+                || (is_investec_pocket_transfer_db(transfer_in)
+                    && is_investec_pocket_transfer_db(transfer_out)),
+        );
     }
 
     Ok(validate_link_transfer_asset_shape(transfer_in, transfer_out).is_ok())
@@ -659,14 +676,15 @@ impl ActivityRepositoryTrait for ActivityRepository {
         exclude_id: &str,
     ) -> Result<Option<Activity>> {
         let mut conn = get_connection(&self.pool)?;
-        let result = activities::table
+        let results = activities::table
             .select(ActivityDB::as_select())
             .filter(activities::source_group_id.eq(group_id))
             .filter(activities::id.ne(exclude_id))
-            .first::<ActivityDB>(&mut conn)
-            .optional()
+            .filter(activities::status.ne("VOID"))
+            .load::<ActivityDB>(&mut conn)
             .map_err(StorageError::from)?;
-        Ok(result.map(Activity::from))
+        Ok((results.len() == 1)
+            .then(|| Activity::from(results.into_iter().next().expect("one counterpart"))))
     }
 
     fn get_trading_activities(&self) -> Result<Vec<Activity>> {
@@ -1006,8 +1024,17 @@ impl ActivityRepositoryTrait for ActivityRepository {
                         "One or both activities are already linked to another transfer".to_string(),
                     )));
                 }
+                if transfer_in.status.eq_ignore_ascii_case("VOID")
+                    || transfer_out.status.eq_ignore_ascii_case("VOID")
+                {
+                    return Err(Error::from(ActivityError::InvalidData(
+                        "VOID activities cannot be linked into a transfer".to_string(),
+                    )));
+                }
                 if transfer_in.account_id == transfer_out.account_id
                     && !is_same_account_cash_fx_conversion_db(&transfer_in, &transfer_out)
+                    && !(is_investec_pocket_transfer_db(&transfer_in)
+                        && is_investec_pocket_transfer_db(&transfer_out))
                 {
                     return Err(Error::from(ActivityError::InvalidData(
                         "Same-account transfer links must be cash FX conversions with different currencies"
