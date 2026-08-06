@@ -734,6 +734,8 @@ fn upsert_activity_row(
 #[derive(QueryableByName)]
 struct ActivitySupersessionRow {
     #[diesel(sql_type = Text)]
+    activity_type: String,
+    #[diesel(sql_type = Text)]
     account_id: String,
     #[diesel(sql_type = Nullable<Text>)]
     notes: Option<String>,
@@ -755,7 +757,7 @@ fn activity_supersession_row(
     c: &mut SqliteConnection,
     id: &str,
 ) -> std::result::Result<Option<ActivitySupersessionRow>, diesel::result::Error> {
-    sql_query("SELECT account_id,notes,activity_type_override,subtype,metadata,source_group_id,is_user_modified,needs_review FROM activities WHERE id=?")
+    sql_query("SELECT activity_type,account_id,notes,activity_type_override,subtype,metadata,source_group_id,is_user_modified,needs_review FROM activities WHERE id=?")
         .bind::<Text, _>(id)
         .get_result::<ActivitySupersessionRow>(c)
         .optional()
@@ -881,7 +883,18 @@ fn supersede_activity_identity(
     if loser_row.account_id != account_id || canonical_row.account_id != account_id {
         return Err(diesel::result::Error::RollbackTransaction);
     }
+    let loser_effective_activity_type = loser_row
+        .activity_type_override
+        .clone()
+        .unwrap_or_else(|| loser_row.activity_type.clone());
+    let canonical_effective_activity_type = canonical_row
+        .activity_type_override
+        .clone()
+        .unwrap_or_else(|| canonical_row.activity_type.clone());
     if loser_row.is_user_modified == 1 && canonical_row.is_user_modified == 1 {
+        if loser_effective_activity_type != canonical_effective_activity_type {
+            return Err(diesel::result::Error::RollbackTransaction);
+        }
         for (left, right) in [
             (&loser_row.notes, &canonical_row.notes),
             (
@@ -909,10 +922,18 @@ fn supersede_activity_identity(
     } else {
         canonical_row.notes.clone()
     };
-    let activity_type_override = canonical_row
-        .activity_type_override
-        .clone()
-        .or(loser_row.activity_type_override.clone());
+    let activity_type_override =
+        if canonical_row.is_user_modified == 0 && loser_row.is_user_modified == 1 {
+            // A native transfer link may store its effective direction in
+            // activity_type with no override. Preserve that user-owned semantic
+            // when replacing the provider resource with a new base row.
+            Some(loser_effective_activity_type)
+        } else {
+            canonical_row
+                .activity_type_override
+                .clone()
+                .or(loser_row.activity_type_override.clone())
+        };
     let subtype = canonical_row.subtype.clone().or(loser_row.subtype.clone());
     let metadata = merge_activity_metadata(
         canonical_row.metadata.as_deref(),

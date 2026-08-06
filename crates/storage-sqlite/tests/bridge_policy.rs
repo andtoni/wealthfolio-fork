@@ -1367,6 +1367,58 @@ async fn provider_identity_supersession_preserves_user_overlay_and_projection() 
 }
 
 #[tokio::test]
+async fn provider_identity_supersession_preserves_effective_activity_type() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let connection = Connection::open(&path).unwrap();
+    connection
+        .execute(
+            "UPDATE activities SET activity_type='TRANSFER_IN',activity_type_override=NULL,source_group_id='group-1',is_user_modified=1 WHERE id='x1'",
+            [],
+        )
+        .unwrap();
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let operation = DisclosureOperation::new(
+        "prime-saver-type-preservation",
+        "alice",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "stable-prime-type-resource",
+    )
+    .with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "DEPOSIT".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-07-18".into(),
+        amount: "10.00".into(),
+        currency: "USD".into(),
+        notes: Some("provider note".into()),
+        activity_type_override: None,
+        needs_review: None,
+        merchant_context: None,
+    })
+    .with_superseded_resources(["x1".to_string()]);
+    store.commit(operation).await.unwrap();
+
+    let result: (String, Option<String>, Option<String>, i32) = connection
+        .query_row(
+            "SELECT activity_type,activity_type_override,source_group_id,is_user_modified FROM activities WHERE id='stable-prime-type-resource'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        result,
+        (
+            "DEPOSIT".into(),
+            Some("TRANSFER_IN".into()),
+            Some("group-1".into()),
+            1
+        )
+    );
+}
+
+#[tokio::test]
 async fn provider_identity_supersession_moves_overlay_children_atomically() {
     let (_dir, path, store) = store(D1).await;
     seed(&path, &[D1], &["alice"]);
