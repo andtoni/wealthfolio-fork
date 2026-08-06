@@ -711,7 +711,7 @@ fn upsert_activity_row(
     };
 
     sql_query(
-        "INSERT INTO activities(id,account_id,activity_type,status,activity_date,amount,currency,notes,activity_type_override,metadata,is_user_modified,needs_review,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,NULL,?,0,0,strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,activity_type=excluded.activity_type,status=excluded.status,activity_date=excluded.activity_date,amount=excluded.amount,currency=excluded.currency,notes=CASE WHEN activities.is_user_modified=1 THEN activities.notes ELSE excluded.notes END,metadata=coalesce(excluded.metadata,activities.metadata),updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')"
+        "INSERT INTO activities(id,account_id,activity_type,status,activity_date,amount,currency,notes,activity_type_override,metadata,is_user_modified,needs_review,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,NULL,?,0,0,strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,activity_type=CASE WHEN activities.is_user_modified=1 THEN activities.activity_type ELSE excluded.activity_type END,status=excluded.status,activity_date=excluded.activity_date,amount=excluded.amount,currency=excluded.currency,notes=CASE WHEN activities.is_user_modified=1 THEN activities.notes ELSE excluded.notes END,metadata=coalesce(excluded.metadata,activities.metadata),updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')"
     )
         .bind::<Text,_>(resource_id)
         .bind::<Text,_>(&act.account_id)

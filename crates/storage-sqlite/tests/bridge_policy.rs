@@ -573,7 +573,7 @@ async fn repeated_provider_upsert_preserves_user_owned_overlays() {
     seed(&path, &[D1], &["alice"]);
     let generation = store.grant("alice", "a1").await.unwrap();
     let c = Connection::open(&path).unwrap();
-    c.execute("UPDATE activities SET notes='user note',activity_type_override='FEE',subtype='USER_SUBTYPE',is_user_modified=1,needs_review=1 WHERE id='x1'", []).unwrap();
+    c.execute("UPDATE activities SET activity_type='TRANSFER_IN',notes='user note',activity_type_override='FEE',subtype='USER_SUBTYPE',is_user_modified=1,needs_review=1 WHERE id='x1'", []).unwrap();
 
     store
         .commit(
@@ -600,14 +600,15 @@ async fn repeated_provider_upsert_preserves_user_owned_overlays() {
         .await
         .unwrap();
 
-    let overlays: (Option<String>, Option<String>, Option<String>, i64, i64, String) = c.query_row(
-        "SELECT notes,activity_type_override,subtype,is_user_modified,needs_review,amount FROM activities WHERE id='x1'",
+    let overlays: (String, Option<String>, Option<String>, Option<String>, i64, i64, String) = c.query_row(
+        "SELECT activity_type,notes,activity_type_override,subtype,is_user_modified,needs_review,amount FROM activities WHERE id='x1'",
         [],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?)),
     ).unwrap();
     assert_eq!(
         overlays,
         (
+            "TRANSFER_IN".into(),
             Some("user note".into()),
             Some("FEE".into()),
             Some("USER_SUBTYPE".into()),
