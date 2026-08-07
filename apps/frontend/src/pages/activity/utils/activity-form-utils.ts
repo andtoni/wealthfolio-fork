@@ -1,4 +1,5 @@
 import { ActivityType } from "@/lib/constants";
+import type { ActivityDetails } from "@/lib/types";
 import type { PickerActivityType } from "../config/activity-form-config";
 
 const PURE_CASH_ACTIVITY_TYPES: readonly string[] = [
@@ -29,4 +30,21 @@ export function mapActivityTypeToPicker(
  */
 export function isPureCashActivity(activityType: string): boolean {
   return PURE_CASH_ACTIVITY_TYPES.includes(activityType);
+}
+
+/**
+ * A standalone activity can change type while editing. Paired transfers must
+ * stay in the paired-transfer editor so one leg cannot silently diverge from
+ * its counterpart.
+ */
+export function canChangeActivityType(
+  activity: Partial<ActivityDetails> | undefined,
+  hidePicker = false,
+): boolean {
+  const activityType = activity?.activityTypeOverride ?? activity?.activityType;
+  const isTransfer =
+    activityType === ActivityType.TRANSFER_IN || activityType === ActivityType.TRANSFER_OUT;
+  return Boolean(
+    activity?.id && isTransfer && !hidePicker && !activity.transferOutId && !activity.transferInId,
+  );
 }

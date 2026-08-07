@@ -13,13 +13,13 @@ import {
 import type { ActivityDetails } from "@/lib/types";
 import { restrictionAllowsType } from "@/lib/activity-restrictions";
 import { isLiabilityAccountType } from "@/lib/constants";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivityTypePicker } from "./activity-type-picker";
 import { ActivityFormRenderer } from "./activity-form-renderer";
 import type { AccountSelectOption } from "./forms/fields";
 import { useActivityForm } from "../hooks/use-activity-form";
-import { mapActivityTypeToPicker } from "../utils/activity-form-utils";
+import { canChangeActivityType, mapActivityTypeToPicker } from "../utils/activity-form-utils";
 import type { PickerActivityType } from "../config/activity-form-config";
 
 // Re-export for consumers
@@ -58,13 +58,23 @@ export function ActivityForm({
   const { t } = useTranslation();
   // Derive the editing state and initial type from activity prop
   const isEditing = !!activity?.id;
-  const initialType = mapActivityTypeToPicker(activity?.activityType);
+  const initialType = mapActivityTypeToPicker(
+    activity?.activityTypeOverride ?? activity?.activityType,
+  );
 
-  // Local state for selected type (only used when creating new activity)
+  const allowTypeChange = canChangeActivityType(activity, hidePicker);
   const [selectedType, setSelectedType] = useState<PickerActivityType | undefined>(initialType);
 
-  // For editing, always use the activity's type; for new, use local state
-  const effectiveSelectedType = isEditing ? initialType : selectedType;
+  // Reset the picker when the selected row changes. This matters when the
+  // sheet stays mounted while the user edits several standalone activities.
+  useEffect(() => {
+    setSelectedType(initialType);
+  }, [activity?.id, initialType]);
+
+  // Paired transfers remain locked to the paired editor. Standalone transfer
+  // overrides may be changed back to their underlying cash activity type.
+  const effectiveSelectedType =
+    isEditing && !allowTypeChange ? initialType : (selectedType ?? initialType);
 
   // Filter accounts by selected activity type (exclude HOLDINGS accounts for unsupported types).
   // Transfers use the full account list so spending/saving accounts are valid counterparties.
@@ -122,13 +132,13 @@ export function ActivityForm({
         </SheetHeader>
 
         <div className="flex-1 space-y-6 overflow-y-auto py-4">
-          {/* Activity Type Picker - only show when creating new activity and not locked to a type */}
-          {!isEditing && !hidePicker && (
+          {/* Standalone activities may change type; paired transfers stay locked. */}
+          {(!isEditing || allowTypeChange) && !hidePicker && (
             <ActivityTypePicker value={effectiveSelectedType} onSelect={setSelectedType} />
           )}
 
-          {/* When editing, show the activity type as a badge */}
-          {isEditing && effectiveSelectedType && (
+          {/* Paired transfers and explicitly locked forms show a read-only type. */}
+          {isEditing && !allowTypeChange && effectiveSelectedType && (
             <div className="flex items-center gap-2 text-sm">
               <span className="text-muted-foreground">{t("activity:activity_type")}:</span>
               <span className="bg-primary/10 text-primary rounded-md px-2 py-1 font-medium">

@@ -77,6 +77,23 @@ export function getTransferLinkStatus(activity: CashActivity): TransferLinkStatu
   return activity.transferLinkStatus ?? (activity.sourceGroupId ? "linked" : "unlinked");
 }
 
+export function isLinkedTransferCashActivity(activity: CashActivity): boolean {
+  return getTransferLinkStatus(activity) === "linked";
+}
+
+/**
+ * Adapt a raw provider activity for the standalone cash editor. The editor
+ * must start from the effective/user-visible type, while the persisted
+ * canonical type and override remain untouched until the update is submitted.
+ */
+export function toEditableCashActivity(activity: CashActivity): CashActivity {
+  return {
+    ...activity,
+    activityType: getEffectiveCashActivityType(activity),
+    activityTypeOverride: undefined,
+  };
+}
+
 export function getTransactionDisplay(
   activity: CashActivity,
   accountType: string | undefined,

@@ -8,18 +8,25 @@ interface MobileActivityStepsProps {
   currentStep: number;
   accounts: AccountSelectOption[];
   isEditing: boolean;
+  allowTypeChange?: boolean;
 }
 
 export function MobileActivitySteps({
   currentStep,
   accounts,
   isEditing,
+  allowTypeChange = false,
 }: MobileActivityStepsProps) {
   const { watch } = useFormContext<NewActivityFormValues>();
   const activityType = watch("activityType");
 
   if (isEditing) {
-    return <MobileDetailsStep activityType={activityType} accounts={accounts} isEditing />;
+    return (
+      <div className="space-y-6">
+        {allowTypeChange && <MobileActivityTypeStep />}
+        <MobileDetailsStep activityType={activityType} accounts={accounts} isEditing />
+      </div>
+    );
   }
 
   return (

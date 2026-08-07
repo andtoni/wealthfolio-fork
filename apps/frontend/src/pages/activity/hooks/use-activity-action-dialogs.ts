@@ -1,13 +1,13 @@
 import { getTransferPairForActivity } from "@/adapters";
 import { ActivityType } from "@/lib/constants";
-import type { ActivityDetails } from "@/lib/types";
+import { getEffectiveType, type ActivityDetails } from "@/lib/types";
 import { useCallback, useState } from "react";
 import { useActivityMutations } from "./use-activity-mutations";
 
 function isInternalTransfer(activity: ActivityDetails): boolean {
+  const activityType = getEffectiveType(activity);
   return (
-    (activity.activityType === ActivityType.TRANSFER_IN ||
-      activity.activityType === ActivityType.TRANSFER_OUT) &&
+    (activityType === ActivityType.TRANSFER_IN || activityType === ActivityType.TRANSFER_OUT) &&
     !!activity.sourceGroupId &&
     ((activity.metadata?.flow as { is_external?: boolean } | undefined)?.is_external ?? false) !==
       true
@@ -27,7 +27,9 @@ export function useActivityActionDialogs() {
       try {
         const pair = await getTransferPairForActivity(activity.id);
         const counterpart =
-          activity.activityType === ActivityType.TRANSFER_IN ? pair.transferOut : pair.transferIn;
+          getEffectiveType(activity) === ActivityType.TRANSFER_IN
+            ? pair.transferOut
+            : pair.transferIn;
 
         setSelectedActivity({
           ...activity,

@@ -8,6 +8,7 @@ import {
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 
 import type { Activity, ActivityDetails } from "@/lib/types";
+import { getEffectiveType } from "@/lib/types";
 import { ActivityType } from "@/lib/constants";
 import { Row } from "@tanstack/react-table";
 import { useState } from "react";
@@ -36,9 +37,10 @@ export function ActivityOperations<TData>({
   const { t } = useTranslation();
   const activity = activityProp ?? (row?.original as ActivityDetails);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
+  const effectiveActivityType = getEffectiveType(activity);
   const isTransfer =
-    activity.activityType === ActivityType.TRANSFER_IN ||
-    activity.activityType === ActivityType.TRANSFER_OUT;
+    effectiveActivityType === ActivityType.TRANSFER_IN ||
+    effectiveActivityType === ActivityType.TRANSFER_OUT;
   const isNew = (activity as ActivityDetails & { isNew?: boolean }).isNew === true;
   const canShowTransferActions = isTransfer && !isNew && (onLinkTransfer || onUnlinkTransfer);
 

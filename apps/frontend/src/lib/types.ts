@@ -126,7 +126,7 @@ export interface Activity {
 
   // Classification
   activityType: string; // Canonical type (closed set of 15)
-  activityTypeOverride?: string; // User override (never touched by sync)
+  activityTypeOverride?: string | null; // User override (never touched by sync)
   sourceType?: string; // Raw provider label (REI, DIV, etc.)
   subtype?: string; // Semantic variation (DRIP, STAKING_REWARD, etc.)
   status: ActivityStatus;
@@ -176,7 +176,10 @@ export interface Activity {
 /**
  * Helper to get effective type (respects user override)
  */
-export function getEffectiveType(activity: Activity): string {
+export function getEffectiveType(activity: {
+  activityType: string;
+  activityTypeOverride?: string | null;
+}): string {
   return activity.activityTypeOverride ?? activity.activityType;
 }
 
@@ -202,7 +205,10 @@ export function getActivityDisplayName(activity: Activity): string {
 
 export interface ActivityDetails {
   id: string;
+  /** Effective type returned by activity search (canonical type plus any user override). */
   activityType: ActivityType;
+  /** Optional raw user override when the caller has the provider activity shape. */
+  activityTypeOverride?: string | null;
   subtype?: string | null;
   status?: ActivityStatus;
   date: Date;

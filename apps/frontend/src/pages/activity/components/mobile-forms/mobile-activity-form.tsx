@@ -36,6 +36,7 @@ import { showValidationToast, type AccountSelectOption } from "../forms/fields";
 import { newActivitySchema, type NewActivityFormValues } from "../forms/schemas";
 import { MobileActivitySteps } from "./mobile-activity-steps";
 import { getMobileActivityAssetId } from "./mobile-activity-utils";
+import { canChangeActivityType } from "../../utils/activity-form-utils";
 
 interface MobileActivityFormProps {
   accounts: AccountSelectOption[];
@@ -296,6 +297,8 @@ export function MobileActivityForm({
   const { t } = useTranslation();
   const shouldStartOnDetails = Boolean(activity?.id || startOnDetails);
   const initialStep = shouldStartOnDetails ? 2 : 1;
+  const effectiveActivityType = activity?.activityTypeOverride ?? activity?.activityType;
+  const allowTypeChange = canChangeActivityType(activity);
   const [currentStep, setCurrentStep] = useState(initialStep);
   const {
     addActivityMutation,
@@ -307,15 +310,15 @@ export function MobileActivityForm({
   const defaultValues = useMemo<Partial<NewActivityFormValues>>(() => {
     // Derive transfer mode from existing activity data
     const isTransferType =
-      activity?.activityType === ActivityType.TRANSFER_IN ||
-      activity?.activityType === ActivityType.TRANSFER_OUT;
+      effectiveActivityType === ActivityType.TRANSFER_IN ||
+      effectiveActivityType === ActivityType.TRANSFER_OUT;
     const isSecurityTransferActivity =
       isTransferType &&
-      isSecuritiesTransfer(activity?.activityType ?? "", activity?.assetSymbol, activity?.assetId);
+      isSecuritiesTransfer(effectiveActivityType ?? "", activity?.assetSymbol, activity?.assetId);
     const initialTransferMode = isSecurityTransferActivity ? "securities" : "cash";
     const flowMetadata = activity?.metadata?.flow as { is_external?: boolean } | undefined;
     const initialIsExternal = isTransferType ? flowMetadata?.is_external === true : false;
-    const editingTransferIn = activity?.activityType === ActivityType.TRANSFER_IN;
+    const editingTransferIn = effectiveActivityType === ActivityType.TRANSFER_IN;
     const sourceAmount = editingTransferIn
       ? activity?.counterpartAmount
         ? Number(activity.counterpartAmount)
@@ -346,8 +349,8 @@ export function MobileActivityForm({
         isTransferType && !initialIsExternal && editingTransferIn
           ? (activity?.counterpartAccountId ?? "")
           : (activity?.accountId ?? ""),
-      activityType: isValidMobileActivityType(activity?.activityType)
-        ? activity.activityType
+      activityType: isValidMobileActivityType(effectiveActivityType)
+        ? effectiveActivityType
         : undefined,
       amount: activity?.amount ? Number(activity.amount) : undefined,
       sourceAmount,
@@ -388,7 +391,7 @@ export function MobileActivityForm({
       ...(isTransferType && {
         transferMode: initialTransferMode,
         isExternal: initialIsExternal,
-        direction: activity?.activityType === ActivityType.TRANSFER_IN ? "in" : "out",
+        direction: effectiveActivityType === ActivityType.TRANSFER_IN ? "in" : "out",
         toAccountId: !initialIsExternal
           ? editingTransferIn
             ? (activity?.accountId ?? "")
@@ -413,7 +416,7 @@ export function MobileActivityForm({
         symbolQuoteCcy: activity?.currency ?? undefined,
       }),
     };
-  }, [activity]);
+  }, [activity, effectiveActivityType]);
 
   const form = useForm<NewActivityFormValues>({
     resolver: zodResolver(newActivitySchema) as Resolver<NewActivityFormValues>,
@@ -570,13 +573,13 @@ export function MobileActivityForm({
 
           const transferOutId =
             activity?.transferOutId ??
-            (activity?.activityType === ActivityType.TRANSFER_OUT
-              ? activity.id
+            (effectiveActivityType === ActivityType.TRANSFER_OUT
+              ? activity?.id
               : activity?.counterpartActivityId);
           const transferInId =
             activity?.transferInId ??
-            (activity?.activityType === ActivityType.TRANSFER_IN
-              ? activity.id
+            (effectiveActivityType === ActivityType.TRANSFER_IN
+              ? activity?.id
               : activity?.counterpartActivityId);
 
           if (id && (!transferOutId || !transferInId)) {
@@ -645,13 +648,13 @@ export function MobileActivityForm({
         if (id) {
           const transferOutId =
             activity?.transferOutId ??
-            (activity?.activityType === ActivityType.TRANSFER_OUT
-              ? activity.id
+            (effectiveActivityType === ActivityType.TRANSFER_OUT
+              ? activity?.id
               : activity?.counterpartActivityId);
           const transferInId =
             activity?.transferInId ??
-            (activity?.activityType === ActivityType.TRANSFER_IN
-              ? activity.id
+            (effectiveActivityType === ActivityType.TRANSFER_IN
+              ? activity?.id
               : activity?.counterpartActivityId);
 
           if (!transferOutId || !transferInId) {
@@ -743,7 +746,7 @@ export function MobileActivityForm({
 
       if (id) {
         const wasAssetBackedIncome = isAssetBackedIncomeSubtype(
-          activity?.activityType ?? "",
+          effectiveActivityType ?? "",
           activity?.subtype,
         );
         const currentAssetId =
@@ -883,6 +886,7 @@ export function MobileActivityForm({
                   currentStep={currentStep}
                   accounts={effectiveAccounts}
                   isEditing={!!activity?.id}
+                  allowTypeChange={allowTypeChange}
                 />
               </form>
             </Form>

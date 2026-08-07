@@ -13,7 +13,12 @@ import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { DateRange } from "react-day-picker";
 
-import { createActivity, deleteActivity, updateActivity } from "@/adapters";
+import {
+  createActivity,
+  deleteActivity,
+  getTransferPairForActivity,
+  updateActivity,
+} from "@/adapters";
 import { generateId } from "@/lib/id";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useIsMobileViewport } from "@/hooks/use-platform";
@@ -59,8 +64,10 @@ import {
   isSpendingAccountType,
 } from "../lib/constants";
 import {
+  isLinkedTransferCashActivity,
   isTransferCashActivity,
   stableArr,
+  toEditableCashActivity,
   toRowVM,
   type TransactionRowVM,
 } from "../lib/transactions-helpers";
@@ -176,6 +183,7 @@ function toActivityDetails(row: TransactionRowVM, account?: Account): Partial<Ac
     assetSymbol: activity.assetId ?? "",
     sourceSystem: activity.sourceSystem,
     sourceRecordId: activity.sourceRecordId,
+    activityTypeOverride: activity.activityTypeOverride,
     sourceGroupId: activity.sourceGroupId,
     idempotencyKey: activity.idempotencyKey,
     importRunId: activity.importRunId,
@@ -587,6 +595,7 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
           activity: {
             ...row.activity,
             activityType: "CREDIT",
+            activityTypeOverride: "CREDIT",
             subtype: "REIMBURSEMENT",
             cashFlowBucket: "spending",
           },
@@ -694,20 +703,45 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
     );
 
     const handleEditRow = useCallback(
-      (row: TransactionRowVM) => {
-        if (isTransferCashActivity(row.activity)) {
-          setEditingActivity(undefined);
-          setShowForm(false);
-          setTransferFormActivity(toActivityDetails(row, accountById.get(row.activity.accountId)));
-          setShowTransferForm(true);
+      async (row: TransactionRowVM) => {
+        if (isLinkedTransferCashActivity(row.activity)) {
+          try {
+            const pair = await getTransferPairForActivity(row.activity.id);
+            const activity = toActivityDetails(row, accountById.get(row.activity.accountId));
+            const isTransferIn =
+              getEffectiveCashActivityType(row.activity) === ActivityType.TRANSFER_IN;
+            const counterpart = isTransferIn ? pair.transferOut : pair.transferIn;
+            setEditingActivity(undefined);
+            setShowForm(false);
+            setTransferFormActivity({
+              ...activity,
+              transferOutId: pair.transferOut.id,
+              transferInId: pair.transferIn.id,
+              counterpartActivityId: counterpart.id,
+              counterpartAccountId: counterpart.accountId,
+              counterpartAmount: counterpart.amount ?? null,
+              counterpartCurrency: counterpart.currency,
+              counterpartFxRate: pair.transferIn.fxRate ?? null,
+            });
+            setShowTransferForm(true);
+          } catch (error) {
+            toast.error(
+              error instanceof Error ? error.message : t("activity:transfer_match.error_load_pair"),
+            );
+          }
           return;
         }
         setTransferFormActivity(undefined);
         setShowTransferForm(false);
-        setEditingActivity(row);
+        setEditingActivity({
+          ...row,
+          activity: isTransferCashActivity(row.activity)
+            ? toEditableCashActivity(row.activity)
+            : row.activity,
+        });
         setShowForm(true);
       },
-      [accountById],
+      [accountById, t],
     );
     const handleDeleteRow = useCallback((row: TransactionRowVM) => {
       const activityType = getEffectiveCashActivityType(row.activity);

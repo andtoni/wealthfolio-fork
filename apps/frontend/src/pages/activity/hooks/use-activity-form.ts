@@ -34,17 +34,14 @@ function transferPairIds(activity: Partial<ActivityDetails> | undefined): {
   transferOutId?: string;
   transferInId?: string;
 } {
+  const activityType = activity?.activityTypeOverride ?? activity?.activityType;
   return {
     transferOutId:
       activity?.transferOutId ??
-      (activity?.activityType === ActivityType.TRANSFER_OUT
-        ? activity.id
-        : activity?.counterpartActivityId),
+      (activityType === ActivityType.TRANSFER_OUT ? activity?.id : activity?.counterpartActivityId),
     transferInId:
       activity?.transferInId ??
-      (activity?.activityType === ActivityType.TRANSFER_IN
-        ? activity.id
-        : activity?.counterpartActivityId),
+      (activityType === ActivityType.TRANSFER_IN ? activity?.id : activity?.counterpartActivityId),
   };
 }
 

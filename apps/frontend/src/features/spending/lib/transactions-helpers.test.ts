@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { CashActivity } from "../types/cash-activity";
-import { getTransferLinkStatus, isTransferCashActivity, toRowVM } from "./transactions-helpers";
+import {
+  getTransferLinkStatus,
+  isLinkedTransferCashActivity,
+  isTransferCashActivity,
+  toEditableCashActivity,
+  toRowVM,
+} from "./transactions-helpers";
 
 function cashActivity(overrides: Partial<CashActivity>): CashActivity {
   return {
@@ -32,6 +38,43 @@ describe("spending transaction helpers", () => {
 
     expect(isTransferCashActivity(activity)).toBe(true);
     expect(getTransferLinkStatus(activity)).toBe("unlinked");
+  });
+
+  it("uses the effective type in the standalone cash editor without mutating the row", () => {
+    const activity = cashActivity({
+      activityType: "DEPOSIT",
+      activityTypeOverride: "TRANSFER_IN",
+      transferLinkStatus: "unlinked",
+    });
+
+    const editable = toEditableCashActivity(activity);
+
+    expect(editable.activityType).toBe("TRANSFER_IN");
+    expect(editable.activityTypeOverride).toBeUndefined();
+    expect(activity.activityType).toBe("DEPOSIT");
+    expect(activity.activityTypeOverride).toBe("TRANSFER_IN");
+  });
+
+  it("distinguishes linked transfers from standalone or invalid groups", () => {
+    expect(
+      isLinkedTransferCashActivity(
+        cashActivity({ activityTypeOverride: "TRANSFER_IN", transferLinkStatus: "linked" }),
+      ),
+    ).toBe(true);
+    expect(
+      isLinkedTransferCashActivity(
+        cashActivity({ activityTypeOverride: "TRANSFER_IN", transferLinkStatus: "unlinked" }),
+      ),
+    ).toBe(false);
+    expect(
+      isLinkedTransferCashActivity(
+        cashActivity({
+          activityTypeOverride: "TRANSFER_IN",
+          sourceGroupId: "orphan-group",
+          transferLinkStatus: "invalid",
+        }),
+      ),
+    ).toBe(false);
   });
 
   it("does not expose transfer link status for non-transfer effective types", () => {

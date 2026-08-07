@@ -8,7 +8,13 @@ import {
   searchActivities,
 } from "@/adapters";
 import { ActivityStatus, ActivityType, ActivityTypeNames } from "@/lib/constants";
-import type { Account, Activity, ActivityDetails, TransferMatchCandidate } from "@/lib/types";
+import {
+  getEffectiveType,
+  type Account,
+  type Activity,
+  type ActivityDetails,
+  type TransferMatchCandidate,
+} from "@/lib/types";
 import { cn, formatDateISO, formatDateTime } from "@/lib/utils";
 import {
   Badge,
@@ -80,6 +86,10 @@ const ANY = "any";
 const SAME_ASSET = "same";
 const CASH_ASSET = "cash";
 
+export function getEffectiveTransferActivityType(activity: TransferDialogActivity): string {
+  return getEffectiveType(activity);
+}
+
 function isTransferType(activityType: string | undefined): boolean {
   return activityType === ActivityType.TRANSFER_IN || activityType === ActivityType.TRANSFER_OUT;
 }
@@ -144,7 +154,7 @@ function normalizeActivity(
     accountName: getAccountName(activity, accountMap),
     accountType: account?.accountType ?? "",
     accountCurrency: getAccountCurrency(activity, accountMap),
-    activityType: activity.activityType,
+    activityType: getEffectiveTransferActivityType(activity),
     date: getActivityDate(activity),
     amount: activity.amount,
     quantity: activity.quantity,
@@ -284,7 +294,10 @@ function externalTransferUpdatePayload(
   return {
     id: activity.id,
     accountId: activity.accountId,
-    activityType: activity.activityType as Extract<ActivityType, "TRANSFER_IN" | "TRANSFER_OUT">,
+    activityType: getEffectiveTransferActivityType(activity) as Extract<
+      ActivityType,
+      "TRANSFER_IN" | "TRANSFER_OUT"
+    >,
     activityDate: getActivityDate(activity),
     currency: activity.currency,
     amount,
