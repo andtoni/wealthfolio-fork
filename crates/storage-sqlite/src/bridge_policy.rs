@@ -950,6 +950,8 @@ struct ActivitySupersessionRow {
     #[diesel(sql_type = Nullable<Text>)]
     metadata: Option<String>,
     #[diesel(sql_type = Nullable<Text>)]
+    source_record_id: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
     source_group_id: Option<String>,
     #[diesel(sql_type = Integer)]
     is_user_modified: i32,
@@ -961,7 +963,7 @@ fn activity_supersession_row(
     c: &mut SqliteConnection,
     id: &str,
 ) -> std::result::Result<Option<ActivitySupersessionRow>, diesel::result::Error> {
-    sql_query("SELECT activity_type,account_id,notes,activity_type_override,subtype,metadata,source_group_id,is_user_modified,needs_review FROM activities WHERE id=?")
+    sql_query("SELECT activity_type,account_id,notes,activity_type_override,subtype,metadata,source_record_id,source_group_id,is_user_modified,needs_review FROM activities WHERE id=?")
         .bind::<Text, _>(id)
         .get_result::<ActivitySupersessionRow>(c)
         .optional()
@@ -1102,6 +1104,51 @@ fn move_activity_children(
     Ok(())
 }
 
+fn is_legacy_provider_identity_correction(
+    loser: &str,
+    loser_row: &ActivitySupersessionRow,
+    canonical_row: &ActivitySupersessionRow,
+) -> bool {
+    // Finance Sync's exact PrimeSaver correction can replace a pre-0013
+    // synthetic resource that has no source_record_id with the later
+    // provider-referenced synthetic-v2 resource. This is deliberately narrow:
+    // the receiver still requires Finance provenance, and the source side must
+    // explicitly name the loser in superseded_resource_ids.
+    loser.contains(":synthetic-v2:")
+        && loser_row.source_record_id.is_none()
+        && canonical_row
+            .source_record_id
+            .as_deref()
+            .is_some_and(|value| value.starts_with("synthetic-v2:"))
+}
+
+fn append_superseded_provider_note(metadata: Option<String>, note: Option<&str>) -> Option<String> {
+    let Some(note) = note.map(str::trim).filter(|value| !value.is_empty()) else {
+        return metadata;
+    };
+    let mut value = metadata
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}));
+    let root = value.as_object_mut().expect("metadata object");
+    let provider_owned = root
+        .entry("providerOwned")
+        .or_insert_with(|| serde_json::json!({}));
+    let provider_owned = provider_owned
+        .as_object_mut()
+        .expect("provider-owned metadata object");
+    let notes = provider_owned
+        .entry("supersededProviderNotes")
+        .or_insert_with(|| serde_json::json!([]));
+    let notes = notes
+        .as_array_mut()
+        .expect("superseded provider notes array");
+    if !notes.iter().any(|value| value.as_str() == Some(note)) {
+        notes.push(serde_json::Value::String(note.to_owned()));
+    }
+    Some(value.to_string())
+}
+
 fn supersede_activity_identity(
     c: &mut SqliteConnection,
     loser: &str,
@@ -1118,6 +1165,8 @@ fn supersede_activity_identity(
     };
     let canonical_row =
         activity_supersession_row(c, canonical)?.ok_or(diesel::result::Error::NotFound)?;
+    let legacy_provider_identity_correction =
+        is_legacy_provider_identity_correction(loser, &loser_row, &canonical_row);
     if loser_row.account_id != account_id || canonical_row.account_id != account_id {
         return Err(diesel::result::Error::RollbackTransaction);
     }
@@ -1143,15 +1192,23 @@ fn supersede_activity_identity(
         if loser_effective_activity_type != canonical_effective_activity_type {
             return Err(diesel::result::Error::RollbackTransaction);
         }
-        for (left, right) in [
-            (&loser_row.notes, &canonical_row.notes),
+        for (field, left, right) in [
+            ("notes", &loser_row.notes, &canonical_row.notes),
             (
+                "activity_type_override",
                 &loser_row.activity_type_override,
                 &canonical_row.activity_type_override,
             ),
-            (&loser_row.subtype, &canonical_row.subtype),
-            (&loser_row.source_group_id, &canonical_row.source_group_id),
+            ("subtype", &loser_row.subtype, &canonical_row.subtype),
+            (
+                "source_group_id",
+                &loser_row.source_group_id,
+                &canonical_row.source_group_id,
+            ),
         ] {
+            if field == "notes" && legacy_provider_identity_correction {
+                continue;
+            }
             if left.is_some() && right.is_some() && left != right {
                 return Err(diesel::result::Error::RollbackTransaction);
             }
@@ -1191,10 +1248,20 @@ fn supersede_activity_identity(
     } else {
         canonical_row.subtype.clone().or(loser_row.subtype.clone())
     };
-    let metadata = merge_activity_metadata(
-        canonical_row.metadata.as_deref(),
-        loser_row.metadata.as_deref(),
-    )?;
+    let metadata = append_superseded_provider_note(
+        merge_activity_metadata(
+            canonical_row.metadata.as_deref(),
+            loser_row.metadata.as_deref(),
+        )?,
+        if legacy_provider_identity_correction
+            && loser_row.notes.is_some()
+            && loser_row.notes != canonical_row.notes
+        {
+            loser_row.notes.as_deref()
+        } else {
+            None
+        },
+    );
     let source_group_id = canonical_row
         .source_group_id
         .clone()

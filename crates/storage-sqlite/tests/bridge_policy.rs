@@ -1506,6 +1506,81 @@ async fn provider_identity_supersession_preserves_effective_activity_type() {
 }
 
 #[tokio::test]
+async fn legacy_prime_saver_supersession_preserves_linked_overlay_and_provider_notes() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let connection = Connection::open(&path).unwrap();
+    connection.execute(
+        "UPDATE activities SET id='wealthfolio-production:incarnation:synthetic-v2:weak' WHERE id='x1'",
+        [],
+    ).unwrap();
+    connection.execute(
+        "INSERT INTO provenance_records(entity_type,entity_id,role,source_system,source_record_id,actor_id) VALUES('activity','wealthfolio-production:incarnation:synthetic-v2:weak','live_canonical','finance','x1','alice')",
+        [],
+    ).unwrap();
+    connection.execute(
+        "UPDATE activities SET activity_type='TRANSFER_OUT',notes='A Example 10000000001',source_group_id='group-1',is_user_modified=1 WHERE id='wealthfolio-production:incarnation:synthetic-v2:weak'",
+        [],
+    ).unwrap();
+    let generation = store.grant("alice", "a1").await.unwrap();
+
+    let target = DisclosureOperation::new(
+        "legacy-prime-target",
+        "alice",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "wealthfolio-production:incarnation:synthetic-v2:strong",
+    ).with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "WITHDRAWAL".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-08-06".into(),
+        amount: "70000".into(),
+        currency: "ZAR".into(),
+        notes: Some("Transfer to Card Internet Value Date 06Aug26 MBP0000000001 10000000001 A Example 10000000001".into()),
+        source_record_id: Some("synthetic-v2:strong".into()),
+        ..Default::default()
+    });
+    store.commit(target).await.unwrap();
+    connection.execute(
+        "UPDATE activities SET activity_type_override='TRANSFER_OUT',is_user_modified=1 WHERE id=?",
+        ["wealthfolio-production:incarnation:synthetic-v2:strong"],
+    ).unwrap();
+
+    let correction = DisclosureOperation::new(
+        "legacy-prime-correction",
+        "alice",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "wealthfolio-production:incarnation:synthetic-v2:strong",
+    ).with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "WITHDRAWAL".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-08-06".into(),
+        amount: "70000".into(),
+        currency: "ZAR".into(),
+        notes: Some("Transfer to Card Internet Value Date 06Aug26 MBP0000000001 10000000001 A Example 10000000001".into()),
+        source_record_id: Some("synthetic-v2:strong".into()),
+        ..Default::default()
+    }).with_superseded_resources(["wealthfolio-production:incarnation:synthetic-v2:weak".to_string()]);
+    store.commit(correction).await.unwrap();
+
+    let result: (i64, String, Option<String>, Option<String>, String) = connection
+        .query_row(
+            "SELECT (SELECT count(*) FROM activities WHERE id='wealthfolio-production:incarnation:synthetic-v2:weak'), notes, activity_type_override, source_group_id, metadata FROM activities WHERE id='wealthfolio-production:incarnation:synthetic-v2:strong'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+        )
+        .unwrap();
+    assert_eq!(result.0, 0);
+    assert_eq!(result.1, "Transfer to Card Internet Value Date 06Aug26 MBP0000000001 10000000001 A Example 10000000001");
+    assert_eq!(result.2.as_deref(), Some("TRANSFER_OUT"));
+    assert_eq!(result.3.as_deref(), Some("group-1"));
+    assert!(result.4.contains("A Example 10000000001"));
+}
+
+#[tokio::test]
 async fn provider_identity_supersession_moves_overlay_children_atomically() {
     let (_dir, path, store) = store(D1).await;
     seed(&path, &[D1], &["alice"]);
