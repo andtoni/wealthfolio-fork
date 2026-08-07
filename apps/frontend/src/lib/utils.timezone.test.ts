@@ -35,6 +35,20 @@ describe("timezone formatting", () => {
     expect(formatted.date).toBe(expectedDate);
   });
 
+  it("keeps UTC-midnight instants distinct from date-only values", () => {
+    const formatted = formatDateTime("2026-08-07T00:00:00+00:00", "America/Los_Angeles");
+
+    expect(formatted.date).toBe("Aug 6, 2026");
+    expect(formatted.time).toBe("5:00:00 PM");
+  });
+
+  it("keeps date-only values on their provider date across timezones", () => {
+    const formatted = formatDateTime("2026-08-07", "America/Los_Angeles");
+
+    expect(formatted.date).toBe("Aug 7, 2026");
+    expect(formatted.time).toBe("—");
+  });
+
   it("formats date picker dates without UTC day shift", () => {
     const originalTimezone = process.env.TZ;
     process.env.TZ = "Europe/Helsinki";

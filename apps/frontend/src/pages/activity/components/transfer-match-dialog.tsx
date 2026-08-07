@@ -726,7 +726,29 @@ export function TransferMatchDialog({
         : t("activity:transfer_match.unlink_desc");
 
   if (!sourceActivity || !source || !isTransferType(source.activityType)) {
-    return null;
+    return (
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent className="flex w-full flex-col overflow-hidden sm:max-w-[760px]">
+          <SheetHeader>
+            <SheetTitle>{title}</SheetTitle>
+            <SheetDescription>
+              {t(
+                mode === "link"
+                  ? "activity:transfer_match.invalid_source"
+                  : "activity:transfer_match.invalid_unlink_source",
+              )}
+            </SheetDescription>
+          </SheetHeader>
+          <div className="text-muted-foreground flex min-h-0 flex-1 items-start py-4 text-sm">
+            {t(
+              mode === "link"
+                ? "activity:transfer_match.invalid_source_detail"
+                : "activity:transfer_match.invalid_unlink_source_detail",
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+    );
   }
 
   return (

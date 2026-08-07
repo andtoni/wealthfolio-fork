@@ -176,9 +176,16 @@ export function formatTime(input: string | number | Date | null | undefined): st
   return "-";
 }
 
+function dateOnlyPart(input: string | Date): string | undefined {
+  if (typeof input !== "string") return undefined;
+  const value = input.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined;
+}
+
 export const formatDateTime = (date: string | Date, timezone?: string) => {
   if (!date) return { date: "-", time: "-" };
 
+  const dateOnly = dateOnlyPart(date);
   let dateObj: Date | null = null;
   if (typeof date === "string") {
     // First attempt with the robust parser
@@ -216,12 +223,17 @@ export const formatDateTime = (date: string | Date, timezone?: string) => {
     timeZone: effectiveTimezone,
   };
 
-  const dateFormatter = new Intl.DateTimeFormat("en-US", dateOptions);
+  const dateFormatter = new Intl.DateTimeFormat("en-US", {
+    ...dateOptions,
+    timeZone: dateOnly ? "UTC" : effectiveTimezone,
+  });
   const timeFormatter = new Intl.DateTimeFormat("en-US", timeOptions);
 
   return {
-    date: dateFormatter.format(dateObj),
-    time: timeFormatter.format(dateObj),
+    date: dateOnly
+      ? dateFormatter.format(new Date(`${dateOnly}T12:00:00Z`))
+      : dateFormatter.format(dateObj),
+    time: dateOnly ? "—" : timeFormatter.format(dateObj),
   };
 };
 
