@@ -1115,7 +1115,10 @@ fn is_legacy_provider_identity_correction(
     // the receiver still requires Finance provenance, and the source side must
     // explicitly name the loser in superseded_resource_ids.
     loser.contains(":synthetic-v2:")
-        && loser_row.source_record_id.is_none()
+        && loser_row
+            .source_record_id
+            .as_deref()
+            .is_none_or(|source_record_id| source_record_id == loser)
         && canonical_row
             .source_record_id
             .as_deref()
