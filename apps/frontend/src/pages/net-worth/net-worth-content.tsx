@@ -189,7 +189,7 @@ export function NetWorthContent() {
   }
 
   return (
-    <div className="flex min-h-full flex-col">
+    <div className="flex flex-col">
       {/* Top section: Net Worth value */}
       <div className="px-4 pb-1 pt-2 md:px-6 md:pb-2 lg:px-8">
         <div className="flex items-start gap-2">
