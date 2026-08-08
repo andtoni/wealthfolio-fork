@@ -160,7 +160,7 @@ export default function PortfolioPage() {
   return (
     <>
       <SwipablePage
-        className="pt-0"
+        className="overflow-hidden pt-0"
         views={views}
         defaultView="investments"
         withPadding={false}
