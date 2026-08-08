@@ -192,7 +192,9 @@ export function SwipableView({
             <div
               key={index}
               className={cn(
-                "relative h-full min-w-0 shrink-0 grow-0 basis-full",
+                "relative min-w-0 shrink-0 grow-0 basis-full",
+                (!pageScroll || index === selectedIndex) && "h-full",
+                pageScroll && index !== selectedIndex && "h-0",
                 !pageScroll && "min-h-0",
                 bounded && "min-h-0",
               )}
@@ -207,7 +209,9 @@ export function SwipableView({
                */}
               <div
                 className={cn(
-                  "h-full w-full overflow-y-auto overflow-x-hidden",
+                  pageScroll && index !== selectedIndex && shouldRender(index)
+                    ? "absolute inset-x-0 top-0 w-full overflow-visible"
+                    : "h-full w-full overflow-y-auto overflow-x-hidden",
                   !pageScroll && "min-h-0",
                   bounded && "min-h-0 overscroll-contain scroll-auto",
                   withMobileNavOffset && "scroll-pb-nav pb-[var(--mobile-nav-total-offset)]",
@@ -217,7 +221,7 @@ export function SwipableView({
                   item.content
                 ) : (
                   // Placeholder for unmounted heavy slides
-                  <div className="h-full w-full" />
+                  <div className="h-0 w-full" />
                 )}
               </div>
             </div>
