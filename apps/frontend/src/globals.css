@@ -569,6 +569,10 @@
     overscroll-behavior: contain;
     scroll-behavior: smooth;
   }
+
+  .native-scroll {
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 .safe-area {
