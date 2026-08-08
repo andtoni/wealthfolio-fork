@@ -125,6 +125,7 @@ export default function PortfolioPage() {
         value: "net-worth",
         label: t("dashboard:tabs.net_worth"),
         icon: NetWorthTabIcon,
+        bounded: true,
         content: (
           <Suspense fallback={<PageLoader />}>
             <NetWorthContent />
@@ -160,7 +161,7 @@ export default function PortfolioPage() {
   return (
     <>
       <SwipablePage
-        className="overflow-hidden pt-0"
+        className="pt-0"
         views={views}
         defaultView="investments"
         withPadding={false}
