@@ -44,6 +44,8 @@ export interface SwipableViewProps {
   allowNestedHorizontalScroll?: boolean;
   /** Bound the view to its parent and let its vertical content scroll. */
   bounded?: boolean;
+  /** Let the route-level PageScrollContainer own this view's vertical scroll. */
+  pageScroll?: boolean;
 }
 
 export function SwipableView({
@@ -59,6 +61,7 @@ export function SwipableView({
   selectedIndex: controlledIndex,
   allowNestedHorizontalScroll = false,
   bounded = false,
+  pageScroll = false,
 }: SwipableViewProps) {
   const [emblaRef, emblaApi] = useEmblaCarousel({
     loop: false,
@@ -130,7 +133,9 @@ export function SwipableView({
   const shouldRender = (index: number) => Math.abs(selectedIndex - index) <= 1;
 
   return (
-    <div className={cn("relative flex h-full w-full flex-col", bounded && "min-h-0", className)}>
+    <div
+      className={cn("relative flex h-full w-full flex-col", !pageScroll && "min-h-0", bounded && "min-h-0", className)}
+    >
       {/* Navigation Toggle */}
       {displayToggle && items.length > 1 && (
         <div className="flex shrink-0 items-center justify-center gap-3 py-2.5">
@@ -171,10 +176,11 @@ export function SwipableView({
       )}
 
       {/* Swipable Content */}
-      <div ref={emblaRef} className={cn("h-full grow overflow-hidden", bounded && "min-h-0")}>
+      <div ref={emblaRef} className={cn("h-full grow overflow-hidden", !pageScroll && "min-h-0", bounded && "min-h-0")}>
         <div
           className={cn(
             "flex h-full",
+            !pageScroll && "min-h-0",
             bounded && "min-h-0",
             allowNestedHorizontalScroll ? "touch-auto" : "touch-pan-y",
           )}
@@ -183,7 +189,14 @@ export function SwipableView({
           }}
         >
           {items.map((item, index) => (
-            <div key={index} className={cn("relative h-full min-w-0 shrink-0 grow-0 basis-full", bounded && "min-h-0")}>
+            <div
+              key={index}
+              className={cn(
+                "relative h-full min-w-0 shrink-0 grow-0 basis-full",
+                !pageScroll && "min-h-0",
+                bounded && "min-h-0",
+              )}
+            >
               {/*
                  SCROLL ARCHITECTURE:
                  1. We use a nested div for scrolling.
@@ -195,6 +208,7 @@ export function SwipableView({
               <div
                 className={cn(
                   "h-full w-full overflow-y-auto overflow-x-hidden",
+                  !pageScroll && "min-h-0",
                   bounded && "min-h-0 overscroll-contain scroll-auto",
                   withMobileNavOffset && "scroll-pb-nav pb-[var(--mobile-nav-total-offset)]",
                 )}
