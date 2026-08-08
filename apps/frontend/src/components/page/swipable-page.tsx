@@ -11,8 +11,6 @@ export interface SwipablePageView {
   icon?: Icon;
   /** Keep this view within the page viewport and scroll its content instead. */
   bounded?: boolean;
-  /** Let the route-level PageScrollContainer own this view's vertical scroll. */
-  pageScroll?: boolean;
   content: React.ReactNode;
   /** Optional actions to display in the header when this view is active */
   actions?: React.ReactNode;
@@ -202,7 +200,6 @@ export function SwipablePage({
   const currentViewConfig = views.find((v) => v.value === currentView);
   const currentActions = currentViewConfig?.actions;
   const isBounded = currentViewConfig?.bounded ?? false;
-  const usesPageScroll = currentViewConfig?.pageScroll ?? false;
   const mobileActionsInHeader = mobileActionsPlacement === "header";
 
   const handleViewChange = React.useCallback(
@@ -235,8 +232,7 @@ export function SwipablePage({
   return (
     <Page
       className={cn(
-        "flex h-full flex-col",
-        !usesPageScroll && "min-h-0",
+        "flex h-full min-h-0 flex-col",
         className,
         isBounded && "min-h-0 overflow-hidden",
       )}
@@ -244,21 +240,14 @@ export function SwipablePage({
       <div
         data-ptr-content
         className={cn(
-          "relative mx-auto flex w-full grow flex-col",
-          !usesPageScroll && "min-h-0",
+          "relative mx-auto flex min-h-0 w-full grow flex-col",
           contentClassName,
           isBounded && "min-h-0",
         )}
       >
         {isMobile ? (
           /* Mobile: SwipableView with navigation */
-          <div
-            className={cn(
-              "flex h-full flex-col md:hidden",
-              !usesPageScroll && "min-h-0",
-              isBounded && "min-h-0",
-            )}
-          >
+          <div className={cn("flex h-full min-h-0 flex-col md:hidden", isBounded && "min-h-0")}>
             {/* Mobile Navigation at top */}
             <div className="pt-safe flex shrink-0 flex-col gap-2 px-3 pb-2">
               <div
@@ -289,11 +278,10 @@ export function SwipablePage({
               )}
             </div>
 
-            <div className={cn("flex-1 overflow-hidden", !usesPageScroll && "min-h-0")}>
+            <div className="min-h-0 flex-1 overflow-hidden">
               <SwipableView
                 initialIndex={currentIndex}
                 selectedIndex={currentIndex}
-                pageScroll={usesPageScroll}
                 items={views.map((v) => ({
                   name: v.label,
                   content: (
@@ -321,13 +309,7 @@ export function SwipablePage({
           </div>
         ) : (
           /* Desktop: Navigation at top center + content below */
-          <div
-            className={cn(
-              "hidden h-full flex-col md:flex",
-              !usesPageScroll && "min-h-0",
-              isBounded && "min-h-0",
-            )}
-          >
+          <div className={cn("hidden h-full min-h-0 flex-col md:flex", isBounded && "min-h-0")}>
             {/* Header with Navigation and Actions */}
             <div className="flex shrink-0 items-center justify-between gap-4 px-2 pb-3 pt-4 lg:px-4">
               <div className="flex items-center gap-3">
@@ -345,8 +327,7 @@ export function SwipablePage({
             {/* Content - relative for absolute positioned actions within */}
             <div
               className={cn(
-                "relative grow overflow-y-auto pt-8 md:pt-2",
-                !usesPageScroll && "min-h-0",
+                "relative min-h-0 grow overflow-y-auto pt-8 md:pt-2",
                 withPadding && "px-2 pb-2 lg:px-4 lg:pb-4",
                 isBounded && "min-h-0 overscroll-contain scroll-auto",
               )}

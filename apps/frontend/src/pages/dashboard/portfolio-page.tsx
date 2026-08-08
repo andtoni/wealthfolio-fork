@@ -125,7 +125,6 @@ export default function PortfolioPage() {
         value: "net-worth",
         label: t("dashboard:tabs.net_worth"),
         icon: NetWorthTabIcon,
-        pageScroll: true,
         content: (
           <Suspense fallback={<PageLoader />}>
             <NetWorthContent />
