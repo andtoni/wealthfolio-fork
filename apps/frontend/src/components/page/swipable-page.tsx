@@ -323,7 +323,7 @@ export function SwipablePage({
               className={cn(
                 "relative grow overflow-y-auto pt-8 md:pt-2",
                 withPadding && "px-2 pb-2 lg:px-4 lg:pb-4",
-                isBounded && "momentum-scroll min-h-0",
+                isBounded && "min-h-0 overscroll-contain scroll-auto",
               )}
             >
               {views.find((v) => v.value === currentView)?.content}

@@ -76,16 +76,9 @@ export function UpdateDialog() {
     }
   }, [updateInfo, dismissedUpdate]);
 
-  // X button, Escape, backdrop — dismiss for current session only
+  // Any dismissal should suppress the same update for three days. Persist before
+  // clearing the query so a late startup response cannot reopen the dialog.
   const handleDismiss = useCallback(() => {
-    if (isPending) return;
-    setIsOpen(false);
-    clearUpdate();
-    reset();
-  }, [isPending, clearUpdate, reset]);
-
-  // "Remind me later" — snooze for 3 days
-  const handleSnooze = useCallback(() => {
     if (isPending) return;
     if (updateInfo?.latestVersion) {
       setDismissedUpdate({ version: updateInfo.latestVersion, dismissedAt: Date.now() });
@@ -94,6 +87,8 @@ export function UpdateDialog() {
     clearUpdate();
     reset();
   }, [isPending, updateInfo?.latestVersion, setDismissedUpdate, clearUpdate, reset]);
+
+  const handleSnooze = handleDismiss;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

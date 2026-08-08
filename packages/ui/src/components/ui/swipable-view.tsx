@@ -195,7 +195,7 @@ export function SwipableView({
               <div
                 className={cn(
                   "h-full w-full overflow-y-auto overflow-x-hidden",
-                  bounded && "momentum-scroll min-h-0",
+                  bounded && "min-h-0 overscroll-contain scroll-auto",
                   withMobileNavOffset && "scroll-pb-nav pb-[var(--mobile-nav-total-offset)]",
                 )}
               >
