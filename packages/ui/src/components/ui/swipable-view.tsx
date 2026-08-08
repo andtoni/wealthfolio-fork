@@ -127,7 +127,7 @@ export function SwipableView({
   const shouldRender = (index: number) => Math.abs(selectedIndex - index) <= 1;
 
   return (
-    <div className={cn("relative flex h-full w-full flex-col", className)}>
+    <div className={cn("relative flex h-full min-h-0 w-full flex-col", className)}>
       {/* Navigation Toggle */}
       {displayToggle && items.length > 1 && (
         <div className="flex shrink-0 items-center justify-center gap-3 py-2.5">
@@ -168,15 +168,15 @@ export function SwipableView({
       )}
 
       {/* Swipable Content */}
-      <div ref={emblaRef} className="h-full grow overflow-hidden">
+      <div ref={emblaRef} className="h-full min-h-0 grow overflow-hidden">
         <div
-          className={cn("flex h-full", allowNestedHorizontalScroll ? "touch-auto" : "touch-pan-y")}
+          className={cn("flex h-full min-h-0", allowNestedHorizontalScroll ? "touch-auto" : "touch-pan-y")}
           style={{
             overflowX: "visible",
           }}
         >
           {items.map((item, index) => (
-            <div key={index} className="relative h-full min-w-0 shrink-0 grow-0 basis-full">
+            <div key={index} className="relative h-full min-h-0 min-w-0 shrink-0 grow-0 basis-full">
               {/*
                  SCROLL ARCHITECTURE:
                  1. We use a nested div for scrolling.
@@ -187,7 +187,7 @@ export function SwipableView({
                */}
               <div
                 className={cn(
-                  "h-full w-full overflow-y-auto overflow-x-hidden",
+                  "h-full min-h-0 w-full overflow-y-auto overflow-x-hidden",
                   withMobileNavOffset && "scroll-pb-nav pb-[var(--mobile-nav-total-offset)]",
                 )}
               >
