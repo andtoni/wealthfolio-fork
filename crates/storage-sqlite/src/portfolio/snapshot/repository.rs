@@ -116,16 +116,30 @@ impl SnapshotRepository {
         input_account_id: &str,
         target_date: NaiveDate,
     ) -> Result<Option<AccountStateSnapshot>> {
-        use crate::schema::holdings_snapshots::dsl::*;
         let mut conn = get_connection(&self.pool)?;
         let target_date_str = target_date.format("%Y-%m-%d").to_string();
-        let result_db = holdings_snapshots
-            .filter(account_id.eq(input_account_id))
-            .filter(snapshot_date.le(&target_date_str))
-            .order(snapshot_date.desc())
-            .first::<AccountStateSnapshotDB>(&mut conn)
-            .optional()
-            .map_err(StorageError::from)?;
+        let result_db = sql_query(
+            "SELECT id, account_id, snapshot_date, currency, positions, \
+                    cash_balances, cost_basis, net_contribution, calculated_at, \
+                    net_contribution_base, cash_total_account_currency, cash_total_base_currency, \
+                    position_market_values, liability_balance, source \
+             FROM holdings_snapshots \
+             WHERE account_id = ? AND snapshot_date <= ? \
+             ORDER BY snapshot_date DESC, \
+                      CASE WHEN EXISTS ( \
+                          SELECT 1 FROM provenance_records provenance \
+                          WHERE provenance.entity_type = 'snapshot' \
+                            AND provenance.entity_id = holdings_snapshots.id \
+                            AND provenance.role = 'live_canonical' \
+                      ) THEN 0 ELSE 1 END, \
+                      calculated_at DESC, id DESC \
+             LIMIT 1",
+        )
+        .bind::<Text, _>(input_account_id)
+        .bind::<Text, _>(target_date_str)
+        .get_result::<AccountStateSnapshotDB>(&mut conn)
+        .optional()
+        .map_err(StorageError::from)?;
         Ok(result_db.map(AccountStateSnapshot::from))
     }
 
@@ -154,7 +168,14 @@ impl SnapshotRepository {
                     id, account_id, snapshot_date, currency, positions, \
                     cash_balances, cost_basis, net_contribution, calculated_at, net_contribution_base, \
                     cash_total_account_currency, cash_total_base_currency, position_market_values, liability_balance, source, \
-                    ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY snapshot_date DESC) as rn \
+                    ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY snapshot_date DESC, \
+                        CASE WHEN EXISTS ( \
+                            SELECT 1 FROM provenance_records provenance \
+                            WHERE provenance.entity_type = 'snapshot' \
+                              AND provenance.entity_id = holdings_snapshots.id \
+                              AND provenance.role = 'live_canonical' \
+                        ) THEN 0 ELSE 1 END, \
+                        calculated_at DESC, id DESC) as rn \
                 FROM {} \
                 WHERE account_id IN ({}) AND snapshot_date <= ? \
             ) \
@@ -216,7 +237,14 @@ impl SnapshotRepository {
                     id, account_id, snapshot_date, currency, positions, \
                     cash_balances, cost_basis, net_contribution, calculated_at, net_contribution_base, \
                     cash_total_account_currency, cash_total_base_currency, position_market_values, liability_balance, source, \
-                    ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY snapshot_date DESC) as rn \
+                    ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY snapshot_date DESC, \
+                        CASE WHEN EXISTS ( \
+                            SELECT 1 FROM provenance_records provenance \
+                            WHERE provenance.entity_type = 'snapshot' \
+                              AND provenance.entity_id = holdings_snapshots.id \
+                              AND provenance.role = 'live_canonical' \
+                        ) THEN 0 ELSE 1 END, \
+                        calculated_at DESC, id DESC) as rn \
                 FROM {} \
                 WHERE account_id IN ({}) \
             ) \
@@ -1230,6 +1258,60 @@ mod tests {
             calculated_at: chrono::Utc::now().naive_utc(),
             source,
         }
+    }
+
+    #[tokio::test]
+    async fn test_latest_snapshot_queries_prefer_live_canonical_same_date() {
+        let (repo, pool, _temp_dir) = create_test_repository().await;
+        let account_id = "test-account-same-day-duplicate";
+        create_test_account(&pool, account_id);
+        let date = NaiveDate::from_ymd_opt(2026, 8, 9).unwrap();
+
+        let mut noncanonical =
+            create_test_snapshot(account_id, date, SnapshotSource::BrokerImported);
+        noncanonical.id = AccountStateSnapshot::stable_id(account_id, date);
+        noncanonical
+            .cash_balances
+            .insert("USD".into(), Decimal::from(100));
+
+        let mut canonical = create_test_snapshot(account_id, date, SnapshotSource::BrokerImported);
+        canonical.id = "provider-snapshot-same-day".into();
+        canonical
+            .cash_balances
+            .insert("USD".into(), Decimal::from(200));
+
+        repo.save_snapshots(&[noncanonical, canonical.clone()])
+            .await
+            .expect("save same-day snapshots");
+
+        let mut conn = get_connection(&pool).expect("get test connection");
+        sql_query(
+            "INSERT INTO provenance_records(entity_type, entity_id, role, source_system) \
+             VALUES ('snapshot', ?, 'live_canonical', 'finance')",
+        )
+        .bind::<Text, _>(&canonical.id)
+        .execute(&mut conn)
+        .expect("mark provider snapshot canonical");
+
+        let latest = repo
+            .get_latest_snapshot_before_date(account_id, date)
+            .expect("load single latest snapshot")
+            .expect("latest snapshot");
+        assert_eq!(latest.id, canonical.id);
+
+        let latest_by_account = repo
+            .get_latest_snapshots_before_date(&[account_id.to_string()], date)
+            .expect("load latest snapshots")
+            .remove(account_id)
+            .expect("latest snapshot by account");
+        assert_eq!(latest_by_account.id, canonical.id);
+
+        let all_latest = repo
+            .get_all_latest_snapshots(&[account_id.to_string()])
+            .expect("load all latest snapshots")
+            .remove(account_id)
+            .expect("all latest snapshot by account");
+        assert_eq!(all_latest.id, canonical.id);
     }
 
     #[tokio::test]
