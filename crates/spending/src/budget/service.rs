@@ -174,16 +174,29 @@ impl BudgetService {
         let mut rows_by_group: HashMap<String, Vec<BudgetCategoryRow>> = HashMap::new();
         for category in &top_spending_categories {
             let group_id = group_for_category(&category.id);
-            let actual = current_actuals
+            let excluded_from_budget = group_by_key
+                .get(&group_id)
+                .is_some_and(|group| group.exclude_from_budget);
+            let configured_actual = current_actuals
                 .get(&(SPENDING_TAXONOMY.to_string(), category.id.clone()))
                 .copied()
                 .unwrap_or(Decimal::ZERO);
-            let target = target_index.effective_category_decimal(
+            let configured_target = target_index.effective_category_decimal(
                 &period_key,
                 SPENDING_TAXONOMY,
                 &category.id,
             );
-            let rollover = is_month_view
+            let actual = if excluded_from_budget {
+                Decimal::ZERO
+            } else {
+                configured_actual
+            };
+            let target = if excluded_from_budget {
+                Decimal::ZERO
+            } else {
+                configured_target
+            };
+            let rollover = (!excluded_from_budget && is_month_view)
                 .then(|| rollover_index.category(SPENDING_TAXONOMY, &category.id))
                 .flatten();
             let (rollover_in, rollover_out, remaining) = if let Some(setting) = rollover {
@@ -236,6 +249,7 @@ impl BudgetService {
                         &category.id,
                     ),
                     rollover_enabled: rollover.is_some(),
+                    excluded_from_budget,
                 });
         }
 
@@ -253,33 +267,45 @@ impl BudgetService {
                 .iter()
                 .map(|category| category.category_id.clone())
                 .collect::<Vec<_>>();
-            let category_target_total_decimal = category_ids
-                .iter()
-                .map(|category_id| {
-                    target_index.effective_category_decimal(
-                        &period_key,
-                        SPENDING_TAXONOMY,
-                        category_id,
-                    )
-                })
-                .sum::<Decimal>();
-            let actual_decimal = category_ids
-                .iter()
-                .map(|category_id| {
-                    current_actuals
-                        .get(&(SPENDING_TAXONOMY.to_string(), category_id.clone()))
-                        .copied()
-                        .unwrap_or(Decimal::ZERO)
-                })
-                .sum::<Decimal>();
-            let buffer_decimal =
-                target_index.effective_group_buffer_decimal(&period_key, &group.id);
+            let excluded_from_budget = group.exclude_from_budget;
+            let category_target_total_decimal = if excluded_from_budget {
+                Decimal::ZERO
+            } else {
+                category_ids
+                    .iter()
+                    .map(|category_id| {
+                        target_index.effective_category_decimal(
+                            &period_key,
+                            SPENDING_TAXONOMY,
+                            category_id,
+                        )
+                    })
+                    .sum::<Decimal>()
+            };
+            let actual_decimal = if excluded_from_budget {
+                Decimal::ZERO
+            } else {
+                category_ids
+                    .iter()
+                    .map(|category_id| {
+                        current_actuals
+                            .get(&(SPENDING_TAXONOMY.to_string(), category_id.clone()))
+                            .copied()
+                            .unwrap_or(Decimal::ZERO)
+                    })
+                    .sum::<Decimal>()
+            };
+            let buffer_decimal = if excluded_from_budget {
+                Decimal::ZERO
+            } else {
+                target_index.effective_group_buffer_decimal(&period_key, &group.id)
+            };
             let planned_total_decimal = category_target_total_decimal + buffer_decimal;
             let category_target_total = decimal_to_f64(category_target_total_decimal);
             let actual = decimal_to_f64(actual_decimal);
             let buffer = decimal_to_f64(buffer_decimal);
             let planned_total = decimal_to_f64(planned_total_decimal);
-            let rollover = is_month_view
+            let rollover = (!excluded_from_budget && is_month_view)
                 .then(|| rollover_index.group(&group.id))
                 .flatten();
             let (rollover_in, rollover_out, remaining) = if let Some(setting) = rollover {
@@ -383,6 +409,7 @@ impl BudgetService {
                     &category.id,
                 ),
                 rollover_enabled: false,
+                excluded_from_budget: false,
             });
         }
         income_rows.sort_by(|a, b| a.name.cmp(&b.name));
@@ -443,6 +470,7 @@ impl BudgetService {
                 icon: input.icon,
                 sort_order: input.sort_order,
                 is_system: false,
+                exclude_from_budget: input.exclude_from_budget,
             })
             .await?;
         self.get(period_key, currency, timezone).await
@@ -661,6 +689,7 @@ impl BudgetService {
                 icon: Some(OTHER_GROUP_ICON.to_string()),
                 sort_order: Some(OTHER_GROUP_SORT_ORDER),
                 is_system: false,
+                exclude_from_budget: true,
             })
             .await?;
         Ok(())
@@ -1362,6 +1391,7 @@ mod tests {
             icon: None,
             sort_order: 0,
             is_system: true,
+            exclude_from_budget: key == OTHER_GROUP_KEY,
             created_at: ts(),
             updated_at: ts(),
         }
@@ -2138,6 +2168,7 @@ mod tests {
                     icon: group.icon,
                     sort_order: group.sort_order.unwrap_or_default(),
                     is_system: group.is_system,
+                    exclude_from_budget: group.exclude_from_budget,
                     created_at: ts(),
                     updated_at: ts(),
                 })
@@ -2826,6 +2857,41 @@ mod tests {
             .iter()
             .any(|category| category.category_id == "cat_unassigned"));
         assert!(snapshot.computed.ungrouped_rows.is_empty());
+    }
+
+    #[tokio::test]
+    async fn excluded_budget_group_does_not_contribute_to_budget_actuals() {
+        let fixture = budget_fixture(
+            vec![
+                activity("included-spend", "eligible-card", "WITHDRAWAL", 25),
+                activity("other-spend", "eligible-card", "WITHDRAWAL", 40),
+            ],
+            vec![
+                assignment("included-spend", "cat_groceries"),
+                assignment("other-spend", "cat_unassigned"),
+            ],
+            Vec::new(),
+            &["eligible-card"],
+            &["included-spend", "other-spend"],
+        );
+        let snapshot = fixture
+            .service
+            .get(Some("2026-04-25".to_string()), "USD", "UTC")
+            .await
+            .unwrap();
+
+        let other = snapshot
+            .computed
+            .group_rows
+            .iter()
+            .find(|row| row.group.key == OTHER_GROUP_KEY)
+            .expect("Other budget group");
+        assert!(other.group.exclude_from_budget);
+        assert_eq!(other.actual, 0.0);
+        assert_eq!(
+            snapshot.computed.totals.spending_actual, 25.0,
+            "excluded Other spending must not affect budget actuals"
+        );
     }
 
     #[tokio::test]

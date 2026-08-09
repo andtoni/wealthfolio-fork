@@ -47,6 +47,15 @@ fn migrations_seed_configurable_cycle_and_restore_native_editing() {
         .unwrap();
     assert_eq!(other_group_count, 1);
 
+    let other_excluded: i64 = connection
+        .query_row(
+            "SELECT exclude_from_budget FROM budget_groups WHERE key = 'other'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(other_excluded, 1);
+
     let group_count: i64 = connection
         .query_row("SELECT COUNT(*) FROM budget_groups", [], |row| row.get(0))
         .unwrap();

@@ -557,12 +557,32 @@ export default function SpendingTabContent() {
   }, [budgetHistoryRange, budgetMonthKey, appTimezone, todayParts, budgetCycle]);
   const { data: historyReport } = useSpendingReport(historyReportReq);
 
+  const excludedBudgetCategoryIds = useMemo(() => {
+    const excluded = new Set(
+      (budgetCardBudget?.computed.groupRows ?? [])
+        .filter((row) => row.group.excludeFromBudget)
+        .flatMap((row) => row.categories.map((category) => category.categoryId)),
+    );
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const category of taxonomy.data?.categories ?? []) {
+        if (category.parentId && excluded.has(category.parentId) && !excluded.has(category.id)) {
+          excluded.add(category.id);
+          changed = true;
+        }
+      }
+    }
+    return excluded;
+  }, [budgetCardBudget?.computed.groupRows, taxonomy.data?.categories]);
+
   const historicalDailyAvg = useMemo(() => {
     const total = (historyReport?.byDayByCategory ?? [])
       .filter(
         (row) =>
           row.taxonomyId === SPENDING_TAXONOMY &&
           row.categoryId !== "__uncategorized__" &&
+          !excludedBudgetCategoryIds.has(row.categoryId) &&
           budgetHistoryDateBounds !== null &&
           row.date >= budgetHistoryDateBounds.from &&
           row.date <= budgetHistoryDateBounds.to,
@@ -574,7 +594,12 @@ export default function SpendingTabContent() {
       calendarDaysBetweenInclusive(budgetHistoryRange.start, budgetHistoryRange.end),
     );
     return total / days;
-  }, [historyReport?.byDayByCategory, budgetHistoryDateBounds, budgetHistoryRange]);
+  }, [
+    historyReport?.byDayByCategory,
+    budgetHistoryDateBounds,
+    budgetHistoryRange,
+    excludedBudgetCategoryIds,
+  ]);
 
   // Always render in the user's base currency. The backend FX-converts every
   // activity in `report` to base at period end, so labeling by the first
@@ -585,7 +610,7 @@ export default function SpendingTabContent() {
     () =>
       (budgetCardBudget?.computed.groupRows ?? [])
         .flatMap((row) => row.categories)
-        .filter((row) => row.actual !== 0)
+        .filter((row) => !row.excludedFromBudget && row.actual !== 0)
         .map((row) => ({
           taxonomyId: row.taxonomyId,
           categoryId: row.categoryId,
@@ -597,19 +622,24 @@ export default function SpendingTabContent() {
   const budgetMonthByDay = useMemo(() => {
     const byDay = new Map<string, number>();
     for (const row of monthReport?.byDayByCategory ?? []) {
-      if (row.taxonomyId !== SPENDING_TAXONOMY || row.categoryId === "__uncategorized__") {
+      if (
+        row.taxonomyId !== SPENDING_TAXONOMY ||
+        row.categoryId === "__uncategorized__" ||
+        excludedBudgetCategoryIds.has(row.categoryId)
+      ) {
         continue;
       }
       byDay.set(row.date, (byDay.get(row.date) ?? 0) + row.amount);
     }
     return Array.from(byDay, ([date, outflow]) => ({ date, income: 0, outflow }));
-  }, [monthReport?.byDayByCategory]);
+  }, [monthReport?.byDayByCategory, excludedBudgetCategoryIds]);
   const budgetHistoricalByDay = useMemo(() => {
     const byDay = new Map<string, number>();
     for (const row of historyReport?.byDayByCategory ?? []) {
       if (
         row.taxonomyId !== SPENDING_TAXONOMY ||
         row.categoryId === "__uncategorized__" ||
+        excludedBudgetCategoryIds.has(row.categoryId) ||
         budgetHistoryDateBounds === null ||
         row.date < budgetHistoryDateBounds.from ||
         row.date > budgetHistoryDateBounds.to
@@ -619,7 +649,7 @@ export default function SpendingTabContent() {
       byDay.set(row.date, (byDay.get(row.date) ?? 0) + row.amount);
     }
     return Array.from(byDay, ([date, outflow]) => ({ date, income: 0, outflow }));
-  }, [historyReport?.byDayByCategory, budgetHistoryDateBounds]);
+  }, [historyReport?.byDayByCategory, budgetHistoryDateBounds, excludedBudgetCategoryIds]);
   const budgetActual = budgetCardBudget?.computed.totals.spendingActual ?? 0;
   const dashboardInsightHref = useMemo(() => {
     const preferDashboardPeriod = shouldPreferDashboardPeriod({
@@ -1276,7 +1306,9 @@ export default function SpendingTabContent() {
                   currency={budgetCardBudget?.computed.currency ?? currency}
                   historicalDailyAvg={historicalDailyAvg}
                   allocations={
-                    budgetCardBudget?.computed.groupRows.flatMap((row) => row.categories) ?? []
+                    budgetCardBudget?.computed.groupRows
+                      .flatMap((row) => row.categories)
+                      .filter((row) => !row.excludedFromBudget) ?? []
                   }
                   spendingBreakdown={budgetSpendingBreakdown}
                   categoriesMeta={categoriesMeta}

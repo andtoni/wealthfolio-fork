@@ -11,6 +11,7 @@ export interface BudgetGroup {
   icon: string | null;
   sortOrder: number;
   isSystem: boolean;
+  excludeFromBudget: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -23,6 +24,7 @@ export interface NewBudgetGroup {
   icon?: string | null;
   sortOrder?: number;
   isSystem?: boolean;
+  excludeFromBudget?: boolean;
 }
 
 export interface UpdateBudgetGroup {
@@ -30,6 +32,7 @@ export interface UpdateBudgetGroup {
   color?: string | null;
   icon?: string | null;
   sortOrder?: number;
+  excludeFromBudget?: boolean;
 }
 
 export interface BudgetGroupAssignment {
@@ -104,6 +107,7 @@ export interface BudgetCategoryRow {
   hasDefaultTarget: boolean;
   hasMonthOverride: boolean;
   rolloverEnabled: boolean;
+  excludedFromBudget: boolean;
 }
 
 export interface BudgetGroupRow {

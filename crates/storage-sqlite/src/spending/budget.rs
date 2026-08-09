@@ -36,6 +36,7 @@ pub struct BudgetGroupDB {
     pub icon: Option<String>,
     pub sort_order: i32,
     pub is_system: i32,
+    pub exclude_from_budget: i32,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -50,6 +51,7 @@ pub struct NewBudgetGroupDB {
     pub icon: Option<String>,
     pub sort_order: i32,
     pub is_system: i32,
+    pub exclude_from_budget: i32,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -292,6 +294,7 @@ impl From<BudgetGroupDB> for BudgetGroup {
             icon: db.icon,
             sort_order: db.sort_order,
             is_system: db.is_system != 0,
+            exclude_from_budget: db.exclude_from_budget != 0,
             created_at: parse_dt(&db.created_at),
             updated_at: parse_dt(&db.updated_at),
         }
@@ -366,6 +369,7 @@ impl BudgetRepositoryTrait for BudgetRepository {
             icon: new_group.icon,
             sort_order: new_group.sort_order.unwrap_or(0),
             is_system: if new_group.is_system { 1 } else { 0 },
+            exclude_from_budget: if new_group.exclude_from_budget { 1 } else { 0 },
             created_at: now.clone(),
             updated_at: now,
         };
@@ -394,6 +398,7 @@ impl BudgetRepositoryTrait for BudgetRepository {
             icon: new_group.icon,
             sort_order: new_group.sort_order.unwrap_or(0),
             is_system: if new_group.is_system { 1 } else { 0 },
+            exclude_from_budget: if new_group.exclude_from_budget { 1 } else { 0 },
             created_at: now.clone(),
             updated_at: now,
         };
@@ -439,6 +444,9 @@ impl BudgetRepositoryTrait for BudgetRepository {
                 if let Some(sort_order) = patch.sort_order {
                     existing.sort_order = sort_order;
                 }
+                if let Some(exclude_from_budget) = patch.exclude_from_budget {
+                    existing.exclude_from_budget = if exclude_from_budget { 1 } else { 0 };
+                }
                 existing.updated_at = chrono::Utc::now().to_rfc3339();
                 diesel::update(budget_groups::table.find(&id))
                     .set((
@@ -446,6 +454,7 @@ impl BudgetRepositoryTrait for BudgetRepository {
                         budget_groups::color.eq(&existing.color),
                         budget_groups::icon.eq(&existing.icon),
                         budget_groups::sort_order.eq(existing.sort_order),
+                        budget_groups::exclude_from_budget.eq(existing.exclude_from_budget),
                         budget_groups::updated_at.eq(&existing.updated_at),
                     ))
                     .execute(tx.conn())
@@ -594,6 +603,7 @@ impl BudgetRepositoryTrait for BudgetRepository {
                         icon: group.icon,
                         sort_order: group.sort_order.unwrap_or(0),
                         is_system: 1,
+                        exclude_from_budget: if group.exclude_from_budget { 1 } else { 0 },
                         created_at: now.clone(),
                         updated_at: now.clone(),
                     };
@@ -608,6 +618,7 @@ impl BudgetRepositoryTrait for BudgetRepository {
                             && existing.icon == row.icon
                             && existing.sort_order == row.sort_order
                             && existing.is_system == 1
+                            && existing.exclude_from_budget == row.exclude_from_budget
                         {
                             out.push(existing);
                             continue;
@@ -623,6 +634,7 @@ impl BudgetRepositoryTrait for BudgetRepository {
                             budget_groups::icon.eq(&row.icon),
                             budget_groups::sort_order.eq(row.sort_order),
                             budget_groups::is_system.eq(1),
+                            budget_groups::exclude_from_budget.eq(row.exclude_from_budget),
                             budget_groups::updated_at.eq(&row.updated_at),
                         ))
                         .returning(BudgetGroupDB::as_returning())

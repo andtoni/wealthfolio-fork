@@ -158,6 +158,7 @@ function projectBudget(insight: SpendingInsight): BudgetSnapshot {
         hasDefaultTarget: c.budget.total > 0,
         hasMonthOverride: hasOverride,
         rolloverEnabled: false,
+        excludedFromBudget: g.group.excludeFromBudget,
       };
     });
     return {

@@ -472,7 +472,12 @@ function GroupBudgetSection({
   onSaveCategoryTarget: (row: BudgetCategoryRow, amount: string) => void;
   onDeleteOverride: (target: BudgetTarget | undefined) => void;
   onMoveCategory: (categoryId: string, groupId: string) => void;
-  onUpdateGroup: (patch: { name?: string; color?: string | null; icon?: string | null }) => void;
+  onUpdateGroup: (patch: {
+    name?: string;
+    color?: string | null;
+    icon?: string | null;
+    excludeFromBudget?: boolean;
+  }) => void;
   onDeleteGroup: () => void;
   onSaveGroupRollover: (enabled: boolean, startingBalance?: string) => void;
   onToggleCategoryRollover: (row: BudgetCategoryRow, enabled: boolean) => void;
@@ -525,6 +530,7 @@ function GroupBudgetSection({
           onUpdate={onUpdateGroup}
           rolloverEnabled={groupRollover?.enabled ?? false}
           rolloverStartingBalance={groupRollover?.startingBalance ?? "0"}
+          excludeFromBudget={row.group.excludeFromBudget}
           onSaveRollover={onSaveGroupRollover}
         />
 
@@ -533,7 +539,14 @@ function GroupBudgetSection({
           onClick={() => setOpen((v) => !v)}
           className="min-w-0 flex-1 text-left"
         >
-          <div className="text-foreground truncate text-sm font-semibold">{row.group.name}</div>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <div className="text-foreground truncate text-sm font-semibold">{row.group.name}</div>
+            {row.group.excludeFromBudget && (
+              <span className="text-muted-foreground shrink-0 text-[9px] font-medium uppercase tracking-wide">
+                {t("spending:budgetEditor.excludedFromBudget")}
+              </span>
+            )}
+          </div>
           <div className="mt-0.5 flex items-center gap-1.5">
             <div className="bg-muted/40 h-1 w-16 shrink-0 overflow-hidden rounded-full sm:w-20">
               <div
@@ -909,9 +922,15 @@ interface GroupEditDialogProps {
   color: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onUpdate: (patch: { name?: string; color?: string | null; icon?: string | null }) => void;
+  onUpdate: (patch: {
+    name?: string;
+    color?: string | null;
+    icon?: string | null;
+    excludeFromBudget?: boolean;
+  }) => void;
   rolloverEnabled: boolean;
   rolloverStartingBalance: string;
+  excludeFromBudget: boolean;
   onSaveRollover: (enabled: boolean, startingBalance?: string) => void;
 }
 
@@ -934,6 +953,7 @@ function GroupEditDialogBody({
   onUpdate,
   rolloverEnabled,
   rolloverStartingBalance,
+  excludeFromBudget,
   onSaveRollover,
 }: GroupEditDialogProps) {
   const { t } = useTranslation();
@@ -942,13 +962,22 @@ function GroupEditDialogBody({
   const [draftIcon, setDraftIcon] = useState<string | null>(group.icon ?? null);
   const [draftRollover, setDraftRollover] = useState(rolloverEnabled);
   const [draftStartingBalance, setDraftStartingBalance] = useState(rolloverStartingBalance);
+  const [draftExcludeFromBudget, setDraftExcludeFromBudget] = useState(excludeFromBudget);
 
   const handleSave = () => {
-    const patch: { name?: string; color?: string | null; icon?: string | null } = {};
+    const patch: {
+      name?: string;
+      color?: string | null;
+      icon?: string | null;
+      excludeFromBudget?: boolean;
+    } = {};
     const trimmedName = draftName.trim();
     if (trimmedName && trimmedName !== group.name) patch.name = trimmedName;
     if (draftColor !== color) patch.color = draftColor;
     if ((draftIcon ?? null) !== (group.icon ?? null)) patch.icon = draftIcon;
+    if (draftExcludeFromBudget !== excludeFromBudget) {
+      patch.excludeFromBudget = draftExcludeFromBudget;
+    }
     if (Object.keys(patch).length > 0) onUpdate(patch);
 
     const balanceChanged =
@@ -1007,6 +1036,24 @@ function GroupEditDialogBody({
             {t("spending:category.icon")}
           </label>
           <IconPicker value={draftIcon} accent={draftColor} onChange={setDraftIcon} />
+        </div>
+
+        <div className="border-border/40 space-y-2 border-t pt-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 space-y-0.5">
+              <div className="text-foreground text-sm font-medium">
+                {t("spending:budgetEditor.excludeFromBudget")}
+              </div>
+              <p className="text-muted-foreground text-[11px] leading-snug">
+                {t("spending:budgetEditor.excludeFromBudgetDesc")}
+              </p>
+            </div>
+            <Switch
+              checked={draftExcludeFromBudget}
+              onCheckedChange={setDraftExcludeFromBudget}
+              aria-label={t("spending:budgetEditor.excludeFromBudgetToggle")}
+            />
+          </div>
         </div>
 
         <div className="border-border/40 space-y-2 border-t pt-3">

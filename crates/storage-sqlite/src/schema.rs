@@ -692,6 +692,7 @@ diesel::table! {
         icon -> Nullable<Text>,
         sort_order -> Integer,
         is_system -> Integer,
+        exclude_from_budget -> Integer,
         created_at -> Text,
         updated_at -> Text,
     }

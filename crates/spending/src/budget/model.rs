@@ -13,6 +13,8 @@ pub struct BudgetGroup {
     pub icon: Option<String>,
     pub sort_order: i32,
     pub is_system: bool,
+    #[serde(default)]
+    pub exclude_from_budget: bool,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -28,6 +30,8 @@ pub struct NewBudgetGroup {
     pub sort_order: Option<i32>,
     #[serde(default)]
     pub is_system: bool,
+    #[serde(default)]
+    pub exclude_from_budget: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -39,6 +43,7 @@ pub struct UpdateBudgetGroup {
     #[serde(default, deserialize_with = "deserialize_optional_string")]
     pub icon: Option<Option<String>>,
     pub sort_order: Option<i32>,
+    pub exclude_from_budget: Option<bool>,
 }
 
 fn deserialize_optional_string<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
@@ -71,6 +76,16 @@ mod tests {
 
         assert_eq!(patch.color, None);
         assert_eq!(patch.icon, None);
+        assert_eq!(patch.exclude_from_budget, None);
+    }
+
+    #[test]
+    fn update_budget_group_deserializes_budget_exclusion() {
+        let patch: UpdateBudgetGroup =
+            serde_json::from_value(serde_json::json!({"excludeFromBudget": true}))
+                .expect("deserialize patch");
+
+        assert_eq!(patch.exclude_from_budget, Some(true));
     }
 }
 
@@ -201,6 +216,7 @@ pub struct BudgetCategoryRow {
     pub has_default_target: bool,
     pub has_month_override: bool,
     pub rollover_enabled: bool,
+    pub excluded_from_budget: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

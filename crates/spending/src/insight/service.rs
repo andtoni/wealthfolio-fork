@@ -2190,6 +2190,7 @@ mod tests {
                 icon: None,
                 sort_order: 0,
                 is_system: true,
+                exclude_from_budget: false,
                 created_at: Utc::now().naive_utc(),
                 updated_at: Utc::now().naive_utc(),
             }])
