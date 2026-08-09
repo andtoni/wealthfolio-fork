@@ -44,11 +44,11 @@
   },
   "devDependencies": {
     "@eslint/compat": "1.4.1",
-    "@eslint/js": "9.39.3",
+    "@eslint/js": "9.39.5",
     "@playwright/test": "1.58.2",
     "@tanstack/eslint-plugin-query": "5.91.4",
     "@tauri-apps/cli": "2.11.1",
-    "eslint": "9.39.3",
+    "eslint": "9.39.5",
     "eslint-config-prettier": "10.1.8",
     "eslint-plugin-react": "7.37.5",
     "eslint-plugin-react-hooks": "5.2.0",
