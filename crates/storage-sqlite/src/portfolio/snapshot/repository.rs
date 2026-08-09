@@ -214,6 +214,87 @@ impl SnapshotRepository {
         Ok(results_map)
     }
 
+    /// Select the newest snapshot that is eligible for current aggregates.
+    ///
+    /// A newer contextual/unprovenanced row must not shadow an older live
+    /// canonical snapshot: current valuation should fall back to the newest
+    /// provider-authoritative row instead of returning zero after policy
+    /// filtering.
+    pub fn get_latest_eligible_snapshots_before_date(
+        &self,
+        account_ids_vec: &[String],
+        target_date: NaiveDate,
+    ) -> Result<HashMap<String, AccountStateSnapshot>> {
+        if account_ids_vec.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut conn = get_connection(&self.pool)?;
+        let target_date_str = target_date.format("%Y-%m-%d").to_string();
+        let placeholders = account_ids_vec
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "WITH RankedSnapshots AS ( \
+                SELECT \
+                    id, account_id, snapshot_date, currency, positions, \
+                    cash_balances, cost_basis, net_contribution, calculated_at, net_contribution_base, \
+                    cash_total_account_currency, cash_total_base_currency, position_market_values, liability_balance, source, \
+                    ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY snapshot_date DESC, \
+                        CASE WHEN EXISTS ( \
+                            SELECT 1 FROM provenance_records provenance \
+                            WHERE provenance.entity_type = 'snapshot' \
+                              AND provenance.entity_id = holdings_snapshots.id \
+                              AND provenance.role = 'live_canonical' \
+                        ) THEN 0 ELSE 1 END, \
+                        calculated_at DESC, id DESC) as rn \
+                FROM holdings_snapshots \
+                WHERE account_id IN ({}) AND snapshot_date <= ? \
+                  AND EXISTS ( \
+                      SELECT 1 FROM provenance_records provenance \
+                      WHERE provenance.entity_type = 'snapshot' \
+                        AND provenance.entity_id = holdings_snapshots.id \
+                        AND ( \
+                            provenance.role = 'live_canonical' OR \
+                            (provenance.role = 'opening_baseline' \
+                             AND provenance.coverage_start_date IS NOT NULL \
+                             AND provenance.coverage_start_date <= holdings_snapshots.snapshot_date) OR \
+                            (provenance.role = 'manual_current' \
+                             AND provenance.manual_current_approved = 1) \
+                        ) \
+                  ) \
+            ) \
+            SELECT \
+                id, account_id, snapshot_date, currency, positions, \
+                cash_balances, cost_basis, net_contribution, calculated_at, net_contribution_base, \
+                cash_total_account_currency, cash_total_base_currency, position_market_values, liability_balance, source \
+            FROM RankedSnapshots \
+            WHERE rn = 1",
+            placeholders
+        );
+
+        let mut query_builder = sql_query(sql).into_boxed::<Sqlite>();
+        for account_id in account_ids_vec {
+            query_builder = query_builder.bind::<Text, _>(account_id);
+        }
+        query_builder = query_builder.bind::<Text, _>(target_date_str);
+
+        let snapshots = query_builder
+            .load::<AccountStateSnapshotDB>(&mut conn)
+            .map_err(StorageError::from)?;
+        Ok(snapshots
+            .into_iter()
+            .map(|snapshot| {
+                (
+                    snapshot.account_id.clone(),
+                    AccountStateSnapshot::from(snapshot),
+                )
+            })
+            .collect())
+    }
+
     pub fn get_all_latest_snapshots(
         &self,
         account_ids_vec: &[String],
@@ -1017,6 +1098,14 @@ impl SnapshotRepositoryTrait for SnapshotRepository {
         self.get_latest_snapshots_before_date(account_ids_param, date)
     }
 
+    fn get_latest_eligible_snapshots_before_date(
+        &self,
+        account_ids_param: &[String],
+        date: NaiveDate,
+    ) -> Result<HashMap<String, AccountStateSnapshot>> {
+        SnapshotRepository::get_latest_eligible_snapshots_before_date(self, account_ids_param, date)
+    }
+
     fn get_all_latest_snapshots(
         &self,
         account_ids_param: &[String],
@@ -1312,6 +1401,48 @@ mod tests {
             .remove(account_id)
             .expect("all latest snapshot by account");
         assert_eq!(all_latest.id, canonical.id);
+    }
+
+    #[tokio::test]
+    async fn test_latest_eligible_snapshot_falls_back_past_newer_contextual_row() {
+        let (repo, pool, _temp_dir) = create_test_repository().await;
+        let account_id = "test-account-eligible-fallback";
+        create_test_account(&pool, account_id);
+
+        let canonical_date = NaiveDate::from_ymd_opt(2026, 8, 9).unwrap();
+        let contextual_date = NaiveDate::from_ymd_opt(2026, 8, 10).unwrap();
+        let mut canonical =
+            create_test_snapshot(account_id, canonical_date, SnapshotSource::BrokerImported);
+        canonical.id = "provider-snapshot-fallback".into();
+        canonical
+            .cash_balances
+            .insert("USD".into(), Decimal::from(200));
+        let mut contextual =
+            create_test_snapshot(account_id, contextual_date, SnapshotSource::BrokerImported);
+        contextual
+            .cash_balances
+            .insert("USD".into(), Decimal::from(999));
+
+        repo.save_snapshots(&[canonical.clone(), contextual])
+            .await
+            .expect("save fallback snapshots");
+
+        let mut conn = get_connection(&pool).expect("get test connection");
+        sql_query(
+            "INSERT INTO provenance_records(entity_type, entity_id, role, source_system) \
+             VALUES ('snapshot', ?, 'live_canonical', 'finance')",
+        )
+        .bind::<Text, _>(&canonical.id)
+        .execute(&mut conn)
+        .expect("mark fallback snapshot canonical");
+
+        let latest = repo
+            .get_latest_eligible_snapshots_before_date(&[account_id.to_string()], contextual_date)
+            .expect("load eligible latest snapshot")
+            .remove(account_id)
+            .expect("eligible latest snapshot");
+        assert_eq!(latest.id, canonical.id);
+        assert_eq!(latest.cash_balances.get("USD"), Some(&Decimal::from(200)));
     }
 
     #[tokio::test]

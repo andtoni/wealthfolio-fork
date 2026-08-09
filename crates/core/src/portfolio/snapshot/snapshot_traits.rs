@@ -35,6 +35,19 @@ pub trait SnapshotRepositoryTrait: Send + Sync {
         date: NaiveDate,
     ) -> Result<HashMap<String, AccountStateSnapshot>>;
 
+    /// Get the latest aggregate-eligible snapshots for multiple accounts before or on the date.
+    ///
+    /// Implementations with provenance-aware storage should skip newer snapshots that are not
+    /// eligible and fall back to the newest eligible snapshot. The default preserves compatibility
+    /// for lightweight repositories and test doubles.
+    fn get_latest_eligible_snapshots_before_date(
+        &self,
+        account_ids: &[String],
+        date: NaiveDate,
+    ) -> Result<HashMap<String, AccountStateSnapshot>> {
+        self.get_latest_snapshots_before_date(account_ids, date)
+    }
+
     /// Get the latest snapshots for multiple accounts (no date filter).
     fn get_all_latest_snapshots(
         &self,

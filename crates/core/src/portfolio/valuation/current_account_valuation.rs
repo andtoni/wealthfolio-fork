@@ -162,7 +162,7 @@ impl<'a> CurrentAccountValuationService<'a> {
     ) -> Result<HashMap<String, AccountStateSnapshot>> {
         let snapshots = self
             .snapshot_repository
-            .get_latest_snapshots_before_date(account_ids, latest_snapshot_cutoff)?;
+            .get_latest_eligible_snapshots_before_date(account_ids, latest_snapshot_cutoff)?;
         let mut snapshots = filter_latest_snapshots_by_aggregate_policy(
             snapshots,
             self.aggregate_eligibility_service,
