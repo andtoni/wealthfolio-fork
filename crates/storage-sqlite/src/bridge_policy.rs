@@ -1302,9 +1302,14 @@ fn reject_conflicting_activity_overlays(
                      ON successor.deployment_id=predecessor.deployment_id \
                   WHERE predecessor.deployment_id=? AND predecessor.activity_id=pending.id \
                     AND successor.activity_id=posted.id \
-                    AND predecessor.attributed_person_subject_id IS NOT NULL \
-                    AND successor.attributed_person_subject_id IS NOT NULL \
-                    AND predecessor.attributed_person_subject_id<>successor.attributed_person_subject_id)\
+                    AND (predecessor.attributed_person_subject_id IS NOT successor.attributed_person_subject_id \
+                      OR predecessor.attribution_kind<>successor.attribution_kind \
+                      OR predecessor.provider_actor IS NOT successor.provider_actor)) OR \
+           (EXISTS (SELECT 1 FROM spending_activity_splits WHERE activity_id=pending.id) \
+             AND EXISTS (SELECT 1 FROM spending_activity_splits WHERE activity_id=posted.id)) OR \
+           EXISTS (SELECT 1 FROM spending_activity_events predecessor \
+                   JOIN spending_activity_events successor ON successor.activity_id=posted.id \
+                  WHERE predecessor.activity_id=pending.id AND predecessor.event_id<>successor.event_id)\
          )",
     )
     .bind::<Text, _>(pending_id)
@@ -1891,6 +1896,17 @@ impl BridgePolicyStore {
                     if projection_count != 1 {
                         return Err(diesel::result::Error::NotFound.into());
                     }
+                    // The pending resource is the user-edited lifecycle predecessor.
+                    // Preserve its child overlays when a separately projected posted row
+                    // already has defaults or edits for the same single-valued slots.
+                    sql_query("DELETE FROM activity_taxonomy_assignments WHERE activity_id=? AND taxonomy_id IN (SELECT taxonomy_id FROM activity_taxonomy_assignments WHERE activity_id=?)")
+                        .bind::<Text,_>(n)
+                        .bind::<Text,_>(p)
+                        .execute(c)?;
+                    sql_query("DELETE FROM spending_activity_events WHERE activity_id=? AND EXISTS (SELECT 1 FROM spending_activity_events WHERE activity_id=?)")
+                        .bind::<Text,_>(n)
+                        .bind::<Text,_>(p)
+                        .execute(c)?;
                     for table in &["activity_taxonomy_assignments", "spending_activity_splits", "spending_activity_events"] {
                         sql_query(format!("UPDATE {table} SET activity_id=? WHERE activity_id=?"))
                             .bind::<Text,_>(n)
@@ -1923,10 +1939,21 @@ impl BridgePolicyStore {
                         .bind::<Integer,_>(needs_review)
                         .bind::<Text,_>(n)
                         .execute(c)?;
+                    sql_query("DELETE FROM activity_disclosure_projections WHERE deployment_id=? AND person_subject_id=? AND activity_id=?")
+                        .bind::<Text,_>(&d)
+                        .bind::<Text,_>(&op.subject)
+                        .bind::<Text,_>(n)
+                        .execute(c)?;
                     sql_query("UPDATE activity_disclosure_projections SET activity_id=? WHERE deployment_id=? AND person_subject_id=? AND activity_id=?")
                         .bind::<Text,_>(n)
                         .bind::<Text,_>(&d)
                         .bind::<Text,_>(&op.subject)
+                        .bind::<Text,_>(p)
+                        .execute(c)?;
+                    sql_query("DELETE FROM activity_attribution_overlays WHERE deployment_id=? AND activity_id=? AND EXISTS (SELECT 1 FROM activity_attribution_overlays WHERE deployment_id=? AND activity_id=?)")
+                        .bind::<Text,_>(&d)
+                        .bind::<Text,_>(n)
+                        .bind::<Text,_>(&d)
                         .bind::<Text,_>(p)
                         .execute(c)?;
                     sql_query("UPDATE activity_attribution_overlays SET activity_id=?,account_id=(SELECT account_id FROM activities WHERE id=?) WHERE deployment_id=? AND activity_id=?")

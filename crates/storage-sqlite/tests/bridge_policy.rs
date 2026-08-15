@@ -1007,6 +1007,128 @@ async fn commit_lifecycle_path_migrates_only_projected_candidate() {
 }
 
 #[tokio::test]
+async fn commit_lifecycle_replay_preserves_pending_children_when_posted_children_exist() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    store
+        .seed_migration_fixture("p-overlays", "n-overlays")
+        .await
+        .unwrap();
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let c = Connection::open(&path).unwrap();
+    c.execute("INSERT INTO taxonomy_categories(id,taxonomy_id,name,key,color,sort_order,created_at,updated_at) VALUES('bridge-posted-category','bridge-taxonomy','Posted','posted','#111',1,'now','now')", []).unwrap();
+    c.execute("INSERT INTO activity_taxonomy_assignments(id,activity_id,taxonomy_id,category_id) VALUES('bridge-posted-assignment','n-overlays','bridge-taxonomy','bridge-posted-category')", []).unwrap();
+    c.execute("INSERT INTO spending_activity_events(activity_id,event_id) VALUES('n-overlays','bridge-event')", []).unwrap();
+    c.execute("INSERT INTO activity_attribution_overlays(deployment_id,activity_id,account_id,attributed_person_subject_id,revision) VALUES(?,?,'a1','alice',2)", params![D1, "n-overlays"]).unwrap();
+    for activity_id in ["p-overlays", "n-overlays"] {
+        c.execute("INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?)", params![D1, "alice", activity_id, "a1", generation]).unwrap();
+    }
+
+    store
+        .commit(
+            DisclosureOperation::new(
+                "overlay-replay",
+                "alice",
+                generation,
+                DisclosureKind::ActivityUpsert,
+                "p-overlays",
+            )
+            .with_lifecycle("n-overlays"),
+        )
+        .await
+        .unwrap();
+
+    let state: (i64, String, String, String, String, i64, i64) = c.query_row(
+        "SELECT (SELECT count(*) FROM activities WHERE id='p-overlays'), (SELECT id FROM activity_taxonomy_assignments WHERE activity_id='n-overlays'), (SELECT id FROM spending_activity_splits WHERE activity_id='n-overlays'), (SELECT event_id FROM spending_activity_events WHERE activity_id='n-overlays'), (SELECT attributed_person_subject_id FROM activity_attribution_overlays WHERE deployment_id=? AND activity_id='n-overlays'), (SELECT revision FROM activity_attribution_overlays WHERE deployment_id=? AND activity_id='n-overlays'), (SELECT count(*) FROM activity_disclosure_projections WHERE deployment_id=? AND person_subject_id='alice' AND activity_id='n-overlays')",
+        params![D1, D1, D1],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?)),
+    ).unwrap();
+    assert_eq!(
+        state,
+        (
+            0,
+            "bridge-assignment".into(),
+            "bridge-split".into(),
+            "bridge-event".into(),
+            "alice".into(),
+            1,
+            1
+        )
+    );
+}
+
+#[tokio::test]
+async fn commit_lifecycle_rejects_two_split_sets_without_mutation() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    store
+        .seed_migration_fixture("p-splits", "n-splits")
+        .await
+        .unwrap();
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let c = Connection::open(&path).unwrap();
+    c.execute("INSERT INTO spending_activity_splits(id,activity_id,taxonomy_id,category_id,amount) VALUES('bridge-posted-split','n-splits','bridge-taxonomy','bridge-category','1')", []).unwrap();
+    c.execute("INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?)", params![D1, "alice", "p-splits", "a1", generation]).unwrap();
+
+    assert!(store
+        .commit(
+            DisclosureOperation::new(
+                "split-conflict",
+                "alice",
+                generation,
+                DisclosureKind::ActivityUpsert,
+                "p-splits"
+            )
+            .with_lifecycle("n-splits"),
+        )
+        .await
+        .is_err());
+
+    let state: (i64, i64, i64) = c.query_row(
+        "SELECT (SELECT count(*) FROM activities WHERE id IN ('p-splits','n-splits')), (SELECT count(*) FROM spending_activity_splits WHERE activity_id IN ('p-splits','n-splits')), (SELECT count(*) FROM disclosure_receipts WHERE idempotency_key='split-conflict')",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ).unwrap();
+    assert_eq!(state, (2, 2, 0));
+}
+
+#[tokio::test]
+async fn commit_lifecycle_rejects_conflicting_attribution_without_mutation() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    store
+        .seed_migration_fixture("p-attribution", "n-attribution")
+        .await
+        .unwrap();
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let c = Connection::open(&path).unwrap();
+    c.execute("UPDATE activity_attribution_overlays SET provider_actor='pending-actor' WHERE deployment_id=? AND activity_id='p-attribution'", [D1]).unwrap();
+    c.execute("INSERT INTO activity_attribution_overlays(deployment_id,activity_id,account_id,attributed_person_subject_id,provider_actor,revision) VALUES(?,?,'a1','alice','posted-actor',2)", params![D1, "n-attribution"]).unwrap();
+    c.execute("INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?)", params![D1, "alice", "p-attribution", "a1", generation]).unwrap();
+
+    assert!(store
+        .commit(
+            DisclosureOperation::new(
+                "attribution-conflict",
+                "alice",
+                generation,
+                DisclosureKind::ActivityUpsert,
+                "p-attribution"
+            )
+            .with_lifecycle("n-attribution"),
+        )
+        .await
+        .is_err());
+
+    let state: (i64, i64, i64) = c.query_row(
+        "SELECT (SELECT count(*) FROM activities WHERE id IN ('p-attribution','n-attribution')), (SELECT count(*) FROM activity_attribution_overlays WHERE deployment_id=? AND activity_id IN ('p-attribution','n-attribution')), (SELECT count(*) FROM disclosure_receipts WHERE idempotency_key='attribution-conflict')",
+        [D1],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ).unwrap();
+    assert_eq!(state, (2, 2, 0));
+}
+
+#[tokio::test]
 async fn commit_lifecycle_rejects_wrong_status_and_missing_projection() {
     let (_dir, path, store) = store(D1).await;
     seed(&path, &[D1], &["alice"]);
