@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use crate::auth::AuthenticatedSubject;
 use crate::error::ApiError;
+use crate::events::{ServerEvent, PORTFOLIO_UPDATE_COMPLETE};
 use crate::main_lib::AppState;
 
 fn get_bridge(
@@ -23,6 +24,16 @@ fn get_bridge(
 /// Bridge operations always require an authenticated subject. Household
 /// mode must never treat an absent identity as authorization, even when the
 /// global UI auth requirement is explicitly disabled.
+fn changes_activity_queries(
+    kind: wealthfolio_storage_sqlite::bridge_policy::DisclosureKind,
+) -> bool {
+    use wealthfolio_storage_sqlite::bridge_policy::DisclosureKind;
+    matches!(
+        kind,
+        DisclosureKind::ActivityUpsert | DisclosureKind::ActivityDelete
+    )
+}
+
 fn require_own_subject(
     auth: Option<Extension<AuthenticatedSubject>>,
     request_subject: &str,
@@ -43,6 +54,17 @@ fn require_own_subject(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn activity_bridge_commits_invalidate_live_queries() {
+        use wealthfolio_storage_sqlite::bridge_policy::DisclosureKind;
+        assert!(changes_activity_queries(DisclosureKind::ActivityUpsert));
+        assert!(changes_activity_queries(DisclosureKind::ActivityDelete));
+        assert!(!changes_activity_queries(
+            DisclosureKind::CurrentStateUpsert
+        ));
+        assert!(!changes_activity_queries(DisclosureKind::ProjectionFence));
+    }
 
     #[test]
     fn bridge_requires_an_authenticated_subject() {
@@ -184,8 +206,16 @@ pub async fn handle_commit(
 ) -> Result<Json<ReceiptResponse>, ApiError> {
     require_own_subject(auth, &op.subject)?;
     let store = get_bridge(&state)?;
+    let invalidate_activity_queries = changes_activity_queries(op.kind);
     match store.commit(op).await {
-        Ok(r) => Ok(Json(receipt(r))),
+        Ok(r) => {
+            if invalidate_activity_queries {
+                state
+                    .event_bus
+                    .publish(ServerEvent::new(PORTFOLIO_UPDATE_COMPLETE));
+            }
+            Ok(Json(receipt(r)))
+        }
         Err(e) => Err(ApiError::BadRequest(format!("commit failed: {e}"))),
     }
 }
