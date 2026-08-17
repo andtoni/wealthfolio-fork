@@ -79,6 +79,10 @@ pub(crate) fn classify_activity_for_aggregation(
     account_type: &str,
     within_spending_groups: &HashSet<String>,
 ) -> SpendingClassification {
+    if is_provider_pocket_conversion(activity) {
+        return SpendingClassification::InternalTransfer;
+    }
+
     let activity_type = activity.effective_type();
     if matches!(activity_type, "TRANSFER_IN" | "TRANSFER_OUT") {
         if let Some(group) = activity.source_group_id.as_deref() {
@@ -94,7 +98,29 @@ pub(crate) fn classify_activity_for_aggregation(
     classify_activity(activity, account_type)
 }
 
+pub(crate) fn is_provider_pocket_conversion(activity: &Activity) -> bool {
+    if activity.activity_type_override.is_some()
+        || !matches!(activity.effective_type(), "TRANSFER_IN" | "TRANSFER_OUT")
+    {
+        return false;
+    }
+
+    [activity.source_type.as_deref(), activity.subtype.as_deref()]
+        .into_iter()
+        .flatten()
+        .any(|value| {
+            matches!(
+                value.trim().to_ascii_uppercase().as_str(),
+                "MCPBAPOCKETTRANSFERS" | "POCKET_TRANSFER"
+            )
+        })
+}
+
 pub(crate) fn classify_activity(activity: &Activity, account_type: &str) -> SpendingClassification {
+    if is_provider_pocket_conversion(activity) {
+        return SpendingClassification::InternalTransfer;
+    }
+
     let activity_type = activity.effective_type();
 
     if matches!(activity_type, "TRANSFER_IN" | "TRANSFER_OUT") && activity.source_group_id.is_some()
@@ -297,6 +323,63 @@ mod tests {
         assert_eq!(
             c.spending_amount(Decimal::new(100, 0)),
             Decimal::new(100, 0)
+        );
+    }
+
+    #[test]
+    fn unlinked_cash_transfer_in_remains_income() {
+        let classification = classify_activity(&activity("TRANSFER_IN", None), account_types::CASH);
+        assert_eq!(classification, SpendingClassification::Income);
+        assert_eq!(
+            classification.income_amount(Decimal::new(100, 0)),
+            Decimal::new(100, 0)
+        );
+        assert_eq!(
+            classification.spending_amount(Decimal::new(100, 0)),
+            Decimal::ZERO
+        );
+    }
+
+    #[test]
+    fn provider_pocket_conversion_is_visible_but_never_counted() {
+        let mut conversion_out = activity("TRANSFER_OUT", None);
+        conversion_out.source_type = Some("MCPBAPOCKETTRANSFERS".to_string());
+        let classification = classify_activity_for_aggregation(
+            &conversion_out,
+            account_types::CASH,
+            &HashSet::new(),
+        );
+        assert_eq!(classification, SpendingClassification::InternalTransfer);
+        assert_eq!(
+            classification.spending_amount(Decimal::new(2000000, 2)),
+            Decimal::ZERO
+        );
+        assert_eq!(
+            classification.income_amount(Decimal::new(2000000, 2)),
+            Decimal::ZERO
+        );
+        assert_eq!(
+            classification.saving_amount(Decimal::new(2000000, 2)),
+            Decimal::ZERO
+        );
+
+        let mut conversion_in = activity("TRANSFER_IN", Some("provider-group"));
+        conversion_in.subtype = Some("POCKET_TRANSFER".to_string());
+        assert_eq!(
+            classify_activity_for_aggregation(&conversion_in, account_types::CASH, &HashSet::new(),),
+            SpendingClassification::InternalTransfer
+        );
+    }
+
+    #[test]
+    fn user_override_takes_precedence_over_provider_pocket_marker() {
+        let mut corrected = activity("TRANSFER_OUT", None);
+        corrected.source_type = Some("MCPBAPOCKETTRANSFERS".to_string());
+        corrected.activity_type_override = Some("WITHDRAWAL".to_string());
+
+        assert_eq!(
+            classify_activity_for_aggregation(&corrected, account_types::CASH, &HashSet::new()),
+            SpendingClassification::Expense
         );
     }
 

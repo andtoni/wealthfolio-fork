@@ -87,6 +87,17 @@ describe("PerformanceGrid", () => {
     );
   });
 
+  it("does not attach return-quality reasons to unavailable risk metrics", () => {
+    render(<PerformanceGrid performance={performanceResult()} isHoldingsMode />);
+
+    expect(screen.getByTestId("metric-Volatility")).not.toHaveTextContent(
+      "Book basis is incomplete.",
+    );
+    expect(screen.getByTestId("metric-Max Drawdown")).not.toHaveTextContent(
+      "Book basis is incomplete.",
+    );
+  });
+
   it("shows annualized TWR and IRR for periods of at least one year", () => {
     render(
       <PerformanceGrid

@@ -725,9 +725,9 @@ body.qr-scan-active .scan-hide-target {
     scroll-padding-bottom: var(--mobile-nav-total-offset);
   }
 
-  /* Scroll-to/focus targets stop below sticky headers (typically ~72px) */
+  /* Keep scroll-to/focus targets clear of the page's normal-flow header. */
   .scroll-pt-header {
-    scroll-padding-top: 5rem;
+    scroll-padding-top: 1rem;
   }
 
   /* Mobile-optimized form field spacing */

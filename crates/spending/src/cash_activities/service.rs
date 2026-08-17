@@ -29,7 +29,7 @@ use crate::activity_assignments::{
 };
 use crate::activity_classification::{
     activity_abs_amount, classify_activity, classify_activity_for_aggregation,
-    within_spending_transfer_groups, SpendingClassification,
+    is_provider_pocket_conversion, within_spending_transfer_groups, SpendingClassification,
 };
 use crate::activity_splits::{ActivitySplit, ActivitySplitRepositoryTrait, NewActivitySplit};
 use crate::aggregate_eligibility::{
@@ -1025,7 +1025,7 @@ fn is_neutral_visible_cash_activity(activity: &Activity, account_type: &str) -> 
     // decides saving vs neutral via classify_activity_for_aggregation.
     account_type == account_types::CASH
         && matches!(activity_type, "TRANSFER_IN" | "TRANSFER_OUT")
-        && activity.source_group_id.is_some()
+        && (activity.source_group_id.is_some() || is_provider_pocket_conversion(activity))
 }
 
 fn group_assignments(
@@ -1931,6 +1931,14 @@ mod tests {
             &activity("DEPOSIT"),
             account_types::CREDIT_CARD
         ));
+    }
+
+    #[test]
+    fn unlinked_provider_pocket_conversion_remains_visible() {
+        let mut conversion = activity("TRANSFER_OUT");
+        conversion.source_type = Some("MCPBAPOCKETTRANSFERS".to_string());
+
+        assert!(is_visible_cash_activity(&conversion, account_types::CASH));
     }
 
     #[tokio::test]

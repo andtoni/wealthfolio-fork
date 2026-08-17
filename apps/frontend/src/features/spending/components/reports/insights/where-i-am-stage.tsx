@@ -219,7 +219,7 @@ const PaceCard: FC<PaceCardProps> = ({
       </div>
 
       {/* Row 2 — text insight (replaces the redundant "big number" — that fact
-          already lives in the Spent card next to it). Serif for editorial feel. */}
+          already lives in the Spent card next to it). */}
       <div className="mt-3">{pace.narrative}</div>
 
       {/* Row 3 — progress bar with pace tick */}
@@ -389,7 +389,7 @@ function buildLiveNarrative({
         <span className="tabular-nums">
           {isBalanceHidden ? "••••" : formatCompactAmount(Math.abs(diffFromPace), currency)}
         </span>{" "}
-        <span className="font-serif">{direction}</span>
+        <span>{direction}</span>
       </div>
       <div className="text-foreground/90 text-sm">
         {t("spending:whereIAm.projectedPrefix")}{" "}

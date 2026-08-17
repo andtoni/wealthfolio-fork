@@ -74,9 +74,26 @@ export function CompactAllocationStrip({
     if (variant === "risk-composition") {
       // Fixed order: Low → Medium → High → Unknown
       // Always include all slots to preserve mental model consistency
+      const knownLevels = new Set<string>(RISK_ORDER);
       const ordered = RISK_ORDER.map((riskLevel) => {
-        const found = cats.find((c) => normalizeRiskName(c.categoryName) === riskLevel);
-        const value = found?.value ?? 0;
+        const matching = cats.filter((category) => {
+          const id = normalizeRiskName(category.categoryId);
+          const name = normalizeRiskName(category.categoryName);
+          if (riskLevel === "unknown") {
+            return (
+              id === riskLevel ||
+              name === riskLevel ||
+              (!knownLevels.has(id) && !knownLevels.has(name))
+            );
+          }
+          return id === riskLevel || name === riskLevel;
+        });
+        const found = matching.find(
+          (category) =>
+            normalizeRiskName(category.categoryId) === riskLevel ||
+            normalizeRiskName(category.categoryName) === riskLevel,
+        );
+        const value = matching.reduce((sum, category) => sum + category.value, 0);
         const percent = total > 0 ? (value / total) * 100 : 0;
         return {
           id: found?.categoryId ?? riskLevel,
@@ -86,6 +103,7 @@ export function CompactAllocationStrip({
           percent,
           color: RISK_COLORS[riskLevel] ?? RISK_COLORS.unknown,
           isEmpty: value === 0,
+          isClickable: matching.length === 1 && found !== undefined,
         };
       });
 
@@ -171,13 +189,15 @@ export function CompactAllocationStrip({
           {processedCategories.map((category, index) => {
             const isRisk = variant === "risk-composition";
             const isEmpty = isRisk && "isEmpty" in category && category.isEmpty;
+            const isClickable =
+              !isEmpty && (!("isClickable" in category) || category.isClickable === true);
             const isLast = index === processedCategories.length - 1;
 
             return (
               <Tooltip key={category.id} delayDuration={100}>
                 <TooltipTrigger asChild>
                   <div
-                    className={`h-full transition-opacity ${isEmpty ? "" : "cursor-pointer hover:opacity-80"}`}
+                    className={`h-full transition-opacity ${isClickable ? "cursor-pointer hover:opacity-80" : ""}`}
                     style={{
                       width: isEmpty ? "1px" : `${category.percent}%`,
                       backgroundColor: isEmpty ? "var(--color-base-200)" : category.color,
@@ -185,11 +205,11 @@ export function CompactAllocationStrip({
                       // 1px separator via box-shadow (no extra DOM)
                       boxShadow: isLast ? "none" : "inset -1px 0 0 var(--background)",
                     }}
-                    onClick={() => !isEmpty && onSegmentClick?.(category.id, category.name)}
-                    role={isEmpty ? undefined : "button"}
-                    tabIndex={isEmpty ? -1 : 0}
+                    onClick={() => isClickable && onSegmentClick?.(category.id, category.name)}
+                    role={isClickable ? "button" : undefined}
+                    tabIndex={isClickable ? 0 : -1}
                     onKeyDown={(e) => {
-                      if (!isEmpty && (e.key === "Enter" || e.key === " ")) {
+                      if (isClickable && (e.key === "Enter" || e.key === " ")) {
                         onSegmentClick?.(category.id, category.name);
                       }
                     }}
@@ -218,16 +238,18 @@ export function CompactAllocationStrip({
           {processedCategories.map((category) => {
             const isRisk = variant === "risk-composition";
             const isEmpty = isRisk && "isEmpty" in category && category.isEmpty;
+            const isClickable =
+              !isEmpty && (!("isClickable" in category) || category.isClickable === true);
 
             return (
               <div
                 key={category.id}
-                className={`flex items-center gap-1.5 text-xs transition-opacity ${isEmpty ? "opacity-50" : "cursor-pointer hover:opacity-70"}`}
-                onClick={() => !isEmpty && onSegmentClick?.(category.id, category.name)}
-                role={isEmpty ? undefined : "button"}
-                tabIndex={isEmpty ? -1 : 0}
+                className={`flex items-center gap-1.5 text-xs transition-opacity ${isEmpty ? "opacity-50" : isClickable ? "cursor-pointer hover:opacity-70" : ""}`}
+                onClick={() => isClickable && onSegmentClick?.(category.id, category.name)}
+                role={isClickable ? "button" : undefined}
+                tabIndex={isClickable ? 0 : -1}
                 onKeyDown={(e) => {
-                  if (!isEmpty && (e.key === "Enter" || e.key === " ")) {
+                  if (isClickable && (e.key === "Enter" || e.key === " ")) {
                     onSegmentClick?.(category.id, category.name);
                   }
                 }}

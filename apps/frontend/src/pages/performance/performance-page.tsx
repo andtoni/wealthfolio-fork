@@ -272,6 +272,12 @@ function isMoneyWeightedMessage(message: string): boolean {
   return /\bIRR\b|\bMWR\b|money-weighted|XIRR/i.test(message);
 }
 
+export function isRiskWarning(message: string): boolean {
+  return /\b(valuation|valuations|price|prices|priced|coverage|volatility|drawdown)\b|\bexternal cash flows?\b|\bflow provenance\b|\bnet contribution deltas?\b|\bgross daily flow\b/i.test(
+    message,
+  );
+}
+
 function firstMoneyWeightedReason(result: PerformanceResult): string | undefined {
   const messages = [
     ...(result.dataQuality.notApplicableReasons ?? []),
@@ -1200,6 +1206,9 @@ export default function PerformancePage() {
     const visibleWarnings = rawWarnings
       .filter((warning) => !isMoneyWeightedMessage(warning))
       .map((warning) => presentWarning(warning, accountNamesById));
+    const riskWarnings = rawWarnings
+      .filter((warning) => !isMoneyWeightedMessage(warning) && isRiskWarning(warning))
+      .map((warning) => presentWarning(warning, accountNamesById));
     const moneyWeightedWarnings = rawMoneyWeightedWarnings.map((warning) =>
       presentMoneyWeightedWarning(warning, accountNamesById, t),
     );
@@ -1254,10 +1263,12 @@ export default function PerformancePage() {
       {
         label: t("performance:metric.volatility"),
         infoText: volatilityInfo,
+        warningText: riskWarnings,
       },
       {
         label: t("performance:metric.max_drawdown"),
         infoText: maxDrawdownInfo,
+        warningText: riskWarnings,
       },
       ...(periodPnl != null
         ? [
@@ -1294,7 +1305,8 @@ export default function PerformancePage() {
       ...selectedMetricPresentation,
       trackingModeBadge: trackingModeBadge(found, t),
       returnWarnings: visibleWarnings,
-      volatilityWarnings: [],
+      volatilityWarnings: riskWarnings,
+      riskWarnings,
       warnings: visibleWarnings,
       notApplicableReasons: found.dataQuality.notApplicableReasons ?? [],
     };
@@ -1672,6 +1684,7 @@ export default function PerformancePage() {
                               <HeaderMetric
                                 label={t("performance:metric.max_drawdown")}
                                 infoText={maxDrawdownInfo}
+                                warningText={selectedItemData?.riskWarnings}
                                 value={selectedItemData?.maxDrawdown ?? null}
                                 align="left"
                                 valueClassName="text-base"
@@ -1750,6 +1763,7 @@ export default function PerformancePage() {
                               <StripMetric
                                 label={t("performance:metric.max_drawdown_short")}
                                 value={selectedItemData?.maxDrawdown ?? null}
+                                hasWarning={Boolean(selectedItemData?.riskWarnings.length)}
                               />
                             </div>
                           </StripSection>

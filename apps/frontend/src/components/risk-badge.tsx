@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 type RiskLevel = "UNKNOWN" | "LOW" | "MEDIUM" | "HIGH";
 
 interface RiskBadgeProps {
-  level: RiskLevel | null | undefined;
+  level: string | null | undefined;
   size?: "sm" | "md";
   showLabel?: boolean;
   className?: string;
@@ -34,9 +34,9 @@ const RISK_CONFIG: Record<RiskLevel, { labelKey: string; dotClass: string; textC
   },
 };
 
-function normalizeLevel(level: RiskLevel | null | undefined): RiskLevel {
+function normalizeLevel(level: string | null | undefined): RiskLevel {
   if (!level) return "UNKNOWN";
-  const normalized = level.toUpperCase();
+  const normalized = level.trim().toUpperCase();
   if (normalized in RISK_CONFIG) {
     return normalized as RiskLevel;
   }

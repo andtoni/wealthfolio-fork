@@ -2690,6 +2690,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn analytics_monthly_report_excludes_provider_pocket_conversion_from_totals() {
+        let mut conversion = analytics_activity(
+            "usd-pocket-conversion",
+            "cash",
+            "TRANSFER_OUT",
+            2_000_000,
+            Utc.with_ymd_and_hms(2026, 8, 14, 12, 0, 0).unwrap(),
+        );
+        conversion.amount = Some(Decimal::new(2_000_000, 2));
+        conversion.currency = "ZAR".to_string();
+        conversion.source_type = Some("MCPBAPOCKETTRANSFERS".to_string());
+        conversion.subtype = Some("POCKET_TRANSFER".to_string());
+
+        let analytics = make_analytics_service(
+            vec![conversion],
+            vec![account("cash", account_types::CASH)],
+            vec!["cash".to_string()],
+            vec!["cash".to_string()],
+            vec!["usd-pocket-conversion".to_string()],
+        );
+
+        let report = analytics
+            .service
+            .monthly_report(
+                ReportRequest {
+                    start_date: "2026-08-01T00:00:00Z".to_string(),
+                    end_date: "2026-08-31T23:59:59Z".to_string(),
+                    account_ids: None,
+                },
+                "UTC",
+                "ZAR",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(report.current.outflow, 0.0);
+        assert_eq!(report.current.income, 0.0);
+        assert_eq!(report.current.saved, 0.0);
+        assert_eq!(report.current.net, 0.0);
+        assert_eq!(report.current.count, 0);
+        assert!(report.spending_breakdown.is_empty());
+        assert!(report.by_day.is_empty());
+    }
+
+    #[tokio::test]
     async fn analytics_monthly_report_intersects_requested_accounts_with_account_gate() {
         let cash = analytics_activity(
             "cash-row",

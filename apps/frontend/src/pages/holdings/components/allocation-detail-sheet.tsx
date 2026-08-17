@@ -16,6 +16,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getHoldingsByAllocation } from "@/adapters";
 import { TickerAvatar } from "@/components/ticker-avatar";
+import { RiskBadge } from "@/components/risk-badge";
 import { HoldingType } from "@/lib/constants";
 import type {
   AccountScope,
@@ -195,6 +196,7 @@ export function AllocationDetailSheet({
 
   const categories = allocation?.categories ?? [];
   const hasData = categories.length > 0;
+  const isRiskAllocation = allocation?.taxonomyId === "risk_category";
 
   return (
     <Sheet open={isOpen} onOpenChange={handleOpenChange}>
@@ -216,6 +218,7 @@ export function AllocationDetailSheet({
               allocation={allocation}
               baseCurrency={baseCurrency}
               isLoading={false}
+              variant={isRiskAllocation ? "risk-composition" : "security-types"}
               onSegmentClick={handleSegmentClick}
             />
           )}
@@ -252,13 +255,24 @@ export function AllocationDetailSheet({
                       </div>
 
                       {/* Color dot + name */}
-                      <div
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: category.color }}
-                      />
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                        {category.categoryName}
-                      </span>
+                      {isRiskAllocation ? (
+                        <div className="min-w-0 flex-1">
+                          <RiskBadge
+                            level={category.categoryId || category.categoryName}
+                            size="sm"
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          <div
+                            className="h-2.5 w-2.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: category.color }}
+                          />
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                            {category.categoryName}
+                          </span>
+                        </>
+                      )}
 
                       {/* Value + percentage */}
                       <AmountDisplay
@@ -296,13 +310,24 @@ export function AllocationDetailSheet({
                                     handleChildClick(child);
                                   }}
                                 >
-                                  <div
-                                    className="h-2 w-2 shrink-0 rounded-full"
-                                    style={{ backgroundColor: child.color }}
-                                  />
-                                  <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-                                    {child.categoryName}
-                                  </span>
+                                  {isRiskAllocation ? (
+                                    <div className="min-w-0 flex-1">
+                                      <RiskBadge
+                                        level={child.categoryId || child.categoryName}
+                                        size="sm"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <div
+                                        className="h-2 w-2 shrink-0 rounded-full"
+                                        style={{ backgroundColor: child.color }}
+                                      />
+                                      <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+                                        {child.categoryName}
+                                      </span>
+                                    </>
+                                  )}
                                   <AmountDisplay
                                     value={child.value}
                                     currency={baseCurrency}
