@@ -1,3 +1,6 @@
+-- Backfill conservatively: only rows whose persisted provider value is still
+-- strictly date-only can be proven to be DATE. Midnight timestamps remain
+-- INSTANT because their original precision is not recoverable without inference.
 ALTER TABLE activities ADD COLUMN activity_date_precision TEXT NOT NULL DEFAULT 'INSTANT';
 
 UPDATE activities
@@ -7,5 +10,5 @@ SET activity_date_precision = CASE
 END,
 activity_date = CASE
     WHEN length(activity_date) = 10 THEN activity_date || 'T00:00:00.000Z'
-    ELSE strftime('%Y-%m-%dT%H:%M:%fZ', activity_date)
+    ELSE activity_date
 END;

@@ -7,9 +7,8 @@ use crate::lots::{extract_lot_records_with_cost_basis_method, LotClosure, LotDis
 use crate::portfolio::snapshot::AccountStateSnapshot;
 use crate::portfolio::snapshot::HoldingsCalculationResult;
 use crate::portfolio::snapshot::HoldingsCalculationWarning;
-use crate::utils::time_utils::{activity_date_in_tz, parse_user_timezone_or_default};
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{NaiveDate, Utc};
 use log::{debug, warn};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
@@ -261,12 +260,7 @@ impl HoldingsCalculator {
     }
 
     fn activity_local_date(&self, activity: &Activity) -> NaiveDate {
-        self.activity_local_date_from_utc(activity.activity_date)
-    }
-
-    fn activity_local_date_from_utc(&self, activity_date: DateTime<Utc>) -> NaiveDate {
-        let tz = parse_user_timezone_or_default(&self.timezone.read().unwrap());
-        activity_date_in_tz(activity_date, tz)
+        activity.calendar_date(&self.timezone.read().unwrap())
     }
 
     /// Calculates the next day's holding state based on the previous state and today's activities.

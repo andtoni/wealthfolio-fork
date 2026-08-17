@@ -1183,7 +1183,6 @@ impl Position {
         split_ratio: Decimal,
         split_date: NaiveDate,
         activity_id: &str,
-        lot_acquisition_date: impl Fn(DateTime<Utc>) -> NaiveDate,
     ) -> Result<()> {
         if !split_ratio.is_sign_positive() || split_ratio.is_zero() {
             return Err(CalculatorError::InvalidActivity(format!(
@@ -1197,7 +1196,7 @@ impl Position {
             split_ratio, self.id, split_date
         );
         for lot in self.lots.iter_mut() {
-            if lot_acquisition_date(lot.acquisition_date) < split_date {
+            if lot.acquisition_date_key() < split_date {
                 let prior = lot.effective_split_ratio();
                 lot.split_ratio = prior * split_ratio;
             }
@@ -1376,7 +1375,6 @@ mod tests {
                 dec!(2),
                 acquisition.date_naive().succ_opt().unwrap(),
                 "split",
-                |dt| dt.date_naive(),
             )
             .unwrap();
 

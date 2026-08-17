@@ -40,15 +40,6 @@ pub fn current_period_key(timezone: &str, cycle: &BudgetCycleSettings) -> Result
     Ok(period_for_date(local, cycle)?.key)
 }
 
-pub fn period_key_for_datetime(
-    date: DateTime<Utc>,
-    timezone: &str,
-    cycle: &BudgetCycleSettings,
-) -> Result<String> {
-    let local = wealthfolio_core::utils::time_utils::activity_date_in_user_timezone(date, timezone);
-    Ok(period_for_date(local, cycle)?.key)
-}
-
 pub fn shift_period_key(key: &str, periods: i32, cycle: &BudgetCycleSettings) -> Result<String> {
     let period = period_for_key(key, cycle)?;
     let anchor = anchor_date(cycle)?;

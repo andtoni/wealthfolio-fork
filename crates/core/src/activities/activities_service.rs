@@ -3731,6 +3731,40 @@ impl ActivityServiceTrait for ActivityService {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn search_activities_in_mixed_range(
+        &self,
+        page: i64,
+        page_size: i64,
+        account_id_filter: Option<Vec<String>>,
+        activity_type_filter: Option<Vec<String>>,
+        asset_id_keyword: Option<String>,
+        sort: Option<Sort>,
+        needs_review_filter: Option<bool>,
+        date_from_utc: Option<DateTime<Utc>>,
+        date_to_utc_exclusive: Option<DateTime<Utc>>,
+        date_from_calendar: Option<NaiveDate>,
+        date_to_calendar_exclusive: Option<NaiveDate>,
+        instrument_type_filter: Option<Vec<String>>,
+        activity_id_filter: Option<Vec<String>>,
+    ) -> Result<ActivitySearchResponse> {
+        self.activity_repository.search_activities_in_mixed_range(
+            page,
+            page_size,
+            account_id_filter,
+            activity_type_filter,
+            asset_id_keyword,
+            sort,
+            needs_review_filter,
+            date_from_utc,
+            date_to_utc_exclusive,
+            date_from_calendar,
+            date_to_calendar_exclusive,
+            instrument_type_filter,
+            activity_id_filter,
+        )
+    }
+
     /// Creates a new activity
     async fn create_activity(&self, activity: NewActivity) -> Result<Activity> {
         let prepared = self.prepare_new_activity(activity).await?;

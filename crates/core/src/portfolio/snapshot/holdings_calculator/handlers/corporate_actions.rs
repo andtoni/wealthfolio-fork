@@ -4,7 +4,6 @@ use super::super::{HoldingsCalculator, ProjectionRun, SideEffectBuffer};
 use crate::activities::Activity;
 use crate::errors::Result;
 use crate::portfolio::snapshot::AccountStateSnapshot;
-use crate::utils::time_utils::{activity_date_in_tz, parse_user_timezone_or_default};
 use log::{debug, warn};
 use rust_decimal::Decimal;
 
@@ -59,10 +58,7 @@ impl HoldingsCalculator {
 
         if let Some(position) = state.positions.get_mut(asset_id) {
             let split_date = self.activity_local_date(activity);
-            let tz = parse_user_timezone_or_default(&self.timezone.read().unwrap());
-            position.apply_split(ratio, split_date, &activity.id, |instant| {
-                activity_date_in_tz(instant, tz)
-            })?;
+            position.apply_split(ratio, split_date, &activity.id)?;
         } else {
             // Position not yet open in this account, so there are no local lots
             // for this split to adjust.

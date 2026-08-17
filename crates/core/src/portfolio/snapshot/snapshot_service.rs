@@ -14,9 +14,7 @@ use crate::lots::{check_lot_quantity_consistency, LotRepositoryTrait};
 use crate::portfolio::snapshot::{
     AccountStateSnapshot, HoldingsCalculationWarning, SnapshotSource,
 };
-use crate::utils::time_utils::{
-    activity_date_in_tz, get_days_between, parse_user_timezone_or_default, user_today,
-};
+use crate::utils::time_utils::{get_days_between, parse_user_timezone_or_default, user_today};
 
 use async_trait::async_trait;
 use chrono::{NaiveDate, Utc};
@@ -190,11 +188,6 @@ impl SnapshotService {
     pub fn with_lot_repository(mut self, lot_repository: Arc<dyn LotRepositoryTrait>) -> Self {
         self.lot_repository = Some(lot_repository);
         self
-    }
-
-    fn user_date(&self, instant: chrono::DateTime<Utc>) -> NaiveDate {
-        let tz = parse_user_timezone_or_default(&self.timezone.read().unwrap());
-        activity_date_in_tz(instant, tz)
     }
 
     fn user_today(&self) -> NaiveDate {
@@ -685,9 +678,10 @@ impl SnapshotService {
         };
 
         // unchanged: compute min_activity_date & calculation_end_date …
+        let timezone = self.timezone.read().unwrap().clone();
         let min_activity_date = all_activities
             .iter()
-            .map(|a| self.user_date(a.activity_date))
+            .map(|activity| activity.calendar_date(&timezone))
             .min()
             .unwrap_or_else(|| self.user_today());
 
@@ -730,11 +724,12 @@ impl SnapshotService {
         let mut activities_by_account_date: ActivitiesByAccount = HashMap::new();
         let mut account_ids_with_activity: HashSet<String> = HashSet::new();
 
+        let timezone = self.timezone.read().unwrap().clone();
         for activity in &compiled_activities {
             activities_by_account_date
                 .entry(activity.account_id.clone())
                 .or_default()
-                .entry(self.user_date(activity.activity_date))
+                .entry(activity.calendar_date(&timezone))
                 .or_default()
                 .push(activity.clone());
             account_ids_with_activity.insert(activity.account_id.clone());

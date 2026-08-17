@@ -3,7 +3,7 @@ use diesel::expression_methods::ExpressionMethods;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::sql_query;
-use diesel::sql_types::{Bool, Nullable, Text};
+use diesel::sql_types::{Bool, Double, Nullable, Text};
 use diesel::sqlite::Sqlite;
 use diesel::sqlite::SqliteConnection;
 use rust_decimal::Decimal;
@@ -469,6 +469,10 @@ impl ActivityRepository {
         DateTime::from_naive_utc_and_offset(date.and_time(NaiveTime::MIN), Utc)
     }
 
+    fn sqlite_julian_day(date: DateTime<Utc>) -> f64 {
+        2_440_587.5 + date.timestamp_micros() as f64 / 86_400_000_000.0
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn search_activities_with_utc_bounds(
         &self,
@@ -481,6 +485,8 @@ impl ActivityRepository {
         needs_review_filter: Option<bool>,
         date_from_utc: Option<DateTime<Utc>>,
         date_to_utc_exclusive: Option<DateTime<Utc>>,
+        date_from_calendar: Option<NaiveDate>,
+        date_to_calendar_exclusive: Option<NaiveDate>,
         instrument_type_filter: Option<Vec<String>>,
         activity_id_filter: Option<Vec<String>>,
     ) -> Result<ActivitySearchResponse> {
@@ -528,21 +534,26 @@ impl ActivityRepository {
                 }
             }
             if let Some(from_utc) = date_from_utc {
-                let instant = activities::activity_date_precision
-                    .ne("DATE")
-                    .and(activities::activity_date.ge(from_utc.to_rfc3339()));
-                let calendar = activities::activity_date_precision
-                    .eq("DATE")
-                    .and(activities::activity_date.ge(from_utc.format("%Y-%m-%d").to_string()));
+                let instant = activities::activity_date_precision.ne("DATE").and(
+                    sql::<Double>("julianday(activities.activity_date)")
+                        .ge(Self::sqlite_julian_day(from_utc)),
+                );
+                let calendar_bound = date_from_calendar.unwrap_or_else(|| from_utc.date_naive());
+                let calendar = activities::activity_date_precision.eq("DATE").and(
+                    activities::activity_date.ge(calendar_bound.format("%Y-%m-%d").to_string()),
+                );
                 query = query.filter(instant.or(calendar));
             }
             if let Some(to_utc) = date_to_utc_exclusive {
-                let instant = activities::activity_date_precision
-                    .ne("DATE")
-                    .and(activities::activity_date.lt(to_utc.to_rfc3339()));
-                let calendar = activities::activity_date_precision
-                    .eq("DATE")
-                    .and(activities::activity_date.lt(to_utc.format("%Y-%m-%d").to_string()));
+                let instant = activities::activity_date_precision.ne("DATE").and(
+                    sql::<Double>("julianday(activities.activity_date)")
+                        .lt(Self::sqlite_julian_day(to_utc)),
+                );
+                let calendar_bound =
+                    date_to_calendar_exclusive.unwrap_or_else(|| to_utc.date_naive());
+                let calendar = activities::activity_date_precision.eq("DATE").and(
+                    activities::activity_date.lt(calendar_bound.format("%Y-%m-%d").to_string()),
+                );
                 query = query.filter(instant.or(calendar));
             }
             if let Some(ref instrument_types) = instrument_type_filter {
@@ -760,9 +771,8 @@ impl ActivityRepositoryTrait for ActivityRepository {
         activity_id_filter: Option<Vec<String>>, // Optional exact activity-id filter
     ) -> Result<ActivitySearchResponse> {
         let date_from_utc = date_from.map(Self::naive_date_start_utc);
-        let date_to_utc_exclusive = date_to
-            .and_then(|date| date.succ_opt())
-            .map(Self::naive_date_start_utc);
+        let date_to_calendar_exclusive = date_to.and_then(|date| date.succ_opt());
+        let date_to_utc_exclusive = date_to_calendar_exclusive.map(Self::naive_date_start_utc);
 
         self.search_activities_with_utc_bounds(
             page,
@@ -774,6 +784,8 @@ impl ActivityRepositoryTrait for ActivityRepository {
             needs_review_filter,
             date_from_utc,
             date_to_utc_exclusive,
+            date_from,
+            date_to_calendar_exclusive,
             instrument_type_filter,
             activity_id_filter,
         )
@@ -804,6 +816,42 @@ impl ActivityRepositoryTrait for ActivityRepository {
             needs_review_filter,
             date_from_utc,
             date_to_utc_exclusive,
+            None,
+            None,
+            instrument_type_filter,
+            activity_id_filter,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn search_activities_in_mixed_range(
+        &self,
+        page: i64,
+        page_size: i64,
+        account_id_filter: Option<Vec<String>>,
+        activity_type_filter: Option<Vec<String>>,
+        asset_id_keyword: Option<String>,
+        sort: Option<Sort>,
+        needs_review_filter: Option<bool>,
+        date_from_utc: Option<DateTime<Utc>>,
+        date_to_utc_exclusive: Option<DateTime<Utc>>,
+        date_from_calendar: Option<NaiveDate>,
+        date_to_calendar_exclusive: Option<NaiveDate>,
+        instrument_type_filter: Option<Vec<String>>,
+        activity_id_filter: Option<Vec<String>>,
+    ) -> Result<ActivitySearchResponse> {
+        self.search_activities_with_utc_bounds(
+            page,
+            page_size,
+            account_id_filter,
+            activity_type_filter,
+            asset_id_keyword,
+            sort,
+            needs_review_filter,
+            date_from_utc,
+            date_to_utc_exclusive,
+            date_from_calendar,
+            date_to_calendar_exclusive,
             instrument_type_filter,
             activity_id_filter,
         )

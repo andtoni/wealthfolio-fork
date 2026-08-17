@@ -45,11 +45,12 @@ pub async fn search_activities(
         .map_err(|e| format!("Invalid date_to format: {}", e))?;
     let timezone = state.get_timezone();
     let tz = parse_user_timezone_or_default(&timezone);
+    let date_to_calendar_exclusive = date_to_parsed.and_then(|date| date.succ_opt());
     let (date_from_utc, date_to_utc_exclusive) =
         local_date_range_utc_bounds(date_from_parsed, date_to_parsed, tz)
             .map_err(|e| e.to_string())?;
 
-    Ok(state.activity_service().search_activities_in_utc_range(
+    Ok(state.activity_service().search_activities_in_mixed_range(
         page,
         page_size,
         account_id_filter,
@@ -59,6 +60,8 @@ pub async fn search_activities(
         needs_review_filter,
         date_from_utc,
         date_to_utc_exclusive,
+        date_from_parsed,
+        date_to_calendar_exclusive,
         instrument_type_filter,
         activity_id_filter,
     )?)

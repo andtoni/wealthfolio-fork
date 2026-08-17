@@ -1735,12 +1735,18 @@ export function DateTimeCell<TData>({
 
   // Track previous editing state to detect when editing stops
   const wasEditingRef = React.useRef(isEditing);
+  const cancelledRef = React.useRef(false);
   const valueRef = React.useRef(value);
   valueRef.current = value;
 
   React.useEffect(() => {
     // When editing stops (transitions from true to false), save the value
     if (wasEditingRef.current && !isEditing) {
+      if (cancelledRef.current) {
+        cancelledRef.current = false;
+        wasEditingRef.current = isEditing;
+        return;
+      }
       const currentValue = valueRef.current;
       const date = currentValue ? (dateOnly ? currentValue : parseDateLocal(currentValue)) : undefined;
       const initialDate = initialValue
@@ -1793,7 +1799,8 @@ export function DateTimeCell<TData>({
           });
         } else if (event.key === "Escape") {
           event.preventDefault();
-          setValue(toDateTimeLocalString(initialValue));
+          cancelledRef.current = true;
+          setValue(dateOnly ? String(initialValue ?? "") : toDateTimeLocalString(initialValue));
           tableMeta?.onCellEditingStop?.();
         }
       } else if (isFocused && event.key === "Tab") {

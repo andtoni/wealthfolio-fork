@@ -94,10 +94,11 @@ async fn search_activities(
     let date_to_parsed = parse_date_optional(body.date_to, "dateTo")?;
     let timezone = state.timezone.read().unwrap().clone();
     let tz = parse_user_timezone_or_default(&timezone);
+    let date_to_calendar_exclusive = date_to_parsed.and_then(|date| date.succ_opt());
     let (date_from_utc, date_to_utc_exclusive) =
         local_date_range_utc_bounds(date_from_parsed, date_to_parsed, tz)?;
 
-    let resp = state.activity_service.search_activities_in_utc_range(
+    let resp = state.activity_service.search_activities_in_mixed_range(
         body.page,
         body.page_size,
         account_ids,
@@ -107,6 +108,8 @@ async fn search_activities(
         body.needs_review_filter,
         date_from_utc,
         date_to_utc_exclusive,
+        date_from_parsed,
+        date_to_calendar_exclusive,
         instrument_types,
         activity_ids,
     )?;
