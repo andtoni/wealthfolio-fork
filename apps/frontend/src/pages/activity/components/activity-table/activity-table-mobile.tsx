@@ -114,7 +114,11 @@ export const ActivityTableMobile = ({
         const optionSubtitle = parsedOption
           ? `${new Date(parsedOption.expiration + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} $${parsedOption.strikePrice} ${parsedOption.optionType}`
           : null;
-        const formattedDate = formatDateTime(activity.date, appTimezone);
+        const formattedDate = formatDateTime(
+          activity.date,
+          appTimezone,
+          activity.activityDatePrecision,
+        );
         const displayValue = calculateActivityValue(activity);
 
         // Compact View

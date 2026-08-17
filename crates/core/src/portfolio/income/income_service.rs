@@ -786,6 +786,7 @@ mod tests {
             subtype: None,
             status: ActivityStatus::Posted,
             activity_date: now,
+            activity_date_precision: None,
             settlement_date: None,
             quantity: None,
             unit_price: None,

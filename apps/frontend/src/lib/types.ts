@@ -133,6 +133,7 @@ export interface Activity {
 
   // Timing
   activityDate: string; // ISO timestamp (UTC)
+  activityDatePrecision?: "DATE" | "INSTANT";
   settlementDate?: string;
 
   // Quantities (strings to preserve decimal precision)
@@ -194,6 +195,15 @@ export function hasUserOverride(activity: Activity): boolean {
  * Get display name for an activity
  */
 export function getActivityDisplayName(activity: Activity): string {
+  if (
+    !hasUserOverride(activity) &&
+    activity.subtype?.toUpperCase() === "POCKET_TRANSFER" &&
+    activity.sourceType?.toUpperCase() === "MCPBAPOCKETTRANSFERS"
+  ) {
+    return activity.activityType === "TRANSFER_IN"
+      ? "Converted from pocket"
+      : "Converted to pocket";
+  }
   // Check subtype first (most specific)
   if (activity.subtype && SUBTYPE_DISPLAY_NAMES[activity.subtype]) {
     return SUBTYPE_DISPLAY_NAMES[activity.subtype];
@@ -211,7 +221,8 @@ export interface ActivityDetails {
   activityTypeOverride?: string | null;
   subtype?: string | null;
   status?: ActivityStatus;
-  date: Date;
+  date: Date | string;
+  activityDatePrecision?: "DATE" | "INSTANT";
   quantity: string | null;
   unitPrice: string | null;
   amount: string | null;
@@ -284,6 +295,7 @@ export interface ActivityCreate {
   activityType: string;
   subtype?: string | null; // Semantic variation (DRIP, STAKING_REWARD, etc.)
   activityDate: string | Date;
+  activityDatePrecision?: "DATE" | "INSTANT";
   /** Optional grouping key (links paired transfer legs). */
   sourceGroupId?: string;
   asset?: AssetResolutionInput;
@@ -309,6 +321,7 @@ export interface ActivityUpdate {
   activityType: string;
   subtype?: string | null;
   activityDate: string | Date;
+  activityDatePrecision?: "DATE" | "INSTANT";
   /** Optional grouping key (links paired transfer legs). */
   sourceGroupId?: string;
   asset?: AssetResolutionInput;
@@ -354,6 +367,7 @@ export interface InternalTransferPairRequest {
   fromAccountId: string;
   toAccountId: string;
   activityDate: string | Date;
+  activityDatePrecision?: "DATE" | "INSTANT";
   sourceAmount: string | number;
   destinationAmount: string | number;
   sourceCurrency: string;

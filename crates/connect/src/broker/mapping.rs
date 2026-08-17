@@ -562,6 +562,7 @@ pub fn map_broker_activity(
         activity_type,
         subtype,
         activity_date,
+        activity_date_precision: None,
         quantity,
         unit_price,
         currency: currency_code,

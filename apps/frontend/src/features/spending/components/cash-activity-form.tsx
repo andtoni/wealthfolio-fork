@@ -66,6 +66,23 @@ const SPENDING_TAXONOMY = "spending_categories";
 const INCOME_TAXONOMY = "income_sources";
 const SAVINGS_TAXONOMY = "savings_categories";
 
+function calendarDate(date: Date): string {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function activityDateForForm(
+  activity?: Pick<Activity, "activityDate" | "activityDatePrecision">,
+): Date {
+  if (!activity?.activityDate) return new Date();
+  return activity.activityDatePrecision === "DATE"
+    ? new Date(`${activity.activityDate.slice(0, 10)}T12:00:00`)
+    : new Date(activity.activityDate);
+}
+
 function buildFormSchema(t: TFunction) {
   return z.object({
     id: z.string().optional(),
@@ -81,6 +98,7 @@ function buildFormSchema(t: TFunction) {
       "CREDIT",
     ]),
     activityDate: z.date({ required_error: t("spending:cashForm.pickDate") }),
+    activityDatePrecision: z.enum(["DATE", "INSTANT"]).optional(),
     amount: z.coerce.number().min(0.01, { message: t("spending:cashForm.amountPositive") }),
     notes: z.string().optional(),
     /** "<taxonomyId>:<categoryId>" or "" */
@@ -101,6 +119,7 @@ interface FormValues {
     | "INTEREST"
     | "CREDIT";
   activityDate: Date;
+  activityDatePrecision?: "DATE" | "INSTANT";
   amount: number;
   notes?: string;
   category?: string;
@@ -226,7 +245,8 @@ export function CashActivityForm({
     defaultValues: {
       accountId: activity?.accountId ?? "",
       activityType: (activity?.activityType as FormValues["activityType"]) ?? "WITHDRAWAL",
-      activityDate: activity?.activityDate ? new Date(activity.activityDate) : new Date(),
+      activityDate: activityDateForForm(activity),
+      activityDatePrecision: activity?.activityDatePrecision,
       amount: activity?.amount ? Math.abs(parseFloat(activity.amount)) : 0,
       notes: activity?.notes ?? "",
       category:
@@ -241,7 +261,8 @@ export function CashActivityForm({
       form.reset({
         accountId: activity?.accountId ?? spendingAccounts[0]?.id ?? "",
         activityType: (activity?.activityType as FormValues["activityType"]) ?? "WITHDRAWAL",
-        activityDate: activity?.activityDate ? new Date(activity.activityDate) : new Date(),
+        activityDate: activityDateForForm(activity),
+        activityDatePrecision: activity?.activityDatePrecision,
         amount: activity?.amount ? Math.abs(parseFloat(activity.amount)) : 0,
         notes: activity?.notes ?? "",
         category:
@@ -327,7 +348,9 @@ export function CashActivityForm({
           accountId: values.accountId,
           activityType: values.activityType,
           subtype,
-          activityDate: dateStr,
+          activityDate:
+            values.activityDatePrecision === "DATE" ? calendarDate(values.activityDate) : dateStr,
+          activityDatePrecision: values.activityDatePrecision,
           amount: values.amount,
           currency,
           comment: values.notes ?? null,
@@ -338,7 +361,9 @@ export function CashActivityForm({
           accountId: values.accountId,
           activityType: values.activityType,
           subtype,
-          activityDate: dateStr,
+          activityDate:
+            values.activityDatePrecision === "DATE" ? calendarDate(values.activityDate) : dateStr,
+          activityDatePrecision: values.activityDatePrecision,
           amount: values.amount,
           currency,
           comment: values.notes ?? null,

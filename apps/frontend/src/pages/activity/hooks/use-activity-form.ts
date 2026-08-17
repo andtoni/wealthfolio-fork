@@ -19,6 +19,14 @@ function generateSourceGroupId(): string {
   return generateId("wf-transfer");
 }
 
+function calendarDate(date: Date): string {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 function extractErrorMessage(error: unknown): string {
   if (typeof error === "string" && error.trim()) return error;
   if (error instanceof Error && error.message.trim()) return error.message;
@@ -160,6 +168,9 @@ export function useActivityForm({
                 fromAccountId: transferData.fromAccountId,
                 toAccountId: transferData.toAccountId,
                 activityDate: transferData.activityDate,
+                activityDatePrecision:
+                  (transferData as { activityDatePrecision?: "DATE" | "INSTANT" })
+                    .activityDatePrecision ?? activity?.activityDatePrecision,
                 sourceAmount,
                 destinationAmount,
                 sourceCurrency,
@@ -292,6 +303,15 @@ export function useActivityForm({
             ...basePayload,
             activityType,
           } as NewActivityFormValues;
+          const precision =
+            (formData as { activityDatePrecision?: "DATE" | "INSTANT" }).activityDatePrecision ??
+            activity?.activityDatePrecision;
+          if (precision) {
+            submitData.activityDatePrecision = precision;
+            if (precision === "DATE" && submitData.activityDate instanceof Date) {
+              submitData.activityDate = calendarDate(submitData.activityDate);
+            }
+          }
 
           if (!submitData.currency?.trim() && account?.currency) {
             submitData.currency = account.currency;
@@ -336,6 +356,15 @@ export function useActivityForm({
           ...basePayload,
           activityType: config.activityType as NewActivityFormValues["activityType"],
         } as NewActivityFormValues;
+        const precision =
+          (formData as { activityDatePrecision?: "DATE" | "INSTANT" }).activityDatePrecision ??
+          activity?.activityDatePrecision;
+        if (precision) {
+          submitData.activityDatePrecision = precision;
+          if (precision === "DATE" && submitData.activityDate instanceof Date) {
+            submitData.activityDate = calendarDate(submitData.activityDate);
+          }
+        }
 
         if (!submitData.currency?.trim() && account?.currency) {
           submitData.currency = account.currency;

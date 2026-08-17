@@ -77,13 +77,30 @@ function absNum(value: string | number | null | undefined): number | undefined {
 }
 
 // Base defaults shared by most forms
+function activityDateValue(value: string | Date): Date {
+  return value instanceof Date ? value : new Date(value);
+}
+
+function dateOnlyFormValue(value: string | Date): Date {
+  const raw = value instanceof Date ? value.toISOString().slice(0, 10) : value.slice(0, 10);
+  const [year, month, day] = raw.split("-").map(Number);
+  return new Date(year, month - 1, day, 12, 0, 0, 0);
+}
+
 function getBaseDefaults(
   activity: Partial<ActivityDetails> | undefined,
   accounts: AccountSelectOption[],
 ) {
+  const precision = activity?.activityDatePrecision;
+  const activityDate = activity?.date
+    ? precision === "DATE"
+      ? dateOnlyFormValue(activity.date)
+      : activityDateValue(activity.date)
+    : new Date();
   return {
     accountId: activity?.accountId ?? (accounts.length === 1 ? accounts[0].value : ""),
-    activityDate: activity?.date ? new Date(activity.date) : new Date(),
+    activityDate,
+    activityDatePrecision: precision,
     comment: activity?.comment ?? null,
   };
 }
@@ -415,7 +432,12 @@ export const ACTIVITY_FORM_CONFIG: Record<
             ? (activity?.accountId ?? "")
             : (activity?.counterpartAccountId ?? "")
           : "",
-        activityDate: activity?.date ? new Date(activity.date) : new Date(),
+        activityDate: activity?.date
+          ? activity.activityDatePrecision === "DATE"
+            ? dateOnlyFormValue(activity.date)
+            : activityDateValue(activity.date)
+          : new Date(),
+        activityDatePrecision: activity?.activityDatePrecision,
         transferMode,
         amount: absNum(activity?.amount),
         sourceAmount,

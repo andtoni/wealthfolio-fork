@@ -42,6 +42,20 @@ describe("timezone formatting", () => {
     expect(formatted.time).toBe("5:00:00 PM");
   });
 
+  it("keeps date-only serialized timestamps on their provider date in SAST", () => {
+    const formatted = formatDateTime("2026-08-07T00:00:00Z", "Africa/Johannesburg", "DATE");
+
+    expect(formatted.date).toBe("Aug 7, 2026");
+    expect(formatted.time).toBe("—");
+  });
+
+  it("keeps date-only serialized timestamps on their provider date in Los Angeles", () => {
+    const formatted = formatDateTime("2026-08-07T00:00:00Z", "America/Los_Angeles", "DATE");
+
+    expect(formatted.date).toBe("Aug 7, 2026");
+    expect(formatted.time).toBe("—");
+  });
+
   it("keeps date-only values on their provider date across timezones", () => {
     const formatted = formatDateTime("2026-08-07", "America/Los_Angeles");
 

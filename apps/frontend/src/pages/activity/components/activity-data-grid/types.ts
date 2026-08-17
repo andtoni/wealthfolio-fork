@@ -49,8 +49,12 @@ export function toLocalTransaction(activity: ActivityDetails): LocalTransaction 
   // Extract isExternal from metadata.flow.is_external
   const flowMeta = activity.metadata?.flow as Record<string, unknown> | undefined;
   const isExternal = flowMeta?.is_external === true;
+  const rawDate =
+    activity.date instanceof Date ? activity.date.toISOString() : String(activity.date);
+  const date = activity.activityDatePrecision === "DATE" ? rawDate.slice(0, 10) : activity.date;
   return {
     ...activity,
+    date,
     isNew: false,
     isExternal,
     // Capture original values for change detection during updates
@@ -134,6 +138,7 @@ interface ActivityBasePayload {
   accountId: string;
   activityType: string;
   activityDate: string;
+  activityDatePrecision?: "DATE" | "INSTANT";
 
   // Activity data
   subtype?: string;

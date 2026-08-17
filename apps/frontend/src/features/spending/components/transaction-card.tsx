@@ -83,7 +83,7 @@ function TransactionCardImpl({
   const transferLinkStatus = getTransferLinkStatus(a);
   const canMarkReimbursement =
     isIncome && !isCreditCardAccountType(account?.accountType) && activityType !== "CREDIT";
-  const formattedDate = formatDateTime(a.activityDate, appTimezone);
+  const formattedDate = formatDateTime(a.activityDate, appTimezone, a.activityDatePrecision);
 
   return (
     <div
@@ -118,7 +118,13 @@ function TransactionCardImpl({
           </div>
           <div className="text-muted-foreground mt-0.5 truncate text-[11px]">
             {formattedDate.date} {formattedDate.time} · {accountName} ·{" "}
-            {getCashActivityLabel(activityType, account?.accountType, a.subtype)}
+            {getCashActivityLabel(
+              activityType,
+              account?.accountType,
+              a.subtype,
+              a.sourceType,
+              a.activityTypeOverride,
+            )}
           </div>
         </div>
         <div

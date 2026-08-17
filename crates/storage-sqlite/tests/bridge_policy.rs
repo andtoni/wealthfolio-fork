@@ -515,6 +515,46 @@ async fn commit_mutates_actual_activity_projection() {
 }
 
 #[tokio::test]
+async fn bridge_normalizes_date_only_activity_dates_and_preserves_precision() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let generation = store.grant("alice", "a1").await.unwrap();
+    store
+        .commit(
+            DisclosureOperation::new(
+                "date-only",
+                "alice",
+                generation,
+                DisclosureKind::ActivityUpsert,
+                "date-only-row",
+            )
+            .with_activity(ActivityPayload {
+                account_id: "a1".into(),
+                activity_type: "WITHDRAWAL".into(),
+                status: "POSTED".into(),
+                activity_date: "2026-08-14".into(),
+                activity_date_precision: Some(
+                    wealthfolio_core::activities::ActivityDatePrecision::Date,
+                ),
+                amount: "1".into(),
+                currency: "ZAR".into(),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap();
+    let c = Connection::open(path).unwrap();
+    let row: (String, String) = c
+        .query_row(
+            "SELECT activity_date, activity_date_precision FROM activities WHERE id='date-only-row'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(row, ("2026-08-14T00:00:00+00:00".into(), "DATE".into()));
+}
+
+#[tokio::test]
 async fn existing_activity_payload_account_mismatch_is_rejected_without_mutation() {
     let (_dir, path, store) = store(D1).await;
     seed(&path, &[D1], &["alice"]);
@@ -532,6 +572,7 @@ async fn existing_activity_payload_account_mismatch_is_rejected_without_mutation
         activity_type: "DEPOSIT".into(),
         status: "POSTED".into(),
         activity_date: "2026-01-01".into(),
+        activity_date_precision: Some(wealthfolio_core::activities::ActivityDatePrecision::Date),
         amount: "999".into(),
         currency: "EUR".into(),
         notes: Some("must not write".into()),
@@ -590,6 +631,9 @@ async fn repeated_provider_upsert_preserves_user_owned_overlays() {
                 activity_type: "WITHDRAWAL".into(),
                 status: "POSTED".into(),
                 activity_date: "2026-02-01".into(),
+                activity_date_precision: Some(
+                    wealthfolio_core::activities::ActivityDatePrecision::Date,
+                ),
                 amount: "25".into(),
                 currency: "USD".into(),
                 notes: Some("provider note".into()),
@@ -640,6 +684,9 @@ async fn provider_can_seed_description_but_not_user_owned_classification_overlay
                 activity_type: "WITHDRAWAL".into(),
                 status: "POSTED".into(),
                 activity_date: "2026-02-01".into(),
+                activity_date_precision: Some(
+                    wealthfolio_core::activities::ActivityDatePrecision::Date,
+                ),
                 amount: "25".into(),
                 currency: "USD".into(),
                 notes: Some("provider note".into()),
@@ -683,6 +730,9 @@ async fn provider_extended_fields_round_trip_without_touching_user_overlays() {
                 activity_type: "WITHDRAWAL".into(),
                 status: "POSTED".into(),
                 activity_date: "2026-08-05T16:07:00Z".into(),
+                activity_date_precision: Some(
+                    wealthfolio_core::activities::ActivityDatePrecision::Instant,
+                ),
                 settlement_date: Some("2026-08-06".into()),
                 amount: "193.91".into(),
                 currency: "ZAR".into(),
@@ -709,6 +759,20 @@ async fn provider_extended_fields_round_trip_without_touching_user_overlays() {
         .await
         .unwrap();
     let c = Connection::open(&path).unwrap();
+    let date_shape: (String, String) = c
+        .query_row(
+            "SELECT activity_date, activity_date_precision FROM activities WHERE id='provider-extended-row'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        date_shape,
+        (
+            "2026-08-05T16:07:00+00:00".to_string(),
+            "INSTANT".to_string()
+        )
+    );
     let row: (String, String, String, String, String, String, String, String, String, i64) = c
         .query_row(
             "SELECT settlement_date,source_type,subtype,fee,tax,fx_rate,currency,source_record_id,metadata,needs_review FROM activities WHERE id='provider-extended-row'",
@@ -758,6 +822,7 @@ async fn merchant_context_is_provider_owned_preserves_user_state_and_binds_retri
         activity_type: "WITHDRAWAL".into(),
         status: "POSTED".into(),
         activity_date: "2026-02-01T00:00:00Z".into(),
+        activity_date_precision: Some(wealthfolio_core::activities::ActivityDatePrecision::Instant),
         amount: "25".into(),
         currency: "USD".into(),
         notes: None,
@@ -1244,6 +1309,7 @@ async fn lifecycle_replay_rejects_different_successor_and_account() {
         activity_type: "DEPOSIT".into(),
         status: "POSTED".into(),
         activity_date: "2026-01-01".into(),
+        activity_date_precision: Some(wealthfolio_core::activities::ActivityDatePrecision::Date),
         amount: "1".into(),
         currency: "USD".into(),
         notes: None,
@@ -1264,6 +1330,7 @@ async fn lifecycle_replay_rejects_different_successor_and_account() {
         activity_type: "DEPOSIT".into(),
         status: "POSTED".into(),
         activity_date: "2026-01-01".into(),
+        activity_date_precision: Some(wealthfolio_core::activities::ActivityDatePrecision::Date),
         amount: "2".into(),
         currency: "USD".into(),
         notes: None,
@@ -1281,6 +1348,7 @@ async fn lifecycle_replay_rejects_different_successor_and_account() {
         activity_type: "DEPOSIT".into(),
         status: "POSTED".into(),
         activity_date: "2026-01-01".into(),
+        activity_date_precision: Some(wealthfolio_core::activities::ActivityDatePrecision::Date),
         amount: "1".into(),
         currency: "USD".into(),
         notes: None,
@@ -1467,6 +1535,33 @@ async fn grant_requires_current_owner_membership_and_account_participation() {
 }
 
 #[tokio::test]
+async fn legacy_precision_omission_replays_to_existing_receipt() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let operation = DisclosureOperation::new(
+        "legacy-date-replay",
+        "alice",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "legacy-date-activity",
+    )
+    .with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "DEPOSIT".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-07-18".into(),
+        activity_date_precision: None,
+        amount: "10.00".into(),
+        currency: "USD".into(),
+        ..Default::default()
+    });
+    let accepted = store.commit(operation.clone()).await.unwrap();
+    let replay = store.commit(operation).await.unwrap();
+    assert_eq!(replay, accepted);
+}
+
+#[tokio::test]
 async fn replay_rejects_changed_provider_payload() {
     let (_dir, path, store) = store(D1).await;
     seed(&path, &[D1], &["alice"]);
@@ -1483,6 +1578,7 @@ async fn replay_rejects_changed_provider_payload() {
         activity_type: "DEPOSIT".into(),
         status: "POSTED".into(),
         activity_date: "2026-07-18".into(),
+        activity_date_precision: Some(wealthfolio_core::activities::ActivityDatePrecision::Date),
         amount: "10.00".into(),
         currency: "USD".into(),
         notes: None,
@@ -1535,6 +1631,7 @@ async fn provider_identity_supersession_preserves_user_overlay_and_projection() 
         activity_type: "DEPOSIT".into(),
         status: "POSTED".into(),
         activity_date: "2026-07-18".into(),
+        activity_date_precision: Some(wealthfolio_core::activities::ActivityDatePrecision::Date),
         amount: "10.00".into(),
         currency: "USD".into(),
         notes: Some("provider note".into()),
@@ -1598,6 +1695,7 @@ async fn provider_identity_supersession_preserves_effective_activity_type() {
         activity_type: "DEPOSIT".into(),
         status: "POSTED".into(),
         activity_date: "2026-07-18".into(),
+        activity_date_precision: Some(wealthfolio_core::activities::ActivityDatePrecision::Date),
         amount: "10.00".into(),
         currency: "USD".into(),
         notes: Some("provider note".into()),
@@ -1657,6 +1755,7 @@ async fn legacy_prime_saver_supersession_preserves_linked_overlay_and_provider_n
         activity_type: "WITHDRAWAL".into(),
         status: "POSTED".into(),
         activity_date: "2026-08-06".into(),
+        activity_date_precision: Some(wealthfolio_core::activities::ActivityDatePrecision::Date),
         amount: "70000".into(),
         currency: "ZAR".into(),
         notes: Some("Transfer to Card Internet Value Date 06Aug26 MBP0000000001 10000000001 A Example 10000000001".into()),
@@ -1680,6 +1779,7 @@ async fn legacy_prime_saver_supersession_preserves_linked_overlay_and_provider_n
         activity_type: "WITHDRAWAL".into(),
         status: "POSTED".into(),
         activity_date: "2026-08-06".into(),
+        activity_date_precision: Some(wealthfolio_core::activities::ActivityDatePrecision::Date),
         amount: "70000".into(),
         currency: "ZAR".into(),
         notes: Some("Transfer to Card Internet Value Date 06Aug26 MBP0000000001 10000000001 A Example 10000000001".into()),
@@ -1730,6 +1830,7 @@ async fn provider_identity_supersession_moves_overlay_children_atomically() {
         activity_type: "DEPOSIT".into(),
         status: "POSTED".into(),
         activity_date: "2026-07-18".into(),
+        activity_date_precision: Some(wealthfolio_core::activities::ActivityDatePrecision::Date),
         amount: "1".into(),
         currency: "USD".into(),
         notes: Some("provider correction".into()),

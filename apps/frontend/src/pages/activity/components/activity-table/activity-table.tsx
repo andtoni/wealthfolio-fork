@@ -166,8 +166,8 @@ export const ActivityTable = ({
           const dateVal = row.getValue("date");
           const formattedDate =
             typeof dateVal === "string" || dateVal instanceof Date
-              ? formatDateTime(dateVal, appTimezone)
-              : formatDateTime(String(dateVal), appTimezone);
+              ? formatDateTime(dateVal, appTimezone, row.original.activityDatePrecision)
+              : formatDateTime(String(dateVal), appTimezone, row.original.activityDatePrecision);
           return (
             <div className="ml-2 flex flex-col">
               <span>{formattedDate.date}</span>

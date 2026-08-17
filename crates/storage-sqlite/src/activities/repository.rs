@@ -528,10 +528,22 @@ impl ActivityRepository {
                 }
             }
             if let Some(from_utc) = date_from_utc {
-                query = query.filter(activities::activity_date.ge(from_utc.to_rfc3339()));
+                let instant = activities::activity_date_precision
+                    .ne("DATE")
+                    .and(activities::activity_date.ge(from_utc.to_rfc3339()));
+                let calendar = activities::activity_date_precision
+                    .eq("DATE")
+                    .and(activities::activity_date.ge(from_utc.format("%Y-%m-%d").to_string()));
+                query = query.filter(instant.or(calendar));
             }
             if let Some(to_utc) = date_to_utc_exclusive {
-                query = query.filter(activities::activity_date.lt(to_utc.to_rfc3339()));
+                let instant = activities::activity_date_precision
+                    .ne("DATE")
+                    .and(activities::activity_date.lt(to_utc.to_rfc3339()));
+                let calendar = activities::activity_date_precision
+                    .eq("DATE")
+                    .and(activities::activity_date.lt(to_utc.format("%Y-%m-%d").to_string()));
+                query = query.filter(instant.or(calendar));
             }
             if let Some(ref instrument_types) = instrument_type_filter {
                 query = query.filter(assets::instrument_type.eq_any(instrument_types));
@@ -615,7 +627,9 @@ impl ActivityRepository {
                 ),
                 activities::subtype,
                 activities::status,
-                activities::activity_date,
+                sql::<Text>(
+                    "activities.activity_date || '|' || activities.activity_date_precision",
+                ),
                 activities::quantity,
                 activities::unit_price,
                 activities::currency,
@@ -847,6 +861,7 @@ impl ActivityRepositoryTrait for ActivityRepository {
                     source_type,
                     subtype,
                     settlement_date,
+                    activity_date_precision,
                     metadata,
                     quantity,
                     unit_price,
@@ -910,6 +925,9 @@ impl ActivityRepositoryTrait for ActivityRepository {
                     &existing_activity_type,
                     provider_account_id.as_deref(),
                 );
+                if activity_update_owned.activity_date_precision.is_none() {
+                    activity_to_update.activity_date_precision = activity_date_precision;
+                }
                 activity_to_update.updated_at = chrono::Utc::now().to_rfc3339();
 
                 let updated_activity =
@@ -1268,6 +1286,7 @@ impl ActivityRepositoryTrait for ActivityRepository {
                         source_type,
                         subtype,
                         settlement_date,
+                        activity_date_precision,
                         metadata,
                         quantity,
                         unit_price,
@@ -1324,6 +1343,9 @@ impl ActivityRepositoryTrait for ActivityRepository {
                         &existing_activity_type,
                         provider_account_id.as_deref(),
                     );
+                    if update_owned.activity_date_precision.is_none() {
+                        activity_db.activity_date_precision = activity_date_precision;
+                    }
                     activity_db.updated_at = chrono::Utc::now().to_rfc3339();
 
                     let updated_activity = diesel::update(activities::table.find(&activity_db.id))
@@ -2710,6 +2732,7 @@ impl ActivityRepositoryTrait for ActivityRepository {
                             activities::activity_type.eq(excluded(activities::activity_type)),
                             activities::subtype.eq(excluded(activities::subtype)),
                             activities::activity_date.eq(excluded(activities::activity_date)),
+                            activities::activity_date_precision.eq(excluded(activities::activity_date_precision)),
                             activities::quantity.eq(excluded(activities::quantity)),
                             activities::unit_price.eq(excluded(activities::unit_price)),
                             activities::currency.eq(excluded(activities::currency)),
@@ -3062,6 +3085,7 @@ mod tests {
             subtype: None,
             status: "POSTED".to_string(),
             activity_date: "2024-01-15T00:00:00+00:00".to_string(),
+            activity_date_precision: "INSTANT".to_string(),
             settlement_date: None,
             quantity: None,
             unit_price: None,
@@ -3144,6 +3168,7 @@ mod tests {
             activity_type: "SELL".to_string(),
             subtype: Some("DRIP".to_string()),
             activity_date: "2026-01-01T00:00:00Z".to_string(),
+            activity_date_precision: None,
             quantity: None,
             unit_price: None,
             currency: "USD".to_string(),
@@ -3414,6 +3439,7 @@ mod tests {
             activity_type: "SELL".to_string(),
             subtype: None,
             activity_date: "2026-01-01T00:00:00Z".to_string(),
+            activity_date_precision: None,
             quantity: None,
             unit_price: None,
             currency: "USD".to_string(),
@@ -3449,6 +3475,7 @@ mod tests {
             activity_type: "BUY".to_string(),
             subtype: None,
             activity_date: "2026-01-01T00:00:00Z".to_string(),
+            activity_date_precision: None,
             quantity: None,
             unit_price: None,
             currency: "USD".to_string(),
@@ -3501,6 +3528,7 @@ mod tests {
             activity_type: "BUY".to_string(),
             subtype: None,
             activity_date: "2026-01-02T00:00:00Z".to_string(),
+            activity_date_precision: None,
             quantity: None,
             unit_price: None,
             currency: "USD".to_string(),
@@ -3544,6 +3572,7 @@ mod tests {
             subtype: subtype.map(str::to_string),
             status: "POSTED".to_string(),
             activity_date: "2024-01-15T00:00:00+00:00".to_string(),
+            activity_date_precision: "INSTANT".to_string(),
             settlement_date: None,
             quantity: Some("1".to_string()),
             unit_price: Some("100".to_string()),
@@ -3607,6 +3636,7 @@ mod tests {
             subtype: Some(seed.subtype.to_string()),
             status: "POSTED".to_string(),
             activity_date: seed.activity_date.to_string(),
+            activity_date_precision: "INSTANT".to_string(),
             settlement_date: None,
             quantity: Some(seed.quantity.to_string()),
             unit_price: Some(seed.unit_price.to_string()),
@@ -3964,6 +3994,7 @@ mod tests {
                 activity_type: "DIVIDEND".to_string(),
                 subtype: Some(String::new()),
                 activity_date: "2024-01-15".to_string(),
+                activity_date_precision: None,
                 quantity: None,
                 unit_price: None,
                 currency: "USD".to_string(),
@@ -4006,6 +4037,7 @@ mod tests {
             activity_type: "WITHDRAWAL".to_string(),
             subtype: None,
             activity_date: "2024-01-15T00:00:00+00:00".to_string(),
+            activity_date_precision: None,
             quantity: None,
             unit_price: None,
             currency: "USD".to_string(),
@@ -4490,6 +4522,7 @@ mod tests {
                 activity_type: "TRANSFER_IN".to_string(),
                 subtype: None,
                 activity_date: "2024-01-15T00:00:00Z".to_string(),
+                activity_date_precision: None,
                 quantity: Some(None),
                 unit_price: Some(None),
                 currency: "USD".to_string(),
@@ -4985,6 +5018,7 @@ mod tests {
             activity_type: "BUY".to_string(),
             subtype: None,
             activity_date: "2024-01-15".to_string(),
+            activity_date_precision: None,
             quantity: Some(Decimal::ONE),
             unit_price: Some(Decimal::from(100)),
             currency: "USD".to_string(),
@@ -5010,6 +5044,7 @@ mod tests {
             activity_type: "BUY".to_string(),
             subtype: None,
             activity_date: "2024-01-15".to_string(),
+            activity_date_precision: None,
             quantity: Some(Decimal::ONE),
             unit_price: Some(Decimal::from(101)),
             currency: "USD".to_string(),
@@ -5095,6 +5130,7 @@ mod tests {
             activity_type: "BUY".to_string(),
             subtype: None,
             activity_date: "2024-01-15".to_string(),
+            activity_date_precision: None,
             quantity: Some(Decimal::ONE),
             unit_price: Some(Decimal::from(100)),
             currency: "USD".to_string(),
@@ -5120,6 +5156,7 @@ mod tests {
             activity_type: "BUY".to_string(),
             subtype: None,
             activity_date: "2024-01-15".to_string(),
+            activity_date_precision: None,
             quantity: Some(Decimal::ONE),
             unit_price: Some(Decimal::from(101)),
             currency: "USD".to_string(),
@@ -5195,6 +5232,7 @@ mod tests {
             activity_type: "BUY".to_string(),
             subtype: None,
             activity_date: "2024-06-15".to_string(),
+            activity_date_precision: None,
             quantity: Some(Decimal::TEN),
             unit_price: Some(Decimal::from(50)),
             currency: "USD".to_string(),
@@ -5240,6 +5278,7 @@ mod tests {
             activity_type: "BUY".to_string(),
             subtype: None,
             activity_date: "2024-06-15".to_string(),
+            activity_date_precision: None,
             quantity: Some(Decimal::TEN),
             unit_price: Some(Decimal::from(51)),
             currency: "USD".to_string(),

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 use wealthfolio_core::activities::{
-    Activity, ActivityStatus, ActivityUpdate, ActivityUpsert, NewActivity,
+    Activity, ActivityDatePrecision, ActivityStatus, ActivityUpdate, ActivityUpsert, NewActivity,
 };
 
 fn normalize_subtype_for_storage(subtype: Option<String>) -> Option<String> {
@@ -38,6 +38,13 @@ fn parse_db_datetime(s: &str) -> Option<chrono::DateTime<Utc>> {
         return Some(Utc.from_utc_datetime(&date.and_hms_opt(0, 0, 0)?));
     }
     None
+}
+
+fn resolved_date_precision(
+    date: &str,
+    explicit: Option<ActivityDatePrecision>,
+) -> ActivityDatePrecision {
+    ActivityDatePrecision::resolve(date, explicit).unwrap_or_default()
 }
 
 fn parse_decimal_string_tolerant(value_str: &str, field_name: &str) -> Decimal {
@@ -91,6 +98,7 @@ pub struct ActivityDB {
 
     // Timing
     pub activity_date: String,
+    pub activity_date_precision: String,
     pub settlement_date: Option<String>,
 
     // Quantities - NOW ALL NULLABLE
@@ -321,6 +329,16 @@ impl From<ActivityDetailsDB> for wealthfolio_core::activities::ActivityDetails {
             Some((qty * price).to_string())
         });
 
+        let (date, persisted_precision) = db
+            .date
+            .rsplit_once('|')
+            .map(|(date, precision)| (date.to_string(), precision.to_string()))
+            .unwrap_or((db.date.clone(), "INSTANT".to_string()));
+        let activity_date_precision = match persisted_precision.as_str() {
+            "DATE" => wealthfolio_core::activities::ActivityDatePrecision::Date,
+            _ => wealthfolio_core::activities::ActivityDatePrecision::Instant,
+        };
+
         Self {
             id: db.id,
             account_id: db.account_id,
@@ -328,7 +346,8 @@ impl From<ActivityDetailsDB> for wealthfolio_core::activities::ActivityDetails {
             activity_type: db.activity_type,
             subtype: db.subtype,
             status,
-            date: db.date,
+            date,
+            activity_date_precision,
             quantity: db.quantity,
             unit_price: db.unit_price,
             currency: db.currency,
@@ -449,6 +468,10 @@ impl From<ActivityDB> for Activity {
                 );
                 Utc::now()
             }),
+            activity_date_precision: Some(match db.activity_date_precision.as_str() {
+                "DATE" => wealthfolio_core::activities::ActivityDatePrecision::Date,
+                _ => wealthfolio_core::activities::ActivityDatePrecision::Instant,
+            }),
             settlement_date: db
                 .settlement_date
                 .as_ref()
@@ -565,7 +588,20 @@ impl From<NewActivity> for ActivityDB {
             status,
 
             // Timing
-            activity_date: activity_datetime.to_rfc3339(),
+            activity_date: match resolved_date_precision(
+                &domain.activity_date,
+                domain.activity_date_precision,
+            ) {
+                ActivityDatePrecision::Date => activity_datetime.to_rfc3339(),
+                ActivityDatePrecision::Instant => activity_datetime.to_rfc3339(),
+            },
+            activity_date_precision: match resolved_date_precision(
+                &domain.activity_date,
+                domain.activity_date_precision,
+            ) {
+                ActivityDatePrecision::Date => "DATE".to_string(),
+                ActivityDatePrecision::Instant => "INSTANT".to_string(),
+            },
             settlement_date: None,
 
             // Quantities
@@ -655,7 +691,20 @@ impl From<ActivityUpdate> for ActivityDB {
             status,
 
             // Timing
-            activity_date: activity_datetime.to_rfc3339(),
+            activity_date: match resolved_date_precision(
+                &domain.activity_date,
+                domain.activity_date_precision,
+            ) {
+                ActivityDatePrecision::Date => activity_datetime.to_rfc3339(),
+                ActivityDatePrecision::Instant => activity_datetime.to_rfc3339(),
+            },
+            activity_date_precision: match resolved_date_precision(
+                &domain.activity_date,
+                domain.activity_date_precision,
+            ) {
+                ActivityDatePrecision::Date => "DATE".to_string(),
+                ActivityDatePrecision::Instant => "INSTANT".to_string(),
+            },
             settlement_date: None,
 
             // Quantities
@@ -742,7 +791,20 @@ impl From<ActivityUpsert> for ActivityDB {
             status,
 
             // Timing
-            activity_date: activity_datetime.to_rfc3339(),
+            activity_date: match resolved_date_precision(
+                &domain.activity_date,
+                domain.activity_date_precision,
+            ) {
+                ActivityDatePrecision::Date => activity_datetime.to_rfc3339(),
+                ActivityDatePrecision::Instant => activity_datetime.to_rfc3339(),
+            },
+            activity_date_precision: match resolved_date_precision(
+                &domain.activity_date,
+                domain.activity_date_precision,
+            ) {
+                ActivityDatePrecision::Date => "DATE".to_string(),
+                ActivityDatePrecision::Instant => "INSTANT".to_string(),
+            },
             settlement_date: None,
 
             // Quantities

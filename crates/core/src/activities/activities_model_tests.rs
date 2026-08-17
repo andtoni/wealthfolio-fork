@@ -8,6 +8,27 @@ mod tests {
     use rust_decimal_macros::dec;
     use serde_json::json;
 
+    #[test]
+    fn activity_date_precision_derives_and_rejects_mismatch() {
+        assert_eq!(
+            ActivityDatePrecision::resolve("2026-08-07", None).unwrap(),
+            ActivityDatePrecision::Date
+        );
+        assert_eq!(
+            ActivityDatePrecision::resolve("2026-08-07T00:00:00Z", None).unwrap(),
+            ActivityDatePrecision::Instant
+        );
+        assert!(
+            ActivityDatePrecision::resolve("2026-08-07", Some(ActivityDatePrecision::Instant))
+                .is_err()
+        );
+        assert!(ActivityDatePrecision::resolve(
+            "2026-08-07T00:00:00Z",
+            Some(ActivityDatePrecision::Date)
+        )
+        .is_err());
+    }
+
     // ============================================================================
     // ActivityStatus Tests
     // ============================================================================
@@ -76,6 +97,7 @@ mod tests {
             subtype: None,
             status: ActivityStatus::Posted,
             activity_date: Utc.with_ymd_and_hms(2024, 1, 15, 10, 30, 0).unwrap(),
+            activity_date_precision: None,
             settlement_date: None,
             quantity: Some(dec!(10)),
             unit_price: Some(dec!(150.50)),
@@ -273,6 +295,7 @@ mod tests {
             activity_type: "BUY".to_string(),
             subtype: None,
             activity_date: "2024-01-15".to_string(),
+            activity_date_precision: None,
             quantity: Some(dec!(10)),
             unit_price: Some(dec!(150)),
             currency: "USD".to_string(),
@@ -520,6 +543,7 @@ mod tests {
             activity_type: "BUY".to_string(),
             subtype: None,
             activity_date: "2024-01-15".to_string(),
+            activity_date_precision: None,
             quantity: Some(Some(dec!(10))),
             unit_price: Some(Some(dec!(150))),
             currency: "USD".to_string(),
@@ -815,6 +839,7 @@ mod tests {
             activity_type: "BUY".to_string(),
             subtype: None,
             activity_date: "2024-01-15".to_string(),
+            activity_date_precision: None,
             quantity: Some(dec!(1)),
             unit_price: Some(dec!(1)),
             currency: "GBP".to_string(),

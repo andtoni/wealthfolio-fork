@@ -23,14 +23,15 @@ pub use activities_model::import_type;
 pub use activities_model::{
     into_field_mapping_values, normalize_context_kind_value, parse_decimal_string_tolerant,
     Activity, ActivityBulkIdentifierMapping, ActivityBulkMutationError,
-    ActivityBulkMutationRequest, ActivityBulkMutationResult, ActivityDetails, ActivityImport,
-    ActivitySearchResponse, ActivitySearchResponseMeta, ActivityStatus, ActivityType,
-    ActivityUpdate, ActivityUpsert, AssetResolutionInput, BrokerActivityProfileConfig,
-    BrokerProfileScope, BrokerSyncProfileData, BulkUpsertResult, FieldMappingValue,
-    ImportActivitiesResult, ImportActivitiesSummary, ImportAssetCandidate, ImportAssetPreviewItem,
-    ImportAssetPreviewStatus, ImportMapping, ImportMappingData, ImportTemplate, ImportTemplateData,
-    ImportTemplateScope, IncomeData, InternalTransferPairRequest, InternalTransferPairResponse,
-    NewActivity, PrepareActivitiesResult, SaveBrokerSyncProfileRulesRequest, Sort, TemplateKind,
+    ActivityBulkMutationRequest, ActivityBulkMutationResult, ActivityDatePrecision,
+    ActivityDetails, ActivityImport, ActivitySearchResponse, ActivitySearchResponseMeta,
+    ActivityStatus, ActivityType, ActivityUpdate, ActivityUpsert, AssetResolutionInput,
+    BrokerActivityProfileConfig, BrokerProfileScope, BrokerSyncProfileData, BulkUpsertResult,
+    FieldMappingValue, ImportActivitiesResult, ImportActivitiesSummary, ImportAssetCandidate,
+    ImportAssetPreviewItem, ImportAssetPreviewStatus, ImportMapping, ImportMappingData,
+    ImportTemplate, ImportTemplateData, ImportTemplateScope, IncomeData,
+    InternalTransferPairRequest, InternalTransferPairResponse, NewActivity,
+    PrepareActivitiesResult, SaveBrokerSyncProfileRulesRequest, Sort, TemplateKind,
     TransferMatchCandidate, TransferMatchCandidateRequest,
 };
 pub use activities_service::ActivityService;

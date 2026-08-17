@@ -322,10 +322,7 @@ impl AnalyticsService {
                 fx_as_of_current,
             )
             .unwrap_or(Decimal::ZERO);
-            let d = wealthfolio_core::utils::time_utils::activity_date_in_user_timezone(
-                a.activity_date,
-                timezone,
-            );
+            let d = a.calendar_date(timezone);
             let entry = by_day_map
                 .entry(d)
                 .or_insert((Decimal::ZERO, Decimal::ZERO));
@@ -370,10 +367,7 @@ impl AnalyticsService {
             {
                 continue;
             }
-            let day = wealthfolio_core::utils::time_utils::activity_date_in_user_timezone(
-                a.activity_date,
-                timezone,
-            );
+            let day = a.calendar_date(timezone);
             let day_str = format!("{:04}-{:02}-{:02}", day.year(), day.month(), day.day());
             add_report_breakdown_allocations(
                 &mut spending_acc,
@@ -884,11 +878,7 @@ impl AnalyticsService {
                     // Bucket by user-local date so an activity logged at 11pm
                     // local on Dec 31 lands in the year the user perceives,
                     // not the UTC year.
-                    let act_date =
-                        wealthfolio_core::utils::time_utils::activity_date_in_user_timezone(
-                            a.activity_date,
-                            timezone,
-                        );
+                    let act_date = a.calendar_date(timezone);
                     let in_period = match period {
                         "TOTAL" => true,
                         "YTD" => act_date >= ytd_start,
@@ -1066,10 +1056,7 @@ fn build_summary(
         }
         // Bucket by user-local calendar month so the by_month roll-up matches
         // what the user perceives at boundaries (was `naive_utc()`).
-        let dt = wealthfolio_core::utils::time_utils::activity_date_in_user_timezone(
-            a.activity_date,
-            timezone,
-        );
+        let dt = a.calendar_date(timezone);
         let month_key = format!("{:04}-{:02}", dt.year(), dt.month());
         *by_month.entry(month_key.clone()).or_insert(Decimal::ZERO) += amt;
         *by_account
@@ -1520,10 +1507,7 @@ impl AnalyticsService {
                 total += amt;
                 // Bucket by user-local day so daily counts match what the
                 // user perceives at boundaries (was `naive_utc()`).
-                let dt = wealthfolio_core::utils::time_utils::activity_date_in_user_timezone(
-                    a.activity_date,
-                    timezone,
-                );
+                let dt = a.calendar_date(timezone);
                 let day = format!("{:04}-{:02}-{:02}", dt.year(), dt.month(), dt.day());
                 *daily.entry(day).or_insert(Decimal::ZERO) += amt;
 
@@ -1870,6 +1854,9 @@ mod tests {
             subtype: None,
             status: ActivityStatus::Posted,
             activity_date: Utc.with_ymd_and_hms(2024, month, 10, 12, 0, 0).unwrap(),
+            activity_date_precision: Some(
+                wealthfolio_core::activities::ActivityDatePrecision::Instant,
+            ),
             settlement_date: None,
             quantity: None,
             unit_price: None,

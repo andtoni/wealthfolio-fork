@@ -34,6 +34,7 @@ diesel::table! {
         subtype -> Nullable<Text>,
         status -> Text,
         activity_date -> Text,
+        activity_date_precision -> Text,
         settlement_date -> Nullable<Text>,
         quantity -> Nullable<Text>,
         unit_price -> Nullable<Text>,

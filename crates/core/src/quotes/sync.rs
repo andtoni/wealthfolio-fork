@@ -776,6 +776,7 @@ where
                     asset_id: Some(asset.id.clone()),
                     activity_type: "SPLIT".to_string(),
                     activity_date: split.date.to_string(),
+                    activity_date_precision: Some(crate::activities::ActivityDatePrecision::Date),
                     amount: Some(split.ratio),
                     currency: currency.to_string(),
                     idempotency_key: Some(key),

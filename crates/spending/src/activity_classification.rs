@@ -105,15 +105,14 @@ pub(crate) fn is_provider_pocket_conversion(activity: &Activity) -> bool {
         return false;
     }
 
-    [activity.source_type.as_deref(), activity.subtype.as_deref()]
-        .into_iter()
-        .flatten()
-        .any(|value| {
-            matches!(
-                value.trim().to_ascii_uppercase().as_str(),
-                "MCPBAPOCKETTRANSFERS" | "POCKET_TRANSFER"
-            )
-        })
+    activity
+        .source_type
+        .as_deref()
+        .is_some_and(|value| value.trim().eq_ignore_ascii_case("MCPBAPOCKETTRANSFERS"))
+        || activity
+            .subtype
+            .as_deref()
+            .is_some_and(|value| value.trim().eq_ignore_ascii_case("POCKET_TRANSFER"))
 }
 
 pub(crate) fn classify_activity(activity: &Activity, account_type: &str) -> SpendingClassification {
@@ -191,6 +190,9 @@ mod tests {
             subtype: subtype.map(str::to_string),
             status: ActivityStatus::Posted,
             activity_date: Utc::now(),
+            activity_date_precision: Some(
+                wealthfolio_core::activities::ActivityDatePrecision::Instant,
+            ),
             settlement_date: None,
             quantity: None,
             unit_price: None,
@@ -342,8 +344,9 @@ mod tests {
 
     #[test]
     fn provider_pocket_conversion_is_visible_but_never_counted() {
-        let mut conversion_out = activity("TRANSFER_OUT", None);
-        conversion_out.source_type = Some("MCPBAPOCKETTRANSFERS".to_string());
+        let mut conversion_out = activity("TRANSFER_OUT", Some("provider-group"));
+        conversion_out.source_type = Some("mCpBaPoCkEtTrAnSfErS".to_string());
+        conversion_out.subtype = Some("pocket_transfer".to_string());
         let classification = classify_activity_for_aggregation(
             &conversion_out,
             account_types::CASH,
@@ -364,6 +367,7 @@ mod tests {
         );
 
         let mut conversion_in = activity("TRANSFER_IN", Some("provider-group"));
+        conversion_in.source_type = Some("MCPBAPOCKETTRANSFERS".to_string());
         conversion_in.subtype = Some("POCKET_TRANSFER".to_string());
         assert_eq!(
             classify_activity_for_aggregation(&conversion_in, account_types::CASH, &HashSet::new(),),

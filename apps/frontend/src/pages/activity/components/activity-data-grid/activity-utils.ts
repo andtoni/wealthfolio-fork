@@ -24,6 +24,14 @@ import { generateTempActivityId } from "./use-activity-grid-state";
  */
 const NUMERIC_FIELDS = new Set(["quantity", "unitPrice", "amount", "fee", "tax", "fxRate"]);
 
+function calendarDate(date: Date): string {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 const isTransferActivity = (activityType: string | undefined): boolean => {
   return activityType === ActivityType.TRANSFER_IN || activityType === ActivityType.TRANSFER_OUT;
 };
@@ -501,9 +509,14 @@ export function buildSavePayload(
       accountId: transaction.accountId,
       activityType: transaction.activityType,
       activityDate:
-        transaction.date instanceof Date
-          ? transaction.date.toISOString()
-          : new Date(transaction.date).toISOString(),
+        transaction.activityDatePrecision === "DATE"
+          ? typeof transaction.date === "string"
+            ? transaction.date
+            : calendarDate(transaction.date)
+          : transaction.date instanceof Date
+            ? transaction.date.toISOString()
+            : new Date(transaction.date).toISOString(),
+      activityDatePrecision: transaction.activityDatePrecision,
       // Activity data
       subtype: transaction.subtype ?? undefined,
       quantity: toDecimalString(transaction.quantity),

@@ -3799,6 +3799,7 @@ mod tests {
                 activity_type: "BUY".to_string(),
                 subtype: None,
                 activity_date: "2026-01-01T00:00:00Z".to_string(),
+                activity_date_precision: None,
                 quantity: Some(Decimal::new(10, 0)),
                 unit_price: Some(Decimal::new(5, 0)),
                 currency: "USD".to_string(),

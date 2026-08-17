@@ -1136,6 +1136,9 @@ mod tests {
                 subtype: None,
                 status: ActivityStatus::Posted,
                 activity_date,
+                activity_date_precision: Some(
+                    wealthfolio_core::activities::ActivityDatePrecision::Instant,
+                ),
                 settlement_date: None,
                 quantity: None,
                 unit_price: None,

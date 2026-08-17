@@ -179,9 +179,16 @@ export const saveInternalTransferPair = async (
   const payload: InternalTransferPairRequest = {
     ...request,
     activityDate:
-      request.activityDate instanceof Date
-        ? request.activityDate.toISOString()
-        : request.activityDate,
+      request.activityDatePrecision === "DATE" && request.activityDate instanceof Date
+        ? (() => {
+            const year = request.activityDate.getFullYear();
+            const month = String(request.activityDate.getMonth() + 1).padStart(2, "0");
+            const day = String(request.activityDate.getDate()).padStart(2, "0");
+            return `${year}-${month}-${day}`;
+          })()
+        : request.activityDate instanceof Date
+          ? request.activityDate.toISOString()
+          : request.activityDate,
   };
   try {
     return await invoke<InternalTransferPairResponse>("save_internal_transfer_pair", {

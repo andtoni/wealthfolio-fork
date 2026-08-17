@@ -1397,6 +1397,7 @@ mod tests {
                 date.and_hms_opt(0, 0, 0).unwrap(),
                 Utc,
             ),
+            activity_date_precision: None,
             settlement_date: None,
             quantity,
             unit_price,

@@ -2,12 +2,59 @@ import { AccountType } from "@/lib/constants";
 
 import {
   getActivitySpendingAmount,
+  getCashActivityLabel,
   getActivityTypesForAccount,
   getEffectiveCashActivityType,
   isCashActivityIncome,
 } from "./constants";
 
 describe("spending constants", () => {
+  describe("getCashActivityLabel", () => {
+    it("labels explicit pocket conversions without inventing a currency", () => {
+      expect(
+        getCashActivityLabel(
+          "TRANSFER_OUT",
+          AccountType.CASH,
+          "POCKET_TRANSFER",
+          "MCPBAPOCKETTRANSFERS",
+        ),
+      ).toBe("Converted to pocket");
+      expect(
+        getCashActivityLabel(
+          "TRANSFER_IN",
+          AccountType.CASH,
+          "POCKET_TRANSFER",
+          "MCPBAPOCKETTRANSFERS",
+        ),
+      ).toBe("Converted from pocket");
+    });
+
+    it("matches pocket markers case-insensitively", () => {
+      expect(
+        getCashActivityLabel(
+          "TRANSFER_OUT",
+          AccountType.CASH,
+          "pocket_transfer",
+          "mcpbapockettransfers",
+        ),
+      ).toBe("Converted to pocket");
+    });
+
+    it("does not relabel unrelated or user-overridden activities", () => {
+      expect(
+        getCashActivityLabel("TRANSFER_OUT", AccountType.CASH, "POCKET_TRANSFER", "OTHER"),
+      ).toBe("Transfer Out");
+      expect(
+        getCashActivityLabel(
+          "TRANSFER_OUT",
+          AccountType.CASH,
+          "POCKET_TRANSFER",
+          "MCPBAPOCKETTRANSFERS",
+          "WITHDRAWAL",
+        ),
+      ).toBe("Transfer Out");
+    });
+  });
   describe("getEffectiveCashActivityType", () => {
     it("prefers activity type overrides", () => {
       expect(

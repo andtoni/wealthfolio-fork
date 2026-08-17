@@ -43,6 +43,9 @@ pub struct ActivityPayload {
     pub activity_type: String,
     pub status: String,
     pub activity_date: String,
+    /// Provider precision: DATE for calendar-only facts, INSTANT for real timestamps.
+    #[serde(default)]
+    pub activity_date_precision: Option<wealthfolio_core::activities::ActivityDatePrecision>,
     #[serde(default)]
     pub settlement_date: Option<String>,
     pub amount: String,
@@ -449,6 +452,19 @@ pub fn disclosure_payload_digest(op: &DisclosureOperation) -> String {
         field(&mut hasher, &activity.activity_type);
         field(&mut hasher, &activity.status);
         field(&mut hasher, &activity.activity_date);
+        // Legacy bridge payloads omitted precision entirely. Keep that exact
+        // pre-precision digest shape for durable retries; only explicit values
+        // add a framed field to the canonical payload digest.
+        if let Some(precision) = activity.activity_date_precision {
+            field(&mut hasher, "activity-date-precision-v1");
+            field(
+                &mut hasher,
+                match precision {
+                    wealthfolio_core::activities::ActivityDatePrecision::Date => "DATE",
+                    wealthfolio_core::activities::ActivityDatePrecision::Instant => "INSTANT",
+                },
+            );
+        }
         field(&mut hasher, &activity.amount);
         field(&mut hasher, &activity.currency);
         optional_field(&mut hasher, activity.notes.as_deref());
@@ -601,6 +617,33 @@ pub fn current_state_semantic_hash(state: &CurrentStatePayload) -> String {
     format!("{:x}", Sha256::digest(canonical_json(&value).as_bytes()))
 }
 
+fn resolved_activity_precision(
+    activity: &ActivityPayload,
+) -> std::result::Result<wealthfolio_core::activities::ActivityDatePrecision, BridgePolicyError> {
+    let is_date = activity.activity_date.len() == 10
+        && chrono::NaiveDate::parse_from_str(&activity.activity_date, "%Y-%m-%d").is_ok();
+    let is_instant = chrono::DateTime::parse_from_rfc3339(&activity.activity_date).is_ok();
+    let derived = match (is_date, is_instant) {
+        (true, false) => wealthfolio_core::activities::ActivityDatePrecision::Date,
+        (false, true) => wealthfolio_core::activities::ActivityDatePrecision::Instant,
+        _ => {
+            return Err(BridgePolicyError::InvalidActivity(
+                "invalid activity date".into(),
+            ))
+        }
+    };
+    if let Some(explicit) = activity.activity_date_precision {
+        if explicit != derived {
+            return Err(BridgePolicyError::InvalidActivity(
+                "activity date precision does not match date".into(),
+            ));
+        }
+        Ok(explicit)
+    } else {
+        Ok(derived)
+    }
+}
+
 fn validate_activity_payload(activity: &ActivityPayload) -> Result<()> {
     use chrono::{DateTime, NaiveDate};
     use rust_decimal::Decimal;
@@ -626,7 +669,8 @@ fn validate_activity_payload(activity: &ActivityPayload) -> Result<()> {
         NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok()
             || DateTime::parse_from_rfc3339(value).is_ok()
     };
-    if !valid_date(&activity.activity_date)
+    let valid_activity_date = resolved_activity_precision(activity).is_ok();
+    if !valid_activity_date
         || activity
             .settlement_date
             .as_deref()
@@ -818,12 +862,29 @@ fn validate_current_state_operation(op: &DisclosureOperation) -> Result<()> {
     Ok(())
 }
 
+fn normalize_activity_date(value: &str) -> String {
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d") {
+        return chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+            date.and_hms_opt(0, 0, 0).unwrap(),
+            chrono::Utc,
+        )
+        .to_rfc3339();
+    }
+    chrono::DateTime::parse_from_rfc3339(value)
+        .unwrap()
+        .with_timezone(&chrono::Utc)
+        .to_rfc3339()
+}
+
 fn upsert_activity_row(
     c: &mut SqliteConnection,
     resource_id: &str,
     subject: &str,
     act: &ActivityPayload,
 ) -> std::result::Result<(), diesel::result::Error> {
+    let resolved_precision =
+        resolved_activity_precision(act).map_err(|_| diesel::result::Error::RollbackTransaction)?;
+    let normalized_activity_date = normalize_activity_date(&act.activity_date);
     #[derive(QueryableByName)]
     struct ExistingActivity {
         #[diesel(sql_type = Text)]
@@ -906,13 +967,17 @@ fn upsert_activity_row(
     };
 
     sql_query(
-        "INSERT INTO activities(id,account_id,activity_type,status,activity_date,settlement_date,source_type,subtype,amount,fee,tax,currency,fx_rate,notes,activity_type_override,metadata,source_system,source_record_id,source_group_id,is_user_modified,needs_review,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?,'FINANCE',?,?,0,COALESCE(?,0),strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,activity_type=CASE WHEN activities.is_user_modified=1 THEN activities.activity_type ELSE excluded.activity_type END,status=excluded.status,activity_date=excluded.activity_date,settlement_date=excluded.settlement_date,source_type=excluded.source_type,subtype=CASE WHEN activities.is_user_modified=1 THEN activities.subtype ELSE excluded.subtype END,amount=excluded.amount,fee=excluded.fee,tax=excluded.tax,currency=excluded.currency,fx_rate=excluded.fx_rate,notes=CASE WHEN activities.is_user_modified=1 THEN activities.notes ELSE excluded.notes END,metadata=coalesce(excluded.metadata,activities.metadata),source_system=excluded.source_system,source_record_id=excluded.source_record_id,source_group_id=CASE WHEN activities.is_user_modified=1 THEN activities.source_group_id ELSE excluded.source_group_id END,needs_review=CASE WHEN activities.is_user_modified=1 THEN activities.needs_review ELSE COALESCE(excluded.needs_review,0) END,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')"
+        "INSERT INTO activities(id,account_id,activity_type,status,activity_date,activity_date_precision,settlement_date,source_type,subtype,amount,fee,tax,currency,fx_rate,notes,activity_type_override,metadata,source_system,source_record_id,source_group_id,is_user_modified,needs_review,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?,'FINANCE',?,?,0,COALESCE(?,0),strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,activity_type=CASE WHEN activities.is_user_modified=1 THEN activities.activity_type ELSE excluded.activity_type END,status=excluded.status,activity_date=excluded.activity_date,activity_date_precision=excluded.activity_date_precision,settlement_date=excluded.settlement_date,source_type=excluded.source_type,subtype=CASE WHEN activities.is_user_modified=1 THEN activities.subtype ELSE excluded.subtype END,amount=excluded.amount,fee=excluded.fee,tax=excluded.tax,currency=excluded.currency,fx_rate=excluded.fx_rate,notes=CASE WHEN activities.is_user_modified=1 THEN activities.notes ELSE excluded.notes END,metadata=coalesce(excluded.metadata,activities.metadata),source_system=excluded.source_system,source_record_id=excluded.source_record_id,source_group_id=CASE WHEN activities.is_user_modified=1 THEN activities.source_group_id ELSE excluded.source_group_id END,needs_review=CASE WHEN activities.is_user_modified=1 THEN activities.needs_review ELSE COALESCE(excluded.needs_review,0) END,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')"
     )
         .bind::<Text,_>(resource_id)
         .bind::<Text,_>(&act.account_id)
         .bind::<Text,_>(&act.activity_type)
         .bind::<Text,_>(&act.status)
-        .bind::<Text,_>(&act.activity_date)
+        .bind::<Text,_>(&normalized_activity_date)
+        .bind::<Text,_>(match resolved_precision {
+            wealthfolio_core::activities::ActivityDatePrecision::Date => "DATE",
+            wealthfolio_core::activities::ActivityDatePrecision::Instant => "INSTANT",
+        })
         .bind::<Nullable<Text>,_>(act.settlement_date.as_deref())
         .bind::<Nullable<Text>,_>(act.source_type.as_deref())
         .bind::<Nullable<Text>,_>(act.subtype.as_deref())

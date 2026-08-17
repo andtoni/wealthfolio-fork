@@ -182,10 +182,20 @@ function dateOnlyPart(input: string | Date): string | undefined {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined;
 }
 
-export const formatDateTime = (date: string | Date, timezone?: string) => {
+export const formatDateTime = (
+  date: string | Date,
+  timezone?: string,
+  precision?: "DATE" | "INSTANT",
+) => {
   if (!date) return { date: "-", time: "-" };
 
-  const dateOnly = dateOnlyPart(date);
+  const dateOnly = precision === "DATE" || dateOnlyPart(date) !== undefined;
+  const calendarDate =
+    precision === "DATE"
+      ? typeof date === "string"
+        ? date.slice(0, 10)
+        : date.toISOString().slice(0, 10)
+      : dateOnlyPart(date);
   let dateObj: Date | null = null;
   if (typeof date === "string") {
     // First attempt with the robust parser
@@ -231,7 +241,7 @@ export const formatDateTime = (date: string | Date, timezone?: string) => {
 
   return {
     date: dateOnly
-      ? dateFormatter.format(new Date(`${dateOnly}T12:00:00Z`))
+      ? dateFormatter.format(new Date(`${calendarDate}T12:00:00Z`))
       : dateFormatter.format(dateObj),
     time: dateOnly ? "—" : timeFormatter.format(dateObj),
   };

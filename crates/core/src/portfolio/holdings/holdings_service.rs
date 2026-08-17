@@ -2902,6 +2902,7 @@ mod tests {
             subtype: None,
             status: ActivityStatus::Posted,
             activity_date: date.and_hms_opt(12, 0, 0).unwrap().and_utc(),
+            activity_date_precision: None,
             settlement_date: None,
             quantity: None,
             unit_price: None,

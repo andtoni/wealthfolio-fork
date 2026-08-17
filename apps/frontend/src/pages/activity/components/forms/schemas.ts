@@ -16,6 +16,7 @@ export const baseActivitySchema = z.object({
   id: z.string().optional(),
   accountId: z.string().min(1, { message: "Please select an account." }),
   activityDate: z.union([z.date(), z.string().datetime()]).default(new Date()),
+  activityDatePrecision: z.enum(["DATE", "INSTANT"]).optional(),
   currency: z.string().min(1, { message: "Currency is required." }),
   comment: z.string().optional().nullable(),
   subtype: z.string().optional().nullable(), // Semantic variation (DRIP, STAKING_REWARD, etc.)

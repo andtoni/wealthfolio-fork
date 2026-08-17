@@ -98,6 +98,37 @@ pub enum ActivityStatus {
     Void,    // Cancelled/reversed (soft delete)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ActivityDatePrecision {
+    #[default]
+    Instant,
+    Date,
+}
+
+impl ActivityDatePrecision {
+    pub fn resolve(date: &str, explicit: Option<Self>) -> std::result::Result<Self, ActivityError> {
+        let is_date = date.len() == 10 && NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok();
+        let is_instant = DateTime::parse_from_rfc3339(date).is_ok();
+        let derived = if is_date {
+            Self::Date
+        } else if is_instant {
+            Self::Instant
+        } else {
+            return Err(ActivityError::InvalidData(
+                "Invalid activity date format".into(),
+            ));
+        };
+        match explicit {
+            Some(value) if value != derived => Err(ActivityError::InvalidData(
+                "Activity date precision does not match date".into(),
+            )),
+            Some(value) => Ok(value),
+            None => Ok(derived),
+        }
+    }
+}
+
 /// Domain model representing an activity in the system
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -117,6 +148,8 @@ pub struct Activity {
     // Timing
     #[serde(with = "timestamp_format")]
     pub activity_date: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activity_date_precision: Option<ActivityDatePrecision>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub settlement_date: Option<DateTime<Utc>>,
@@ -177,7 +210,18 @@ impl Activity {
             .unwrap_or(&self.activity_type)
     }
 
-    /// Returns the effective date for this activity
+    /// Returns the provider calendar date for DATE facts, otherwise the user's local instant date.
+    pub fn calendar_date(&self, timezone: &str) -> NaiveDate {
+        match self.activity_date_precision {
+            Some(ActivityDatePrecision::Date) => self.activity_date.naive_utc().date(),
+            _ => crate::utils::time_utils::activity_date_in_user_timezone(
+                self.activity_date,
+                timezone,
+            ),
+        }
+    }
+
+    /// Returns the effective date for this activity.
     pub fn effective_date(&self) -> NaiveDate {
         self.activity_date.naive_utc().date()
     }
@@ -286,6 +330,8 @@ pub struct NewActivity {
     pub activity_type: String,
     pub subtype: Option<String>, // Semantic variation (DRIP, STAKING_REWARD, etc.)
     pub activity_date: String,
+    #[serde(default)]
+    pub activity_date_precision: Option<ActivityDatePrecision>,
     #[serde(
         default,
         deserialize_with = "decimal_input_format::deserialize_option_decimal"
@@ -475,14 +521,7 @@ impl NewActivity {
             ));
         }
 
-        // Validate date format
-        if DateTime::parse_from_rfc3339(&self.activity_date).is_err()
-            && NaiveDate::parse_from_str(&self.activity_date, "%Y-%m-%d").is_err()
-        {
-            return Err(crate::activities::ActivityError::InvalidData(
-                "Invalid date format. Expected ISO 8601/RFC3339 or YYYY-MM-DD".to_string(),
-            ));
-        }
+        ActivityDatePrecision::resolve(&self.activity_date, self.activity_date_precision)?;
 
         Self::validate_asset_backed_income_values(
             &self.activity_type,
@@ -563,6 +602,8 @@ pub struct ActivityUpdate {
     )]
     pub subtype: Option<String>, // Semantic variation (DRIP, STAKING_REWARD, etc.)
     pub activity_date: String,
+    #[serde(default)]
+    pub activity_date_precision: Option<ActivityDatePrecision>,
     #[serde(
         default,
         deserialize_with = "decimal_input_format::deserialize_patch_decimal"
@@ -621,6 +662,7 @@ impl ActivityUpdate {
             )
             .into());
         }
+        ActivityDatePrecision::resolve(&self.activity_date, self.activity_date_precision)?;
         Ok(())
     }
 
@@ -711,6 +753,8 @@ pub struct InternalTransferPairRequest {
     pub from_account_id: String,
     pub to_account_id: String,
     pub activity_date: String,
+    #[serde(default)]
+    pub activity_date_precision: Option<ActivityDatePrecision>,
     #[serde(
         default,
         deserialize_with = "decimal_input_format::deserialize_option_decimal"
@@ -790,6 +834,7 @@ pub struct ActivityDetails {
     pub subtype: Option<String>,
     pub status: ActivityStatus,
     pub date: String,
+    pub activity_date_precision: ActivityDatePrecision,
     pub quantity: Option<String>,
     pub unit_price: Option<String>,
     pub currency: String,
@@ -1764,6 +1809,8 @@ pub struct ActivityUpsert {
     pub activity_type: String,
     pub subtype: Option<String>,
     pub activity_date: String,
+    #[serde(default)]
+    pub activity_date_precision: Option<ActivityDatePrecision>,
     pub quantity: Option<Decimal>,
     pub unit_price: Option<Decimal>,
     pub currency: String,
@@ -1780,6 +1827,13 @@ pub struct ActivityUpsert {
     pub source_group_id: Option<String>,
     pub idempotency_key: Option<String>,
     pub import_run_id: Option<String>,
+}
+
+impl ActivityUpsert {
+    pub fn validate(&self) -> Result<()> {
+        ActivityDatePrecision::resolve(&self.activity_date, self.activity_date_precision)?;
+        Ok(())
+    }
 }
 
 /// Result of a bulk upsert operation
@@ -1869,6 +1923,7 @@ impl From<ActivityImport> for NewActivity {
             activity_type: import.activity_type,
             subtype: import.subtype,
             activity_date: import.date,
+            activity_date_precision: None,
             quantity: import.quantity,
             unit_price: import.unit_price,
             currency: import.currency,

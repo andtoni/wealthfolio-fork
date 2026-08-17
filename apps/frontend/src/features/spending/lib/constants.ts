@@ -65,7 +65,16 @@ export function getCashActivityLabel(
   activityType: string,
   accountType?: string,
   subtype?: string | null,
+  sourceType?: string,
+  activityTypeOverride?: string | null,
 ): string {
+  if (
+    activityTypeOverride == null &&
+    subtype?.toUpperCase() === "POCKET_TRANSFER" &&
+    sourceType?.toUpperCase() === "MCPBAPOCKETTRANSFERS"
+  ) {
+    return activityType === "TRANSFER_IN" ? "Converted from pocket" : "Converted to pocket";
+  }
   if (isCreditCardAccountType(accountType)) {
     return (
       CREDIT_CARD_ACTIVITY_TYPE_LABELS[activityType as CashActivityType] ??

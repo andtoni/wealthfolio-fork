@@ -1625,6 +1625,22 @@ export function DateInputCell<TData>({
   );
 }
 
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function isDateOnlyValue(value: Date | string | undefined): value is string {
+  return typeof value === "string" && DATE_ONLY_PATTERN.test(value);
+}
+
+function dateValuesDiffer(
+  dateOnly: boolean,
+  value: Date | string | undefined,
+  initial: Date | string | undefined,
+): boolean {
+  return dateOnly
+    ? value !== initial
+    : (value as Date | undefined)?.getTime() !== (initial as Date | undefined)?.getTime();
+}
+
 function formatDateTimeForDisplay(date: Date | string | undefined): string {
   if (!date) return "";
   const d = date instanceof Date ? date : new Date(date);
@@ -1677,16 +1693,19 @@ export function DateTimeCell<TData>({
   cellState,
 }: DataGridCellProps<TData>) {
   const initialValue = cell.getValue() as Date | string | undefined;
-  const [value, setValue] = React.useState(() => toDateTimeLocalString(initialValue));
+  const dateOnly = isDateOnlyValue(initialValue);
+  const [value, setValue] = React.useState(() => (dateOnly ? initialValue : toDateTimeLocalString(initialValue)));
   const inputRef = React.useRef<HTMLInputElement>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
 
   // Compare by timestamp instead of reference for Date objects
-  const prevTimestampRef = React.useRef(getDateTimestamp(initialValue));
-  const currentTimestamp = getDateTimestamp(initialValue);
+  const prevTimestampRef = React.useRef<number | string | null>(
+    dateOnly ? initialValue : getDateTimestamp(initialValue),
+  );
+  const currentTimestamp = dateOnly ? initialValue : getDateTimestamp(initialValue);
   if (currentTimestamp !== prevTimestampRef.current) {
     prevTimestampRef.current = currentTimestamp;
-    setValue(toDateTimeLocalString(initialValue));
+    setValue(isDateOnlyValue(initialValue) ? initialValue : toDateTimeLocalString(initialValue));
   }
 
   const onBlur = React.useCallback(() => {
@@ -1694,15 +1713,17 @@ export function DateTimeCell<TData>({
       tableMeta?.onCellEditingStop?.();
       return;
     }
-    const date = value ? new Date(value) : undefined;
+    const date = value ? (dateOnly ? value : new Date(value)) : undefined;
     const initialDate = initialValue
-      ? initialValue instanceof Date
+      ? dateOnly
         ? initialValue
-        : new Date(initialValue)
+        : initialValue instanceof Date
+          ? initialValue
+          : new Date(initialValue)
       : undefined;
 
     // Only update if value changed
-    if (date?.getTime() !== initialDate?.getTime()) {
+    if (dateValuesDiffer(dateOnly, date, initialDate)) {
       tableMeta?.onDataUpdate?.({ rowIndex, columnId, value: date });
     }
     tableMeta?.onCellEditingStop?.();
@@ -1721,14 +1742,16 @@ export function DateTimeCell<TData>({
     // When editing stops (transitions from true to false), save the value
     if (wasEditingRef.current && !isEditing) {
       const currentValue = valueRef.current;
-      const date = currentValue ? parseDateLocal(currentValue) : undefined;
+      const date = currentValue ? (dateOnly ? currentValue : parseDateLocal(currentValue)) : undefined;
       const initialDate = initialValue
-        ? initialValue instanceof Date
+        ? dateOnly
           ? initialValue
-          : parseDateLocal(initialValue)
+          : initialValue instanceof Date
+            ? initialValue
+            : parseDateLocal(initialValue)
         : undefined;
 
-      if (!readOnly && date?.getTime() !== initialDate?.getTime()) {
+      if (!readOnly && dateValuesDiffer(dateOnly, date, initialDate)) {
         tableMeta?.onDataUpdate?.({ rowIndex, columnId, value: date });
       }
     }
@@ -1740,25 +1763,29 @@ export function DateTimeCell<TData>({
       if (isEditing) {
         if (event.key === "Enter") {
           event.preventDefault();
-          const date = value ? parseDateLocal(value) : undefined;
+          const date = value ? (dateOnly ? value : parseDateLocal(value)) : undefined;
           const initialDate = initialValue
-            ? initialValue instanceof Date
+            ? dateOnly
               ? initialValue
-              : parseDateLocal(initialValue)
+              : initialValue instanceof Date
+                ? initialValue
+                : parseDateLocal(initialValue)
             : undefined;
-          if (date?.getTime() !== initialDate?.getTime()) {
+          if (dateValuesDiffer(dateOnly, date, initialDate)) {
             tableMeta?.onDataUpdate?.({ rowIndex, columnId, value: date });
           }
           tableMeta?.onCellEditingStop?.({ moveToNextRow: true });
         } else if (event.key === "Tab") {
           event.preventDefault();
-          const date = value ? parseDateLocal(value) : undefined;
+          const date = value ? (dateOnly ? value : parseDateLocal(value)) : undefined;
           const initialDate = initialValue
-            ? initialValue instanceof Date
+            ? dateOnly
               ? initialValue
-              : parseDateLocal(initialValue)
+              : initialValue instanceof Date
+                ? initialValue
+                : parseDateLocal(initialValue)
             : undefined;
-          if (date?.getTime() !== initialDate?.getTime()) {
+          if (dateValuesDiffer(dateOnly, date, initialDate)) {
             tableMeta?.onDataUpdate?.({ rowIndex, columnId, value: date });
           }
           tableMeta?.onCellEditingStop?.({
@@ -1806,14 +1833,14 @@ export function DateTimeCell<TData>({
       {isEditing ? (
         <input
           ref={inputRef}
-          type="datetime-local"
+          type={dateOnly ? "date" : "datetime-local"}
           value={value}
           onChange={onChange}
           onBlur={onBlur}
           className="w-full border-none bg-transparent p-0 text-sm outline-none"
         />
       ) : (
-        <span data-slot="grid-cell-content">{formatDateTimeForDisplay(value)}</span>
+        <span data-slot="grid-cell-content">{dateOnly ? value : formatDateTimeForDisplay(value)}</span>
       )}
     </DataGridCellWrapper>
   );

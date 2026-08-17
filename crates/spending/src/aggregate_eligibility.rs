@@ -334,6 +334,9 @@ mod tests {
                     0,
                 )
                 .unwrap(),
+            activity_date_precision: Some(
+                wealthfolio_core::activities::ActivityDatePrecision::Instant,
+            ),
             settlement_date: None,
             quantity: None,
             unit_price: None,

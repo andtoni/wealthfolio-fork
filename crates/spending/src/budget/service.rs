@@ -17,7 +17,7 @@ use super::model::{
     NewBudgetRolloverSetting, NewBudgetTarget, UpdateBudgetGroup,
 };
 use super::period::{
-    current_period_key, local_period_bounds_utc, period_for_key, period_key_for_datetime,
+    current_period_key, local_period_bounds_utc, period_for_date, period_for_key,
     period_keys_between,
 };
 use super::traits::BudgetRepositoryTrait;
@@ -826,7 +826,7 @@ impl BudgetService {
             if spending_native == Decimal::ZERO && income_native == Decimal::ZERO {
                 continue;
             }
-            let period_key = period_key_for_datetime(activity.activity_date, timezone, cycle)?;
+            let period_key = period_for_date(activity.calendar_date(timezone), cycle)?.key;
             let month_actuals = actuals.entry(period_key).or_default();
             add_allocated_actuals(
                 month_actuals,
@@ -1313,6 +1313,9 @@ mod tests {
             subtype: None,
             status: ActivityStatus::Posted,
             activity_date: Utc.with_ymd_and_hms(2026, 5, 10, 12, 0, 0).unwrap(),
+            activity_date_precision: Some(
+                wealthfolio_core::activities::ActivityDatePrecision::Instant,
+            ),
             settlement_date: None,
             quantity: None,
             unit_price: None,
