@@ -949,7 +949,12 @@ fn group_activities_by_visible_event(
     let mut by_event: HashMap<String, Vec<Activity>> = HashMap::new();
     for activity in activities {
         if activity.status != ActivityStatus::Posted {
-            continue;
+            // Retain explicit provisional debit authorizations despite PENDING
+            if !(activity.status == ActivityStatus::Pending
+                && crate::activity_classification::is_provisional_card_authorization(&activity))
+            {
+                continue;
+            }
         }
         let Some(event_id) = tag_map.get(&activity.id).cloned() else {
             continue;

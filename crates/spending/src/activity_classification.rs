@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use wealthfolio_core::accounts::account_types;
-use wealthfolio_core::activities::Activity;
+use wealthfolio_core::activities::{Activity, ActivityStatus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SpendingClassification {
@@ -82,6 +82,9 @@ pub(crate) fn classify_activity_for_aggregation(
     if is_provider_pocket_conversion(activity) {
         return SpendingClassification::InternalTransfer;
     }
+    if is_provisional_card_authorization(activity) {
+        return SpendingClassification::Expense;
+    }
 
     let activity_type = activity.effective_type();
     if matches!(activity_type, "TRANSFER_IN" | "TRANSFER_OUT") {
@@ -115,9 +118,43 @@ pub(crate) fn is_provider_pocket_conversion(activity: &Activity) -> bool {
             .is_some_and(|value| value.trim().eq_ignore_ascii_case("POCKET_TRANSFER"))
 }
 
+pub(crate) fn is_provisional_card_authorization(activity: &Activity) -> bool {
+    if activity.status != ActivityStatus::Pending || activity.activity_type_override.is_some() {
+        return false;
+    }
+
+    if activity.effective_type() != "WITHDRAWAL" {
+        return false;
+    }
+
+    let is_card = activity
+        .source_type
+        .as_deref()
+        .is_some_and(|value| value.trim().eq_ignore_ascii_case("CARD"))
+        || activity
+            .subtype
+            .as_deref()
+            .is_some_and(|value| value.trim().eq_ignore_ascii_case("CARD_PURCHASE"));
+    if !is_card {
+        return false;
+    }
+
+    activity
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get("providerOwned"))
+        .and_then(|provider_owned| provider_owned.get("investec"))
+        .and_then(|investec| investec.get("provisionalSpending"))
+        .and_then(serde_json::Value::as_bool)
+        == Some(true)
+}
+
 pub(crate) fn classify_activity(activity: &Activity, account_type: &str) -> SpendingClassification {
     if is_provider_pocket_conversion(activity) {
         return SpendingClassification::InternalTransfer;
+    }
+    if is_provisional_card_authorization(activity) {
+        return SpendingClassification::Expense;
     }
 
     let activity_type = activity.effective_type();
@@ -428,5 +465,56 @@ mod tests {
             ),
             SpendingClassification::InternalTransfer
         );
+    }
+
+    #[test]
+    fn authorized_card_without_settlement_counts_as_labelled_provisional_spending() {
+        let mut authorization = activity("WITHDRAWAL", None);
+        authorization.status = ActivityStatus::Pending;
+        authorization.source_type = Some("CARD".to_string());
+        authorization.subtype = Some("CARD_PURCHASE".to_string());
+        authorization.metadata = Some(serde_json::json!({
+            "providerOwned": {
+                "investec": {
+                    "provisionalSpending": true,
+                    "provisionalSpendingReason": "AUTHORIZED_NO_SETTLEMENT"
+                }
+            }
+        }));
+
+        assert!(is_provisional_card_authorization(&authorization));
+        assert_eq!(
+            classify_activity_for_aggregation(&authorization, account_types::CASH, &HashSet::new()),
+            SpendingClassification::Expense
+        );
+        assert_eq!(
+            classify_activity(&authorization, account_types::CASH),
+            SpendingClassification::Expense
+        );
+
+        authorization.activity_type_override = Some("TRANSFER_IN".to_string());
+        assert!(!is_provisional_card_authorization(&authorization));
+    }
+
+    #[test]
+    fn pending_provisional_credit_is_not_classified_as_expense() {
+        let mut credit = activity("CREDIT", None);
+        credit.status = ActivityStatus::Pending;
+        credit.source_type = Some("CARD".to_string());
+        credit.subtype = Some("CARD_PURCHASE".to_string());
+        credit.metadata = Some(serde_json::json!({
+            "providerOwned": {
+                "investec": {
+                    "provisionalSpending": true
+                }
+            }
+        }));
+
+        // Provisional logic applies to debits only; credits remain classified by type
+        assert_eq!(
+            classify_activity(&credit, account_types::CREDIT_CARD),
+            SpendingClassification::ExpenseRefund
+        );
+        // Still provisional flag true per detection, but classification should not be Expense
     }
 }

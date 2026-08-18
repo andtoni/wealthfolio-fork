@@ -18,7 +18,7 @@ describe("spending constants", () => {
           "POCKET_TRANSFER",
           "MCPBAPOCKETTRANSFERS",
         ),
-      ).toBe("Converted to pocket");
+      ).toBe("Currency conversion out → USD Pocket");
       expect(
         getCashActivityLabel(
           "TRANSFER_IN",
@@ -26,7 +26,7 @@ describe("spending constants", () => {
           "POCKET_TRANSFER",
           "MCPBAPOCKETTRANSFERS",
         ),
-      ).toBe("Converted from pocket");
+      ).toBe("Currency conversion in ← USD Pocket");
     });
 
     it("matches pocket markers case-insensitively", () => {
@@ -37,7 +37,7 @@ describe("spending constants", () => {
           "pocket_transfer",
           "mcpbapockettransfers",
         ),
-      ).toBe("Converted to pocket");
+      ).toBe("Currency conversion out → USD Pocket");
     });
 
     it("does not relabel unrelated or user-overridden activities", () => {

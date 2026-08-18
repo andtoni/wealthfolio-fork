@@ -200,9 +200,14 @@ export function getActivityDisplayName(activity: Activity): string {
     activity.subtype?.toUpperCase() === "POCKET_TRANSFER" &&
     activity.sourceType?.toUpperCase() === "MCPBAPOCKETTRANSFERS"
   ) {
-    return activity.activityType === "TRANSFER_IN"
-      ? "Converted from pocket"
-      : "Converted to pocket";
+    // Presentation-only: label for provider-marked pocket conversions.
+    // No accounting inference; canonical TRANSFER_IN/TRANSFER_OUT and neutral analytics are preserved.
+    if (activity.activityType === "TRANSFER_OUT") {
+      return "Currency conversion out → USD Pocket";
+    }
+    if (activity.activityType === "TRANSFER_IN") {
+      return "Currency conversion in ← USD Pocket";
+    }
   }
   // Check subtype first (most specific)
   if (activity.subtype && SUBTYPE_DISPLAY_NAMES[activity.subtype]) {

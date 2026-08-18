@@ -122,7 +122,9 @@
     "splitTransaction": "Split transaction",
     "duplicate": "Duplicate",
     "unlinkTransfer": "Unlink transfer",
-    "linkTransfer": "Link transfer..."
+    "linkTransfer": "Link transfer...",
+    "original_amount": "Original: {{value}}",
+    "provisional": "Provisional"
   },
   "cashFlow": {
     "income": "Income",

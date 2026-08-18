@@ -1850,3 +1850,136 @@ async fn provider_identity_supersession_moves_overlay_children_atomically() {
         .unwrap();
     assert_eq!(counts, (0, 1, 1, 1, 1, 1));
 }
+
+#[tokio::test]
+async fn provider_upsert_omitting_original_preserves_existing_provider_original() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let generation = store.grant("alice", "a1").await.unwrap();
+    // First upsert creates original evidence
+    let op1 = DisclosureOperation::new(
+        "orig-1",
+        "alice",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "act-orig",
+    )
+    .with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "WITHDRAWAL".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-01-01".into(),
+        activity_date_precision: Some(wealthfolio_core::activities::ActivityDatePrecision::Date),
+        amount: "100".into(),
+        currency: "ZAR".into(),
+        original_amount: Some("5".into()),
+        original_currency: Some("USD".into()),
+        ..Default::default()
+    });
+    store.commit(op1).await.unwrap();
+
+    // Second upsert omits original fields entirely – original must be preserved
+    let op2 = DisclosureOperation::new(
+        "orig-2",
+        "alice",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "act-orig",
+    )
+    .with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "WITHDRAWAL".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-01-01".into(),
+        activity_date_precision: Some(wealthfolio_core::activities::ActivityDatePrecision::Date),
+        amount: "100".into(),
+        currency: "ZAR".into(),
+        ..Default::default()
+    });
+    store.commit(op2).await.unwrap();
+
+    let c = Connection::open(&path).unwrap();
+    let metadata: serde_json::Value = c
+        .query_row(
+            "SELECT metadata FROM activities WHERE id='act-orig'",
+            [],
+            |row| {
+                let s: String = row.get(0)?;
+                Ok(serde_json::from_str(&s).unwrap())
+            },
+        )
+        .unwrap();
+    assert_eq!(metadata["providerOwned"]["original"]["amount"], "5");
+    assert_eq!(metadata["providerOwned"]["original"]["currency"], "USD");
+
+    // Partial incoming pair must NOT create malformed original – preserve existing
+    let op3 = DisclosureOperation::new(
+        "orig-3",
+        "alice",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "act-orig",
+    )
+    .with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "WITHDRAWAL".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-01-01".into(),
+        activity_date_precision: Some(wealthfolio_core::activities::ActivityDatePrecision::Date),
+        amount: "100".into(),
+        currency: "ZAR".into(),
+        original_amount: Some("6".into()),
+        // original_currency omitted – partial
+        ..Default::default()
+    });
+    store.commit(op3).await.unwrap();
+
+    let metadata2: serde_json::Value = c
+        .query_row(
+            "SELECT metadata FROM activities WHERE id='act-orig'",
+            [],
+            |row| {
+                let s: String = row.get(0)?;
+                Ok(serde_json::from_str(&s).unwrap())
+            },
+        )
+        .unwrap();
+    // Original must remain the original valid pair, not a partial
+    assert_eq!(metadata2["providerOwned"]["original"]["amount"], "5");
+    assert_eq!(metadata2["providerOwned"]["original"]["currency"], "USD");
+
+    // Complete incoming pair must replace existing original evidence
+    let op4 = DisclosureOperation::new(
+        "orig-4",
+        "alice",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "act-orig",
+    )
+    .with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "WITHDRAWAL".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-01-01".into(),
+        activity_date_precision: Some(wealthfolio_core::activities::ActivityDatePrecision::Date),
+        amount: "100".into(),
+        currency: "ZAR".into(),
+        original_amount: Some("7".into()),
+        original_currency: Some("EUR".into()),
+        ..Default::default()
+    });
+    store.commit(op4).await.unwrap();
+
+    let metadata3: serde_json::Value = c
+        .query_row(
+            "SELECT metadata FROM activities WHERE id='act-orig'",
+            [],
+            |row| {
+                let s: String = row.get(0)?;
+                Ok(serde_json::from_str(&s).unwrap())
+            },
+        )
+        .unwrap();
+    assert_eq!(metadata3["providerOwned"]["original"]["amount"], "7");
+    assert_eq!(metadata3["providerOwned"]["original"]["currency"], "EUR");
+}

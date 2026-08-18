@@ -73,7 +73,15 @@ export function getCashActivityLabel(
     subtype?.toUpperCase() === "POCKET_TRANSFER" &&
     sourceType?.toUpperCase() === "MCPBAPOCKETTRANSFERS"
   ) {
-    return activityType === "TRANSFER_IN" ? "Converted from pocket" : "Converted to pocket";
+    // Presentation-only label for provider-marked pocket conversions.
+    // No accounting inference: classification remains TRANSFER_IN/TRANSFER_OUT
+    // with neutral analytics; label conveys explicit conversion direction.
+    if (activityType === "TRANSFER_OUT") {
+      return "Currency conversion out → USD Pocket";
+    }
+    if (activityType === "TRANSFER_IN") {
+      return "Currency conversion in ← USD Pocket";
+    }
   }
   if (isCreditCardAccountType(accountType)) {
     return (

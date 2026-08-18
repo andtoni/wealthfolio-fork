@@ -5,6 +5,7 @@ import {
   SUBTYPE_DISPLAY_NAMES,
 } from "@/lib/constants";
 import { parseOccSymbol } from "@/lib/occ-symbol";
+import { getOriginalCurrencyDisplay, isProvisionalCardSpending } from "@/lib/original-currency";
 import type { ActivityDetails } from "@/lib/types";
 import {
   Badge,
@@ -89,6 +90,8 @@ export function ActivityDetailSheet({ activity, open, onOpenChange }: ActivityDe
   const subtypeDisplay = activity.subtype
     ? SUBTYPE_DISPLAY_NAMES[activity.subtype] || activity.subtype
     : null;
+  const originalCurrency = getOriginalCurrencyDisplay(activity);
+  const isProvisional = isProvisionalCardSpending(activity);
 
   const formatDate = (date: Date | string | undefined) => {
     if (!date) return "—";
@@ -165,6 +168,11 @@ export function ActivityDetailSheet({ activity, open, onOpenChange }: ActivityDe
                     {t("activity:detail.needs_review")}
                   </Badge>
                 )}
+                {isProvisional && (
+                  <Badge variant="outline" className="border-sky-500 text-sky-600">
+                    {t("activity:detail.provisional_spending")}
+                  </Badge>
+                )}
               </div>
             </div>
             <Separator className="my-3" />
@@ -178,6 +186,11 @@ export function ActivityDetailSheet({ activity, open, onOpenChange }: ActivityDe
                 <div className="text-lg font-bold">
                   <AmountDisplay value={Number(activity.amount)} currency={activity.currency} />
                 </div>
+                {originalCurrency && (
+                  <div className="text-muted-foreground text-xs">
+                    {t("activity:detail.original_amount", { value: originalCurrency.label })}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -278,6 +291,12 @@ export function ActivityDetailSheet({ activity, open, onOpenChange }: ActivityDe
               />
             )}
             <DetailRow label={t("activity:table_currency")} value={activity.currency} />
+            {originalCurrency && (
+              <DetailRow
+                label={t("activity:detail.original_currency")}
+                value={originalCurrency.label}
+              />
+            )}
             {activity.accountCurrency !== activity.currency && (
               <DetailRow
                 label={t("activity:detail.account_currency")}

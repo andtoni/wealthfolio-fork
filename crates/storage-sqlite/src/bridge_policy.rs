@@ -911,6 +911,11 @@ fn upsert_activity_row(
         .filter(serde_json::Value::is_object)
         .unwrap_or_else(|| serde_json::json!({}));
     let root = metadata.as_object_mut().expect("metadata object");
+    let existing_original = root
+        .get("providerOwned")
+        .and_then(|v| v.as_object())
+        .and_then(|obj| obj.get("original"))
+        .cloned();
     let incoming_provider_owned = act
         .metadata
         .as_ref()
@@ -936,17 +941,27 @@ fn upsert_activity_row(
     } else {
         provider_owned.remove("merchantContext");
     }
-    let mut original = serde_json::Map::new();
-    if let Some(value) = &act.original_amount {
-        original.insert("amount".into(), serde_json::Value::String(value.clone()));
-    }
-    if let Some(value) = &act.original_currency {
-        original.insert("currency".into(), serde_json::Value::String(value.clone()));
-    }
-    if !original.is_empty() {
+    // Preserve existing providerOwned.original when incoming upsert omits original fields.
+    // Only update when both amount and currency are present as a valid pair.
+    // Do not create partial original evidence.
+    let original_amount_present = act.original_amount.is_some();
+    let original_currency_present = act.original_currency.is_some();
+    if original_amount_present && original_currency_present {
+        let mut original = serde_json::Map::new();
+        original.insert(
+            "amount".into(),
+            serde_json::Value::String(act.original_amount.clone().unwrap()),
+        );
+        original.insert(
+            "currency".into(),
+            serde_json::Value::String(act.original_currency.clone().unwrap()),
+        );
         provider_owned.insert("original".into(), serde_json::Value::Object(original));
+    } else if let Some(existing) = existing_original {
+        // Incoming upsert omits or provides partial original fields – restore existing evidence
+        provider_owned.insert("original".into(), existing);
     } else {
-        provider_owned.remove("original");
+        // No existing original to preserve
     }
     let mut settlement = serde_json::Map::new();
     if let Some(value) = &act.settlement_amount {

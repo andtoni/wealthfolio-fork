@@ -13,6 +13,7 @@ import {
   SUBTYPE_DISPLAY_NAMES,
   SUBTYPES_BY_ACTIVITY_TYPE,
 } from "@/lib/constants";
+import { getOriginalCurrencyDisplay } from "@/lib/original-currency";
 import { parseOccSymbol } from "@/lib/occ-symbol";
 import type { Account, ActivityDetails } from "@/lib/types";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -371,7 +372,20 @@ export function useActivityColumns({
         header: t("activity:datagrid.column.amount"),
         size: 120,
         enableSorting: false,
-        meta: { cell: { variant: "number", step: 0.000001, valueType: "string" } },
+        meta: {
+          cell: {
+            variant: "number",
+            step: 0.000001,
+            valueType: "string",
+            secondaryValue: (rowData: unknown) => {
+              const row = rowData as LocalTransaction;
+              const display = getOriginalCurrencyDisplay(row);
+              return display
+                ? t("activity:detail.original_amount", { value: display.label })
+                : null;
+            },
+          },
+        },
       },
       // 11. Currency
       {

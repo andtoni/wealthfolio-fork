@@ -12,6 +12,8 @@ use wealthfolio_core::{
     activities::{Activity, ActivityStatus, TransferPairResolution},
 };
 
+use crate::activity_classification::is_provisional_card_authorization;
+
 #[derive(Debug)]
 pub(crate) struct EligibleSpendingAccounts {
     pub ids: Vec<String>,
@@ -81,8 +83,13 @@ pub(crate) async fn filter_eligible_activity_rows(
         .filter(|activity| {
             // Pending and void activities remain visible in the transaction ledger,
             // but only posted activities may contribute to spending aggregates.
+            // Explicit provisional debit authorizations are retained despite PENDING.
             if activity.status != ActivityStatus::Posted {
-                return false;
+                if !(activity.status == ActivityStatus::Pending
+                    && is_provisional_card_authorization(activity))
+                {
+                    return false;
+                }
             }
             if transfer_resolution
                 .invalid_group_for_activity(&activity.id)
@@ -758,5 +765,53 @@ mod tests {
 
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].id, "transfer-in");
+    }
+
+    #[tokio::test]
+    async fn aggregate_eligibility_filter_retains_pending_provisional_card_authorization() {
+        let policy = MockAggregateEligibilityService {
+            allowed_activity_ids: HashSet::from(["prov-1".to_string()]),
+            ..Default::default()
+        };
+        let mut activity = activity("prov-1", date(2026, 1, 10));
+        activity.status = ActivityStatus::Pending;
+        activity.activity_type = "WITHDRAWAL".to_string();
+        activity.source_type = Some("CARD".to_string());
+        activity.subtype = Some("CARD_PURCHASE".to_string());
+        activity.metadata = Some(serde_json::json!({
+            "providerOwned": {
+                "investec": { "provisionalSpending": true }
+            }
+        }));
+
+        let filtered = filter_eligible_activity_rows(&policy, vec![activity.clone()], &[])
+            .await
+            .unwrap();
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].id, "prov-1");
+    }
+
+    #[tokio::test]
+    async fn aggregate_eligibility_filter_excludes_pending_provisional_credit() {
+        let policy = MockAggregateEligibilityService {
+            allowed_activity_ids: HashSet::from(["prov-credit".to_string()]),
+            ..Default::default()
+        };
+        let mut activity = activity("prov-credit", date(2026, 1, 10));
+        activity.status = ActivityStatus::Pending;
+        activity.activity_type = "CREDIT".to_string();
+        activity.source_type = Some("CARD".to_string());
+        activity.metadata = Some(serde_json::json!({
+            "providerOwned": {
+                "investec": { "provisionalSpending": true }
+            }
+        }));
+
+        let filtered = filter_eligible_activity_rows(&policy, vec![activity.clone()], &[])
+            .await
+            .unwrap();
+
+        assert!(filtered.is_empty());
     }
 }

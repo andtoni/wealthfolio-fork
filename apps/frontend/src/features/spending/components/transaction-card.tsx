@@ -13,6 +13,7 @@ import {
   PrivacyAmount,
 } from "@wealthfolio/ui";
 import type { Account } from "@/lib/types";
+import { getOriginalCurrencyDisplay, isProvisionalCardSpending } from "@/lib/original-currency";
 import { cn, formatDateTime } from "@/lib/utils";
 
 import { QuickCategorizePopover } from "./quick-categorize-popover";
@@ -73,6 +74,8 @@ function TransactionCardImpl({
 }: TransactionCardProps) {
   const { t } = useTranslation();
   const a = row.activity;
+  const originalCurrency = getOriginalCurrencyDisplay(a);
+  const isProvisional = isProvisionalCardSpending(a);
   const { isOutflow, isIncome, isSaving, isNeutral, sign, safeAmount } = getTransactionDisplay(
     a,
     account?.accountType,
@@ -115,6 +118,14 @@ function TransactionCardImpl({
                 {t("spending:transactions.review")}
               </Badge>
             )}
+            {isProvisional && (
+              <Badge
+                variant="outline"
+                className="shrink-0 border-sky-500/50 text-[10px] text-sky-600"
+              >
+                {t("spending:transactions.provisional")}
+              </Badge>
+            )}
           </div>
           <div className="text-muted-foreground mt-0.5 truncate text-[11px]">
             {formattedDate.date} {formattedDate.time} · {accountName} ·{" "}
@@ -139,8 +150,15 @@ function TransactionCardImpl({
                   : "text-success",
           )}
         >
-          {sign}
-          <PrivacyAmount value={Math.abs(safeAmount)} currency={a.currency} />
+          <div>
+            {sign}
+            <PrivacyAmount value={Math.abs(safeAmount)} currency={a.currency} />
+          </div>
+          {originalCurrency && (
+            <span className="text-muted-foreground text-[10px] font-normal leading-tight">
+              {t("spending:transactions.original_amount", { value: originalCurrency.label })}
+            </span>
+          )}
         </div>
       </div>
 
