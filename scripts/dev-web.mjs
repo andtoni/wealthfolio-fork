@@ -124,7 +124,22 @@ function shutdownAndExit(code = 0) {
 process.on("SIGINT", () => shutdownAndExit(130));
 process.on("SIGTERM", () => shutdownAndExit(143));
 
-// Start backend and Vite
+// Start backend and Vite. The devbox image opts into cargo-watch; ordinary
+// local development retains the dependency-free one-shot backend command.
 process.env.WF_ENABLE_VITE_PROXY = "true";
-spawnNamed("server", "cargo", ["run", "--manifest-path", "apps/server/Cargo.toml"]);
+const backendArgs =
+  process.env.WF_BACKEND_WATCH === "true"
+    ? [
+        "watch",
+        "--watch",
+        "apps/server",
+        "--watch",
+        "crates",
+        "--ignore",
+        "target",
+        "--exec",
+        "run --manifest-path apps/server/Cargo.toml",
+      ]
+    : ["run", "--manifest-path", "apps/server/Cargo.toml"];
+spawnNamed("server", "cargo", backendArgs);
 spawnNamed("vite", "pnpm", ["--filter", "frontend", "dev"]);

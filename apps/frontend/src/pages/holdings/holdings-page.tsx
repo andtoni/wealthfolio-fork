@@ -1,6 +1,6 @@
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
-import { EmptyPlaceholder } from "@wealthfolio/ui";
+import { EmptyPlaceholder, formatAmount } from "@wealthfolio/ui";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -15,17 +15,20 @@ import {
   useAlternativeHoldings,
   useDeleteAlternativeAsset,
   useLinkLiability,
+  useNetWorth,
   useUnlinkLiability,
 } from "@/hooks/use-alternative-assets";
 import { usePersistentState } from "@/hooks/use-persistent-state";
 import {
   AccountPurpose,
+  AccountType,
   HOLDING_CATEGORY_FILTERS,
   apiKindToAlternativeAssetKind,
 } from "@/lib/constants";
 import {
   Account,
   AccountScope,
+  BreakdownItem,
   HoldingType,
   AlternativeAssetHolding,
   AlternativeAssetKind,
@@ -75,9 +78,13 @@ export const HoldingsPage = () => {
   const { accounts, isLoading: isAccountsLoading } = useAccounts({
     accountPurpose: AccountPurpose.HOLDINGS,
   });
+  const { accounts: allAccounts } = useAccounts();
   const { data: portfolios = [] } = usePortfolios();
   const { data: alternativeHoldings, isLoading: isAlternativeHoldingsLoading } =
     useAlternativeHoldings();
+  const { data: netWorthData, isLoading: isNetWorthLoading } = useNetWorth({
+    enabled: currentTab === "liabilities",
+  });
 
   // Mobile filter state
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
@@ -229,6 +236,22 @@ export const HoldingsPage = () => {
     return alternativeHoldings.filter((h) => h.kind === "liability");
   }, [alternativeHoldings]);
 
+  const connectedCreditCardBalances = useMemo(() => {
+    const balancesByAccountId = new Map<string, BreakdownItem>();
+    for (const item of netWorthData?.liabilities.breakdown ?? []) {
+      const assetId = item.assetId;
+      if (assetId?.startsWith("LIABILITY:")) {
+        balancesByAccountId.set(assetId.slice("LIABILITY:".length), item);
+      } else if (assetId?.startsWith("CREDIT_CARD:")) {
+        balancesByAccountId.set(assetId.slice("CREDIT_CARD:".length), item);
+      }
+    }
+
+    return allAccounts
+      .filter((account) => account.isActive && account.accountType === AccountType.CREDIT_CARD)
+      .map((account) => ({ account, balance: balancesByAccountId.get(account.id) ?? null }));
+  }, [allAccounts, netWorthData]);
+
   // Linkable assets for liability creation/editing (properties and vehicles)
   const linkableAssets: LinkableAsset[] = useMemo(() => {
     return assetsHoldings
@@ -371,7 +394,44 @@ export const HoldingsPage = () => {
   // Empty state checks
   const hasNoInvestments = !isDataLoading && (!nonCashHoldings || nonCashHoldings.length === 0);
   const hasNoAssets = !isDataLoading && assetsHoldings.length === 0;
-  const hasNoLiabilities = !isDataLoading && liabilitiesHoldings.length === 0;
+  const hasNoLiabilities =
+    !isDataLoading &&
+    !isNetWorthLoading &&
+    liabilitiesHoldings.length === 0 &&
+    connectedCreditCardBalances.length === 0;
+
+  const connectedCreditCardsContent =
+    connectedCreditCardBalances.length > 0 ? (
+      <div
+        className="border-border/50 bg-card/40 mb-4 rounded-xl border"
+        data-testid="connected-credit-card-balances"
+      >
+        <div className="border-border/50 border-b px-4 py-3">
+          <h3 className="text-sm font-semibold">{t("holdings:connected_credit_cards")}</h3>
+        </div>
+        <div className="divide-border/50 divide-y">
+          {connectedCreditCardBalances.map(({ account, balance }) => (
+            <div
+              key={account.id}
+              className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
+              data-testid={`connected-credit-card-${account.id}`}
+            >
+              <div className="min-w-0">
+                <p className="truncate font-medium">{account.name}</p>
+                <p className="text-muted-foreground text-xs">
+                  {account.provider ?? t("holdings:connected_account")}
+                </p>
+              </div>
+              <span className="shrink-0 font-medium tabular-nums">
+                {balance
+                  ? formatAmount(Number(balance.value), netWorthData?.currency ?? account.currency)
+                  : t("holdings:balance_unavailable")}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    ) : null;
 
   // Investments content
   const investmentsContent = (
@@ -524,6 +584,7 @@ export const HoldingsPage = () => {
   // Liabilities content
   const liabilitiesContent = (
     <>
+      {connectedCreditCardsContent}
       {hasNoLiabilities ? (
         <div className="flex items-center justify-center py-16">
           <EmptyPlaceholder
@@ -537,7 +598,7 @@ export const HoldingsPage = () => {
             </Button>
           </EmptyPlaceholder>
         </div>
-      ) : (
+      ) : liabilitiesHoldings.length > 0 ? (
         <>
           {/* Desktop View */}
           <div className="hidden md:block">
@@ -563,7 +624,7 @@ export const HoldingsPage = () => {
             />
           </div>
         </>
-      )}
+      ) : null}
     </>
   );
 

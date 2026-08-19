@@ -1852,6 +1852,24 @@ async fn test_zero_value_liability_not_stale() {
 }
 
 #[tokio::test]
+async fn test_zero_balance_credit_card_remains_visible_in_liabilities() {
+    let card = create_test_account("card-zero", "CREDIT_CARD", "USD");
+    let snapshot = create_test_snapshot("card-zero", vec![], HashMap::new());
+    let service = create_net_worth_service(vec![card], vec![], vec![snapshot], vec![]);
+
+    let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+    let result = service.get_net_worth(date).await.unwrap();
+    let row = result
+        .liabilities
+        .breakdown
+        .iter()
+        .find(|item| item.asset_id.as_deref() == Some("CREDIT_CARD:card-zero"))
+        .expect("verified credit-card account should remain visible");
+    assert_eq!(row.name, "Test Account card-zero");
+    assert_eq!(row.value, dec!(0));
+}
+
+#[tokio::test]
 async fn test_zero_value_investment_still_stale() {
     // A zero value on a non-liability asset is more likely a data issue (e.g. a
     // bad quote), so it must still be flagged as stale to prompt a refresh.

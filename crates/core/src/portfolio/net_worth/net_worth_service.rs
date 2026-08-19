@@ -661,6 +661,18 @@ impl NetWorthServiceTrait for NetWorthService {
                         category: AssetCategory::Cash,
                         is_cash_like: true,
                     });
+                } else if snapshot.liability_balance.is_zero() {
+                    // Keep a verified, paid-off credit-card account visible in
+                    // the liabilities breakdown so account-centric surfaces can
+                    // distinguish a real zero balance from a missing snapshot.
+                    valuations.push(ValuationInfo {
+                        asset_id: format!("CREDIT_CARD:{}", account.id),
+                        name: Some(account.name.clone()),
+                        market_value_base: Decimal::ZERO,
+                        valuation_date: snapshot.snapshot_date,
+                        category: AssetCategory::Liability,
+                        is_cash_like: true,
+                    });
                 }
                 continue;
             }

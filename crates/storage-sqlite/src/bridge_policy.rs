@@ -1966,6 +1966,17 @@ impl BridgePolicyStore {
                         .source_group_id
                         .clone()
                         .or(pending_overlay.source_group_id.clone());
+                    // A valid activity projection may predate a later deployment-wide
+                    // access-generation advance. Rebind that existing projection before
+                    // requiring the current generation; otherwise a posted successor can
+                    // remain stuck beside its pending predecessor forever.
+                    sql_query("UPDATE activity_disclosure_projections SET access_generation=? WHERE deployment_id=? AND person_subject_id=? AND activity_id=? AND account_id=?")
+                        .bind::<BigInt,_>(actual)
+                        .bind::<Text,_>(&d)
+                        .bind::<Text,_>(&op.subject)
+                        .bind::<Text,_>(p)
+                        .bind::<Text,_>(&account.account_id)
+                        .execute(c)?;
                     let projection_count = sql_query("SELECT count(*) AS count FROM activity_disclosure_projections WHERE deployment_id=? AND person_subject_id=? AND activity_id=? AND account_id=? AND access_generation=?")
                         .bind::<Text,_>(&d)
                         .bind::<Text,_>(&op.subject)

@@ -1072,6 +1072,67 @@ async fn commit_lifecycle_path_migrates_only_projected_candidate() {
 }
 
 #[tokio::test]
+async fn commit_lifecycle_rebinds_an_older_projection_generation() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    store
+        .seed_migration_fixture("pending-generation", "posted-generation")
+        .await
+        .unwrap();
+    let first_generation = store.grant("alice", "a1").await.unwrap();
+    let c = Connection::open(&path).unwrap();
+    c.execute(
+        "INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?)",
+        params![D1, "alice", "pending-generation", "a1", first_generation],
+    )
+    .unwrap();
+
+    // Granting another account advances the deployment-wide generation while
+    // the already-projected pending activity remains valid for the same owner.
+    let current_generation = store.grant("alice", "a2").await.unwrap();
+    assert!(current_generation > first_generation);
+    store
+        .commit(
+            DisclosureOperation::new(
+                "lifecycle-generation",
+                "alice",
+                current_generation,
+                DisclosureKind::ActivityUpsert,
+                "pending-generation",
+            )
+            .with_lifecycle("posted-generation"),
+        )
+        .await
+        .unwrap();
+
+    let pending: i64 = c
+        .query_row(
+            "SELECT count(*) FROM activities WHERE id='pending-generation'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let posted: i64 = c
+        .query_row(
+            "SELECT count(*) FROM activities WHERE id='posted-generation' AND status='POSTED'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let projection_generation: i64 = c
+        .query_row(
+            "SELECT access_generation FROM activity_disclosure_projections WHERE activity_id='posted-generation'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        (pending, posted, projection_generation),
+        (0, 1, current_generation)
+    );
+}
+
+#[tokio::test]
 async fn commit_lifecycle_replay_preserves_pending_children_when_posted_children_exist() {
     let (_dir, path, store) = store(D1).await;
     seed(&path, &[D1], &["alice"]);

@@ -3,7 +3,7 @@
 # Production usage: the restricted deployment adapter selects an exact zot digest;
 # OpenBao continues to render runtime secrets outside the image.
 # Reverse proxy overlay: docker compose --env-file .env.docker -f compose.yml -f compose.proxy.yml up -d
-# Dev overlay: docker compose --env-file .env.docker -f compose.yml -f compose.dev.yml up
+# Live development is standalone: docker compose -f compose.dev.yml up --watch
 #
 # Publishes port 8088 for direct browser access.
 

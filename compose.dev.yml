@@ -1,29 +1,96 @@
-# Wealthfolio - Development overrides
-#
-# Usage: docker compose --env-file .env.docker -f compose.yml -f compose.dev.yml up
-#
-# Or with .env file:
-#   printf 'WF_SECRET_KEY=%s\n' "$(openssl rand -base64 32)" > .env.docker
-#   docker compose --env-file .env.docker -f compose.yml -f compose.dev.yml up
+name: wealthfolio-dev
 
 services:
   wealthfolio:
-    # Build from source instead of pulling from Docker Hub
     build:
       context: .
-      dockerfile: Dockerfile
-    # Publish port to host for direct browser access
-    ports:
-      - "${WF_PORT:-8088}:8088"
-    expose: !reset []
-    # Relax production hardening for dev
-    read_only: false
-    security_opt: !reset []
-    deploy: !reset {}
+      dockerfile: Dockerfile.dev
+    command:
+      - /bin/sh
+      - -ceu
+      - |
+        umask 077
+        test -s /data/dev-secret-key || openssl rand -base64 32 > /data/dev-secret-key
+        export WF_SECRET_KEY="$$(cat /data/dev-secret-key)"
+        exec pnpm dev:web
     environment:
-      WF_LISTEN_ADDR: "0.0.0.0:8088"
-      WF_DB_PATH: "/data/wealthfolio.db"
-      WF_SECRET_KEY: "${WF_SECRET_KEY:?Set WF_SECRET_KEY}"
-      WF_CORS_ALLOW_ORIGINS: "http://localhost:1420,http://localhost:3000"
-      WF_AUTH_PASSWORD_HASH: ""
+      CARGO_TARGET_DIR: /workspace/target
+      PNPM_HOME: /pnpm
       WF_AUTH_REQUIRED: "false"
+      WF_BACKEND_WATCH: "true"
+      WF_CORS_ALLOW_ORIGINS: https://wealthfolio.dev.example.com
+      WF_DB_PATH: /data/wealthfolio.db
+      WF_ENABLE_VITE_PROXY: "true"
+      WF_LISTEN_ADDR: 127.0.0.1:8088
+      VITE_DEV_HOST: wealthfolio.dev.example.com
+      VITE_HMR_CLIENT_PORT: "443"
+      VITE_HMR_PROTOCOL: wss
+    expose:
+      - "1420"
+    volumes:
+      - wealthfolio-dev-cargo-git:/usr/local/cargo/git
+      - wealthfolio-dev-cargo-registry:/usr/local/cargo/registry
+      - wealthfolio-dev-cargo-target:/workspace/target
+      - wealthfolio-dev-data:/data
+      - wealthfolio-dev-pnpm-store:/pnpm/store
+    networks:
+      - default
+      - devbox-proxy
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: devbox-proxy
+      traefik.http.routers.wealthfolio-dev.entrypoints: web
+      traefik.http.routers.wealthfolio-dev.rule: Host(`wealthfolio.dev.example.com`)
+      traefik.http.services.wealthfolio-dev.loadbalancer.server.port: "1420"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8088/api/v1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
+    develop:
+      watch:
+        - action: sync
+          path: apps
+          target: /workspace/apps
+        - action: sync
+          path: crates
+          target: /workspace/crates
+        - action: sync
+          path: packages
+          target: /workspace/packages
+        - action: sync
+          path: scripts
+          target: /workspace/scripts
+        - action: rebuild
+          path: Cargo.lock
+        - action: rebuild
+          path: Cargo.toml
+        - action: rebuild
+          path: Dockerfile.dev
+        - action: rebuild
+          path: package.json
+        - action: rebuild
+          path: apps/frontend/package.json
+        - action: rebuild
+          path: packages/addon-dev-tools/package.json
+        - action: rebuild
+          path: packages/addon-sdk/package.json
+        - action: rebuild
+          path: packages/ui/package.json
+        - action: rebuild
+          path: pnpm-lock.yaml
+        - action: rebuild
+          path: pnpm-workspace.yaml
+
+networks:
+  devbox-proxy:
+    external: true
+    name: devbox-proxy
+
+volumes:
+  wealthfolio-dev-cargo-git:
+  wealthfolio-dev-cargo-registry:
+  wealthfolio-dev-cargo-target:
+  wealthfolio-dev-data:
+  wealthfolio-dev-pnpm-store:

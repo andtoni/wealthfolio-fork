@@ -248,6 +248,26 @@ Run the web UI with a local Axum server with one command.
    The Vite dev server runs at `http://localhost:1420` and proxies API calls to
    the Axum backend server.
 
+#### Shared devbox
+
+On the Homelab development VM, run the reviewed Compose Watch contract from the
+repository root:
+
+```bash
+devctl up
+```
+
+The first start builds `Dockerfile.dev`. Subsequent frontend and backend source
+edits synchronize into the running container; Vite performs browser HMR and
+`cargo-watch` incrementally rebuilds/restarts the Axum server. Persistent named
+volumes retain pnpm, Cargo, build, and development SQLite state. The stack
+generates its own persistent development encryption key inside that data volume;
+it mounts no production data or credentials. Open
+`https://wealthfolio.dev.example.com` from a Tailscale-connected device.
+`devctl down` stops the app without deleting those volumes. Treat its database
+as disposable development data and never enter production provider credentials.
+This mutable stack never produces a staging or production image.
+
 #### Configuration
 
 All configuration is done via environment variables in `.env.web`.
@@ -315,12 +335,11 @@ All configuration is done via environment variables in `.env.web`.
     production `compose.yml` is file-only and mounts these values from
     OpenBao-rendered host tmpfs sources.
 
-Protected releases use `.woodpecker.yml`: test, build one full-SHA image, record
-its exact zot digest, scan it with Trivy, then invoke the restricted
-deployment adapter. The adapter preserves the existing OpenBao-rendered runtime
-secrets and data volume, checks Docker health, and restores the previous image
-if the candidate fails. Local development continues to use the existing
-development overlays.
+Protected releases use `.github/workflows/publish-image.yml` and the pinned
+canonical publisher to test and publish an immutable GHCR digest. Homelab owns
+candidate admission, health verification, and rollback without rebuilding that
+artifact. Live development instead uses the standalone `compose.dev.yml` target
+through `devctl up`; it never produces a release image.
 
 - `WF_COOKIE_SECURE` - Controls the `Secure` attribute on session cookies
   (default: `auto`)

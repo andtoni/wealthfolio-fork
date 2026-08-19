@@ -1,0 +1,46 @@
+FROM node:24.18.1-bookworm@sha256:19cd848a0e073d34bd8cd5545a1b6b4d28489b3e3b607366621ced442bd5f6b4 AS node
+
+FROM rust:1.91-bookworm@sha256:c1e5f19e773b7878c3f7a805dd00a495e747acbdc76fb2337a4ebf0418896b33
+
+COPY --from=node /usr/local/ /usr/local/
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends build-essential ca-certificates curl git libssl-dev libsqlite3-dev pkg-config \
+ && rm -rf /var/lib/apt/lists/* \
+ && corepack enable pnpm \
+ && cargo install cargo-watch --version 8.5.3 --locked \
+ && useradd --create-home --shell /bin/bash developer
+
+WORKDIR /workspace
+ENV CI=1 \
+    BUILD_TARGET=web \
+    CARGO_TARGET_DIR=/workspace/target \
+    PNPM_HOME=/pnpm \
+    PATH=/pnpm:$PATH
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/frontend/package.json apps/frontend/package.json
+COPY packages/addon-dev-tools/package.json packages/addon-dev-tools/package.json
+COPY packages/addon-sdk/package.json packages/addon-sdk/package.json
+COPY packages/ui/package.json packages/ui/package.json
+RUN --mount=type=cache,id=wealthfolio-dev-pnpm,target=/pnpm/store,sharing=locked \
+    pnpm config set store-dir /pnpm/store \
+ && pnpm install --frozen-lockfile
+
+COPY Cargo.toml Cargo.lock ./
+COPY apps/server apps/server
+COPY apps/tauri/Cargo.toml apps/tauri/Cargo.toml
+RUN mkdir -p apps/tauri/src \
+ && printf 'fn main() {}\n' > apps/tauri/src/main.rs \
+ && printf 'pub fn development_stub() {}\n' > apps/tauri/src/lib.rs
+COPY crates crates
+RUN --mount=type=cache,id=wealthfolio-dev-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=wealthfolio-dev-cargo-git,target=/usr/local/cargo/git,sharing=locked \
+    cargo fetch --manifest-path apps/server/Cargo.toml
+
+COPY . .
+RUN printf 'store-dir=/pnpm/store\n' > /home/developer/.npmrc \
+ && chown -R developer:developer /home/developer /workspace /pnpm /usr/local/cargo
+USER developer
+ENV HOME=/home/developer
+CMD ["pnpm", "dev:web"]

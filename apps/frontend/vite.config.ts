@@ -3,11 +3,13 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import { defineConfig } from "vitest/config";
 
-const host = process.env.TAURI_DEV_HOST;
+const tauriHost = process.env.TAURI_DEV_HOST;
+const browserDevHost = process.env.VITE_DEV_HOST;
 const apiTarget =
   process.env.VITE_API_TARGET || process.env.WF_API_TARGET || "http://127.0.0.1:8088";
 const enableProxy = process.env.WF_ENABLE_VITE_PROXY === "true";
 const devPort = Number.parseInt(process.env.VITE_DEV_PORT || "1420", 10);
+const hmrClientPort = Number.parseInt(process.env.VITE_HMR_CLIENT_PORT || "443", 10);
 const serverProxy = enableProxy
   ? {
       "/api": {
@@ -63,17 +65,26 @@ export default defineConfig({
   server: {
     port: Number.isFinite(devPort) ? devPort : 1420,
     strictPort: true,
-    host: host ? "0.0.0.0" : false,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-    },
-    hmr: host
+    host: tauriHost || browserDevHost ? "0.0.0.0" : false,
+    allowedHosts: browserDevHost ? [browserDevHost] : undefined,
+    headers: tauriHost
       ? {
-          protocol: "ws",
-          host,
-          port: 1421,
+          "Access-Control-Allow-Origin": "*",
         }
       : undefined,
+    hmr: browserDevHost
+      ? {
+          protocol: process.env.VITE_HMR_PROTOCOL || "wss",
+          host: browserDevHost,
+          clientPort: Number.isFinite(hmrClientPort) ? hmrClientPort : 443,
+        }
+      : tauriHost
+        ? {
+            protocol: "ws",
+            host: tauriHost,
+            port: 1421,
+          }
+        : undefined,
     proxy: serverProxy,
     watch: {
       // 3. tell vite to ignore watching `apps/desktop`
