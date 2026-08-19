@@ -83,7 +83,7 @@ export const HoldingsPage = () => {
   const { data: alternativeHoldings, isLoading: isAlternativeHoldingsLoading } =
     useAlternativeHoldings();
   const { data: netWorthData, isLoading: isNetWorthLoading } = useNetWorth({
-    enabled: currentTab === "liabilities",
+    enabled: currentTab === "investments" || currentTab === "liabilities",
   });
 
   // Mobile filter state
@@ -436,6 +436,7 @@ export const HoldingsPage = () => {
   // Investments content
   const investmentsContent = (
     <>
+      {connectedCreditCardsContent}
       {(healthFilter || healthContext === "holding") && (
         <div className="border-border bg-muted/30 mb-4 flex items-center justify-between gap-3 rounded-md border px-3 py-2">
           <div className="flex min-w-0 items-center gap-2">
@@ -520,7 +521,7 @@ export const HoldingsPage = () => {
               setSelectedTypes={setSelectedTypes}
               accountFilter={accountFilter}
               onAccountScopeChange={handleAccountScopeChange}
-              accounts={accounts ?? []}
+              accounts={allAccounts ?? []}
               portfolios={portfolios}
               showSearch={true}
               showFilterButton={false}
@@ -755,7 +756,7 @@ export const HoldingsPage = () => {
         onOpenChange={setIsFilterSheetOpen}
         accountFilter={accountFilter}
         onAccountScopeChange={handleAccountScopeChange}
-        accounts={accounts ?? []}
+        accounts={allAccounts ?? []}
         portfolios={portfolios}
         selectedTypes={selectedTypes}
         setSelectedTypes={setSelectedTypes}
