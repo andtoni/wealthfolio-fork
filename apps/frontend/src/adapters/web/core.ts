@@ -606,11 +606,16 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       break;
     }
     case "get_current_valuation": {
-      const { filter, includeAccounts } = (payload ?? {}) as {
+      const { filter, includeAccounts, includeLiabilities } = (payload ?? {}) as {
         filter?: unknown;
         includeAccounts?: boolean;
+        includeLiabilities?: boolean;
       };
-      body = JSON.stringify({ filter, includeAccounts: includeAccounts ?? false });
+      body = JSON.stringify({
+        filter,
+        includeAccounts: includeAccounts ?? false,
+        includeLiabilities: includeLiabilities ?? false,
+      });
       break;
     }
     case "get_portfolio_allocations": {

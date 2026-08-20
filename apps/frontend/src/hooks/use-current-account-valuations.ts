@@ -5,6 +5,7 @@ import { AccountScope, CurrentValuationResponse } from "@/lib/types";
 
 interface UseCurrentValuationOptions {
   includeAccounts?: boolean;
+  includeLiabilities?: boolean;
   enabled?: boolean;
 }
 
@@ -37,6 +38,7 @@ export function useCurrentValuation(
   options: UseCurrentValuationOptions = {},
 ) {
   const includeAccounts = options.includeAccounts ?? false;
+  const includeLiabilities = options.includeLiabilities ?? false;
   const enabled = (options.enabled ?? true) && isScopeEnabled(filter);
 
   const {
@@ -49,8 +51,9 @@ export function useCurrentValuation(
       QueryKeys.CURRENT_VALUATION,
       currentValuationScopeKey(filter),
       includeAccounts ? "with-accounts" : "summary-only",
+      includeLiabilities ? "with-liabilities" : "assets-only",
     ],
-    queryFn: () => getCurrentValuation({ filter, includeAccounts }),
+    queryFn: () => getCurrentValuation({ filter, includeAccounts, includeLiabilities }),
     enabled,
   });
 
@@ -64,12 +67,13 @@ export function useCurrentValuation(
 
 export function useCurrentAccountValuations(
   accountIds: string[],
-  options: { enabled?: boolean } = {},
+  options: { enabled?: boolean; includeLiabilities?: boolean } = {},
 ) {
   const { currentValuation, isLoading, isFetching, error } = useCurrentValuation(
     { type: "accounts", accountIds },
     {
       includeAccounts: true,
+      includeLiabilities: options.includeLiabilities ?? false,
       enabled: (options.enabled ?? true) && accountIds.length > 0,
     },
   );

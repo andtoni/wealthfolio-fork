@@ -427,6 +427,37 @@ describe("AccountsSummary", () => {
     ]);
   });
 
+  it("shows credit-card liabilities in the dashboard account list without requesting investment performance", () => {
+    renderAccountsSummary({
+      accounts: [
+        createAccount({ id: "cash-account", name: "Cash Account" }),
+        createAccount({
+          id: "secured-card",
+          name: "Secured Card",
+          accountType: AccountType.CREDIT_CARD,
+          currency: "USD",
+        }),
+      ],
+      valuations: [
+        createValuation({ accountId: "cash-account", totalValue: 100 }),
+        createValuation({ accountId: "secured-card", totalValue: -11.27 }),
+      ],
+      currentValuations: [
+        createCurrentValuation({ accountId: "cash-account", totalValue: 100 }),
+        createCurrentValuation({
+          accountId: "secured-card",
+          totalValue: -11.27,
+          cashBalance: -11.27,
+        }),
+      ],
+    });
+
+    const row = screen.getByText("Secured Card").closest("a");
+    expect(row).not.toBeNull();
+    expect(within(row as HTMLElement).getByText("value:USD:-11.27")).toBeInTheDocument();
+    expect(getLastPerformanceScopes()).toEqual([{ accountIds: ["cash-account"] }]);
+  });
+
   it("keeps standalone account values visible while performance is loading", () => {
     renderAccountsSummary({
       accounts: [createAccount({ id: "live-account", name: "Live Account" })],

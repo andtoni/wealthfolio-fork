@@ -17,7 +17,9 @@ use crate::{
         economic_events::BasisStatus,
         snapshot::{AccountStateSnapshot, Position, SnapshotSource},
         valuation::{
-            calculate_current_valuation_response_from_snapshots, filter_current_valuation_accounts,
+            calculate_current_valuation_response_from_snapshots,
+            calculate_current_valuation_response_from_snapshots_with_options,
+            filter_current_valuation_accounts, filter_current_valuation_accounts_with_options,
             filter_latest_snapshots_by_aggregate_policy,
             filter_requested_accounts_by_aggregate_policy, unique_account_ids,
             CurrentValuationRate, DailyAccountValuation, ExternalFlowSource, ValuationStatus,
@@ -236,6 +238,53 @@ fn latest_rate(from: &str, to: &str) -> Decimal {
         ("GBP", "USD") => dec!(1.25),
         _ => Decimal::ONE,
     }
+}
+
+#[test]
+fn current_valuation_can_include_credit_card_liabilities_only_when_requested() {
+    let mut card = account("card", "USD");
+    card.account_type = "CREDIT_CARD".to_string();
+
+    assert!(
+        filter_current_valuation_accounts(Some(&["card".to_string()]), vec![card.clone()],)
+            .is_empty()
+    );
+    assert_eq!(
+        filter_current_valuation_accounts_with_options(
+            Some(&["card".to_string()]),
+            vec![card],
+            true,
+        )
+        .len(),
+        1
+    );
+}
+
+#[test]
+fn current_valuation_projects_credit_card_liability_as_negative_native_value() {
+    let mut card = account("card", "USD");
+    card.account_type = "CREDIT_CARD".to_string();
+    let mut card_snapshot = snapshot("card", "USD", HashMap::new(), HashMap::new());
+    card_snapshot.liability_balance = dec!(11.27);
+
+    let response = calculate_current_valuation_response_from_snapshots_with_options(
+        "account:card",
+        &[card],
+        &HashMap::from([("card".to_string(), card_snapshot)]),
+        &HashMap::new(),
+        &HashMap::new(),
+        "ZAR",
+        DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap(),
+        true,
+        true,
+        latest_rate,
+    );
+
+    let valuation = &response.accounts[0];
+    assert_eq!(valuation.cash_balance, dec!(-11.27));
+    assert_eq!(valuation.cash_balance_base, dec!(-11.27));
+    assert_eq!(valuation.total_value, dec!(-11.27));
+    assert_eq!(valuation.total_value_base, dec!(-11.27));
 }
 
 #[test]

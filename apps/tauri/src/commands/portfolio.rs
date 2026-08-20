@@ -536,6 +536,7 @@ pub async fn get_current_valuation(
     state: State<'_, Arc<ServiceContext>>,
     filter: AccountScopeInput,
     include_accounts: Option<bool>,
+    include_liabilities: Option<bool>,
 ) -> Result<CurrentValuationResponse, String> {
     debug!("Get scoped current valuation...");
 
@@ -560,12 +561,13 @@ pub async fn get_current_valuation(
     );
 
     service
-        .get_current_valuation_for_scope(
+        .get_current_valuation_for_scope_with_options(
             &resolved.scope_id,
             &resolved.account_ids,
             &base_currency,
             latest_snapshot_cutoff,
             include_accounts.unwrap_or(false),
+            include_liabilities.unwrap_or(false),
         )
         .await
         .map_err(|e| e.to_string())

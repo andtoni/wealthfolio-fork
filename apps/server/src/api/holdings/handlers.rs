@@ -376,12 +376,13 @@ pub async fn get_current_valuation(
         state.aggregate_eligibility_service.as_ref(),
     );
     let valuation = service
-        .get_current_valuation_for_scope(
+        .get_current_valuation_for_scope_with_options(
             &resolved.scope_id,
             &resolved.account_ids,
             &base_currency,
             latest_snapshot_cutoff,
             body.include_accounts,
+            body.include_liabilities,
         )
         .await?;
     Ok(Json(valuation))

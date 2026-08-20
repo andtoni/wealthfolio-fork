@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     accounts::{
-        account_supports_portfolio_scope, Account, AccountPurpose, AccountServiceTrait,
-        AggregateEligibilityServiceTrait, ENTITY_SNAPSHOT,
+        account_supports_portfolio_scope, is_liability_account_type, Account, AccountPurpose,
+        AccountServiceTrait, AggregateEligibilityServiceTrait, ENTITY_SNAPSHOT,
     },
     assets::{Asset, AssetServiceTrait, InstrumentType},
     errors::Result,
@@ -65,12 +65,33 @@ impl<'a> CurrentAccountValuationService<'a> {
         latest_snapshot_cutoff: NaiveDate,
         include_accounts: bool,
     ) -> Result<CurrentValuationResponse> {
-        self.get_current_valuation_for_scope_at(
+        self.get_current_valuation_for_scope_with_options(
             scope_id,
             account_ids,
             base_currency,
             latest_snapshot_cutoff,
             include_accounts,
+            false,
+        )
+        .await
+    }
+
+    pub async fn get_current_valuation_for_scope_with_options(
+        &self,
+        scope_id: &str,
+        account_ids: &[String],
+        base_currency: &str,
+        latest_snapshot_cutoff: NaiveDate,
+        include_accounts: bool,
+        include_liabilities: bool,
+    ) -> Result<CurrentValuationResponse> {
+        self.get_current_valuation_for_scope_at_with_options(
+            scope_id,
+            account_ids,
+            base_currency,
+            latest_snapshot_cutoff,
+            include_accounts,
+            include_liabilities,
             Utc::now(),
         )
         .await
@@ -85,8 +106,34 @@ impl<'a> CurrentAccountValuationService<'a> {
         include_accounts: bool,
         calculated_at: DateTime<Utc>,
     ) -> Result<CurrentValuationResponse> {
+        self.get_current_valuation_for_scope_at_with_options(
+            scope_id,
+            account_ids,
+            base_currency,
+            latest_snapshot_cutoff,
+            include_accounts,
+            false,
+            calculated_at,
+        )
+        .await
+    }
+
+    pub async fn get_current_valuation_for_scope_at_with_options(
+        &self,
+        scope_id: &str,
+        account_ids: &[String],
+        base_currency: &str,
+        latest_snapshot_cutoff: NaiveDate,
+        include_accounts: bool,
+        include_liabilities: bool,
+        calculated_at: DateTime<Utc>,
+    ) -> Result<CurrentValuationResponse> {
         let accounts = self
-            .resolve_eligible_requested_accounts(account_ids, latest_snapshot_cutoff)
+            .resolve_eligible_requested_accounts(
+                account_ids,
+                latest_snapshot_cutoff,
+                include_liabilities,
+            )
             .await?;
         if accounts.is_empty() {
             return Ok(empty_current_valuation_response(
@@ -113,29 +160,37 @@ impl<'a> CurrentAccountValuationService<'a> {
             self.load_latest_quotes(&snapshots, &assets_by_id, latest_snapshot_cutoff)?;
         let mut fx_cache = FxRateCache::new(self.fx_service);
 
-        Ok(calculate_current_valuation_response_from_snapshots(
-            scope_id,
-            &accounts,
-            &snapshots,
-            &assets_by_id,
-            &latest_quote_pairs,
-            base_currency,
-            calculated_at,
-            include_accounts,
-            |from, to| fx_cache.get(from, to),
-        ))
+        Ok(
+            calculate_current_valuation_response_from_snapshots_with_options(
+                scope_id,
+                &accounts,
+                &snapshots,
+                &assets_by_id,
+                &latest_quote_pairs,
+                base_currency,
+                calculated_at,
+                include_accounts,
+                include_liabilities,
+                |from, to| fx_cache.get(from, to),
+            ),
+        )
     }
 
-    fn resolve_requested_accounts(&self, account_ids: &[String]) -> Result<Vec<Account>> {
+    fn resolve_requested_accounts(
+        &self,
+        account_ids: &[String],
+        include_liabilities: bool,
+    ) -> Result<Vec<Account>> {
         if account_ids.is_empty() {
             return Ok(Vec::new());
         }
 
         let requested_ids = unique_account_ids(account_ids.iter().cloned());
         let accounts = self.account_service.get_accounts_by_ids(&requested_ids)?;
-        Ok(filter_current_valuation_accounts(
+        Ok(filter_current_valuation_accounts_with_options(
             Some(&requested_ids),
             accounts,
+            include_liabilities,
         ))
     }
 
@@ -145,8 +200,9 @@ impl<'a> CurrentAccountValuationService<'a> {
         &self,
         account_ids: &[String],
         as_of: NaiveDate,
+        include_liabilities: bool,
     ) -> Result<Vec<Account>> {
-        let accounts = self.resolve_requested_accounts(account_ids)?;
+        let accounts = self.resolve_requested_accounts(account_ids, include_liabilities)?;
         filter_requested_accounts_by_aggregate_policy(
             accounts,
             as_of,
@@ -308,6 +364,37 @@ pub fn calculate_current_valuation_response_from_snapshots<F, R>(
     base_currency: &str,
     calculated_at: DateTime<Utc>,
     include_accounts: bool,
+    latest_rate: F,
+) -> CurrentValuationResponse
+where
+    F: FnMut(&str, &str) -> R,
+    R: Into<CurrentValuationRate>,
+{
+    calculate_current_valuation_response_from_snapshots_with_options(
+        scope_id,
+        accounts,
+        snapshots,
+        assets_by_id,
+        latest_quote_pairs,
+        base_currency,
+        calculated_at,
+        include_accounts,
+        false,
+        latest_rate,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn calculate_current_valuation_response_from_snapshots_with_options<F, R>(
+    scope_id: &str,
+    accounts: &[Account],
+    snapshots: &HashMap<String, AccountStateSnapshot>,
+    assets_by_id: &HashMap<String, Asset>,
+    latest_quote_pairs: &HashMap<String, LatestQuotePair>,
+    base_currency: &str,
+    calculated_at: DateTime<Utc>,
+    include_accounts: bool,
+    include_liabilities: bool,
     mut latest_rate: F,
 ) -> CurrentValuationResponse
 where
@@ -342,6 +429,7 @@ where
                 latest_quote_pairs,
                 base_currency,
                 calculated_at,
+                include_liabilities,
                 &mut latest_rate,
             ),
             None => AccountValuationComputation {
@@ -391,14 +479,25 @@ pub fn filter_current_valuation_accounts(
     requested_ids: Option<&[String]>,
     accounts: Vec<Account>,
 ) -> Vec<Account> {
+    filter_current_valuation_accounts_with_options(requested_ids, accounts, false)
+}
+
+pub fn filter_current_valuation_accounts_with_options(
+    requested_ids: Option<&[String]>,
+    accounts: Vec<Account>,
+    include_liabilities: bool,
+) -> Vec<Account> {
+    let supports_current_valuation = |account: &Account| {
+        account.include_in_net_worth
+            && ((account_supports_portfolio_scope(account, AccountPurpose::Performance)
+                && account_supports_portfolio_scope(account, AccountPurpose::Holdings))
+                || (include_liabilities && is_liability_account_type(&account.account_type)))
+    };
+
     match requested_ids {
         None => accounts
             .into_iter()
-            .filter(|account| {
-                account.include_in_net_worth
-                    && account_supports_portfolio_scope(account, AccountPurpose::Performance)
-                    && account_supports_portfolio_scope(account, AccountPurpose::Holdings)
-            })
+            .filter(supports_current_valuation)
             .collect(),
         Some(ids) => {
             let accounts_by_id: HashMap<String, Account> = accounts
@@ -408,11 +507,7 @@ pub fn filter_current_valuation_accounts(
 
             ids.iter()
                 .filter_map(|account_id| accounts_by_id.get(account_id).cloned())
-                .filter(|account| {
-                    account.include_in_net_worth
-                        && account_supports_portfolio_scope(account, AccountPurpose::Performance)
-                        && account_supports_portfolio_scope(account, AccountPurpose::Holdings)
-                })
+                .filter(supports_current_valuation)
                 .collect()
         }
     }
@@ -442,6 +537,7 @@ fn calculate_account_snapshot_valuation_with_contributions<F, R>(
     latest_quote_pairs: &HashMap<String, LatestQuotePair>,
     base_currency: &str,
     calculated_at: DateTime<Utc>,
+    include_liabilities: bool,
     latest_rate: &mut F,
 ) -> AccountValuationComputation
 where
@@ -491,6 +587,44 @@ where
                 normalized_amount,
             );
         }
+    }
+
+    // Credit-card snapshots store debt as a positive liability magnitude.
+    // Present it as a negative account value while preserving the account's
+    // native currency for account-level display.
+    if include_liabilities
+        && is_liability_account_type(&account.account_type)
+        && snapshot.liability_balance > Decimal::ZERO
+    {
+        let (normalized_liability, liability_currency) =
+            normalize_amount(snapshot.liability_balance, &snapshot.currency);
+        let account_liability = normalized_liability
+            * rate_for(
+                &mut account_warnings,
+                latest_rate,
+                &liability_currency,
+                &account.currency,
+            );
+        let base_liability = normalized_liability
+            * rate_for(
+                &mut summary_warnings,
+                latest_rate,
+                &liability_currency,
+                base_currency,
+            );
+        valuation.cash_balance -= account_liability;
+        valuation.cash_balance_base -= base_liability;
+        add_total(
+            &mut currency_base_totals,
+            &liability_currency,
+            -base_liability,
+        );
+        add_total(&mut cash_base_totals, &liability_currency, -base_liability);
+        add_total(
+            &mut cash_local_totals,
+            &liability_currency,
+            -normalized_liability,
+        );
     }
 
     for (asset_id, position) in &snapshot.positions {

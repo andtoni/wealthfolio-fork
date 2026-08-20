@@ -79,6 +79,9 @@ pub struct CurrentValuationBody {
     pub filter: AccountScope,
     #[serde(rename = "includeAccounts", default)]
     pub include_accounts: bool,
+    /// Include explicitly requested credit-card liabilities in account valuations.
+    #[serde(rename = "includeLiabilities", default)]
+    pub include_liabilities: bool,
 }
 
 #[derive(Deserialize)]

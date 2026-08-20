@@ -67,13 +67,16 @@ export const getLatestValuations = async (accountIds: string[]): Promise<Account
 export const getCurrentValuation = async ({
   filter,
   includeAccounts = false,
+  includeLiabilities = false,
 }: {
   filter: AccountScope;
   includeAccounts?: boolean;
+  includeLiabilities?: boolean;
 }): Promise<CurrentValuationResponse> => {
   return invoke<CurrentValuationResponse>("get_current_valuation", {
     filter,
     includeAccounts,
+    includeLiabilities,
   });
 };
 

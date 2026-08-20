@@ -3,7 +3,7 @@
 import { calculatePerformanceSummaries, performanceSummaryScopeKey } from "@/adapters";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useCurrentAccountValuations } from "@/hooks/use-current-account-valuations";
-import { AccountPurpose } from "@/lib/constants";
+import { AccountType } from "@/lib/constants";
 import { performanceSummaryReturn, performancePeriodPnl } from "@/lib/performance";
 import { QueryKeys } from "@/lib/query-keys";
 import { useSettingsContext } from "@/lib/settings-provider";
@@ -43,6 +43,7 @@ interface AccountSummaryDisplayData {
   accountCount?: number;
   accounts?: AccountSummaryDisplayData[];
   displayInAccountCurrency?: boolean;
+  valuationUnavailable?: boolean;
 }
 
 function addPerformanceScope(
@@ -186,6 +187,7 @@ const AccountSummaryComponent = React.memo(
     const currency = useAccountCurrency
       ? (item.accountCurrency ?? item.baseCurrency)
       : item.baseCurrency;
+    const valuationUnavailable = item.valuationUnavailable === true;
 
     const gainAmountToDisplay = useAccountCurrency
       ? item.totalGainLossAmountAccountCurrency
@@ -201,6 +203,7 @@ const AccountSummaryComponent = React.memo(
     // Has a non-zero gain but return % is unavailable (e.g. negative start value).
     // Only flag accounts with actual value — zero-value/empty accounts are not "bad data".
     const hasBadData =
+      !valuationUnavailable &&
       totalValue > 0 &&
       gainPercentToDisplay === null &&
       item.totalGainLossAmountBaseCurrency !== null &&
@@ -290,7 +293,11 @@ const AccountSummaryComponent = React.memo(
         <div className="flex shrink-0 items-center gap-2 md:gap-3">
           <div className="flex min-h-[3rem] flex-col items-end justify-center gap-1 md:gap-1.5">
             <p className="text-sm font-semibold leading-tight md:text-base md:font-semibold">
-              <PrivacyAmount value={totalValue} currency={currency} />
+              {valuationUnavailable ? (
+                t("dashboard:no_data")
+              ) : (
+                <PrivacyAmount value={totalValue} currency={currency} />
+              )}
             </p>
             {secondaryMetricContent && (
               <div
@@ -385,11 +392,24 @@ export const AccountsSummary = React.memo(
       isLoading: isLoadingAccounts,
       isError: isErrorAccounts,
       error: errorAccounts,
-    } = useAccounts({ accountPurpose: AccountPurpose.PERFORMANCE });
+    } = useAccounts();
 
     const accounts = useMemo(() => allAccounts ?? [], [allAccounts]);
-
-    const accountIds = useMemo(() => accounts?.map((acc) => acc.id) ?? [], [accounts]);
+    const performanceAccounts = useMemo(
+      () => accounts.filter((account) => account.accountType !== AccountType.CREDIT_CARD),
+      [accounts],
+    );
+    const accountIds = useMemo(
+      () => performanceAccounts.map((account) => account.id),
+      [performanceAccounts],
+    );
+    const liabilityAccountIds = useMemo(
+      () =>
+        accounts
+          .filter((account) => account.accountType === AccountType.CREDIT_CARD)
+          .map((account) => account.id),
+      [accounts],
+    );
 
     const shouldFetchCurrentValuations = currentAccountValuationsProp === undefined;
     const {
@@ -398,10 +418,38 @@ export const AccountsSummary = React.memo(
     } = useCurrentAccountValuations(accountIds, {
       enabled: shouldFetchCurrentValuations,
     });
-    const currentAccountValuations =
-      currentAccountValuationsProp ?? fetchedCurrentAccountValuations;
+    const {
+      currentAccountValuations: fetchedLiabilityValuations,
+      isLoading: isLoadingLiabilityValuations,
+      error: liabilityValuationError,
+    } = useCurrentAccountValuations(liabilityAccountIds, {
+      enabled: liabilityAccountIds.length > 0,
+      includeLiabilities: true,
+    });
+    const currentAccountValuations = useMemo(() => {
+      const merged = new Map<string, CurrentAccountValuation>();
+      for (const valuation of fetchedCurrentAccountValuations ?? []) {
+        merged.set(valuation.accountId, valuation);
+      }
+      for (const valuation of currentAccountValuationsProp ?? []) {
+        merged.set(valuation.accountId, valuation);
+      }
+      for (const valuation of fetchedLiabilityValuations ?? []) {
+        if (liabilityAccountIds.includes(valuation.accountId)) {
+          merged.set(valuation.accountId, valuation);
+        }
+      }
+      return [...merged.values()];
+    }, [
+      currentAccountValuationsProp,
+      fetchedCurrentAccountValuations,
+      fetchedLiabilityValuations,
+      liabilityAccountIds,
+    ]);
     const isLoadingCurrentValuations =
-      isLoadingCurrentValuationsProp ?? isLoadingFetchedCurrentValuations;
+      (currentAccountValuationsProp === undefined
+        ? isLoadingFetchedCurrentValuations
+        : Boolean(isLoadingCurrentValuationsProp)) || isLoadingLiabilityValuations;
 
     const startDate =
       !isAllTime && dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined;
@@ -409,8 +457,12 @@ export const AccountsSummary = React.memo(
     const datesReady = isAllTime || (!!startDate && !!endDate);
 
     const performanceScopes = useMemo((): PerformanceSummaryScope[] => {
-      return getDashboardAccountPerformanceScopes(accounts, accountsGrouped, expandedGroups);
-    }, [accounts, accountsGrouped, expandedGroups]);
+      return getDashboardAccountPerformanceScopes(
+        performanceAccounts,
+        accountsGrouped,
+        expandedGroups,
+      );
+    }, [performanceAccounts, accountsGrouped, expandedGroups]);
     const shouldFetchPerformance = datesReady && performanceScopes.length > 0;
 
     const {
@@ -452,6 +504,8 @@ export const AccountsSummary = React.memo(
             totalValueBaseCurrency: 0,
             baseCurrency,
             accountCurrency: acc.currency,
+            valuationUnavailable:
+              acc.accountType === AccountType.CREDIT_CARD && Boolean(liabilityValuationError),
             totalGainLossAmountBaseCurrency: null,
             totalGainLossPercent: null,
             accountId: acc.id,
@@ -486,7 +540,13 @@ export const AccountsSummary = React.memo(
           isGroup: false,
         };
       });
-    }, [accounts, currentAccountValuations, performanceSummaries, settings?.baseCurrency]);
+    }, [
+      accounts,
+      currentAccountValuations,
+      liabilityValuationError,
+      performanceSummaries,
+      settings?.baseCurrency,
+    ]);
 
     const toggleGroup = useCallback((groupName: string) => {
       setExpandedGroups((prev) => ({
@@ -570,11 +630,14 @@ export const AccountsSummary = React.memo(
             standaloneAccounts.push(groupAccounts[0]);
           } else {
             const baseCurrency = groupAccounts[0]?.baseCurrency ?? settings?.baseCurrency ?? "USD";
-            const groupAccountIds = groupAccounts
+            const groupPerformanceAccountIds = groupAccounts
+              .filter((account) => account.accountType !== AccountType.CREDIT_CARD)
               .map((account) => account.accountId)
               .filter((id): id is string => Boolean(id));
             const groupPerformance =
-              performanceSummaries?.[performanceSummaryScopeKey(groupAccountIds)];
+              groupPerformanceAccountIds.length > 0
+                ? performanceSummaries?.[performanceSummaryScopeKey(groupPerformanceAccountIds)]
+                : undefined;
 
             const totalValueBaseCurrency = groupAccounts.reduce(
               (sum, acc) => sum + Number(acc.totalValueBaseCurrency),
@@ -720,16 +783,20 @@ export const AccountsSummary = React.memo(
             )}
           </Button>
         </div>
-        {isPerformanceError && (
+        {(isPerformanceError || liabilityValuationError) && (
           <div className="border-destructive/30 bg-destructive/5 mb-2 rounded-lg border p-3">
             <div className="flex items-start gap-2">
               <Icons.AlertTriangle className="text-destructive mt-0.5 h-4 w-4 shrink-0" />
               <div className="min-w-0">
                 <p className="text-destructive text-sm font-medium">
-                  {t("dashboard:summary.failed_to_load_performance")}
+                  {liabilityValuationError
+                    ? t("dashboard:no_data")
+                    : t("dashboard:summary.failed_to_load_performance")}
                 </p>
                 <p className="text-muted-foreground mt-1 break-words text-xs">
-                  {performanceError?.message || t("dashboard:summary.values_without_returns")}
+                  {liabilityValuationError?.message ||
+                    performanceError?.message ||
+                    t("dashboard:summary.values_without_returns")}
                 </p>
               </div>
             </div>
