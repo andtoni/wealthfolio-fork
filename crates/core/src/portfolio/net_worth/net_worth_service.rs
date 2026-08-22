@@ -396,9 +396,12 @@ impl NetWorthServiceTrait for NetWorthService {
         let account_ids: Vec<String> = accounts.iter().map(|a| a.id.clone()).collect();
 
         // Get latest snapshots for all accounts as of the target date
+        // Prefer the newest aggregate-eligible snapshot per account. A newer
+        // contextual row must not shadow an older provider-authoritative row and
+        // make the account disappear from net worth.
         let snapshots = self
             .snapshot_repository
-            .get_latest_snapshots_before_date(&account_ids, date)?;
+            .get_latest_eligible_snapshots_before_date(&account_ids, date)?;
         let snapshot_rows: Vec<(String, NaiveDate)> = snapshots
             .values()
             .map(|snapshot| (snapshot.id.clone(), snapshot.snapshot_date))
@@ -928,13 +931,19 @@ impl NetWorthServiceTrait for NetWorthService {
             .eligible_entity_ids_for_rows(ENTITY_DAILY_VALUATION, &valuation_rows)
             .await?;
 
-        let mut portfolio_by_date: BTreeMap<NaiveDate, PortfolioState> = BTreeMap::new();
+        // Keep each account's eligible valuation history separate so a missing
+        // trailing row for one account can carry its last trusted value forward
+        // instead of dropping that account from the aggregate on later dates.
+        let mut portfolio_by_account: BTreeMap<String, BTreeMap<NaiveDate, PortfolioState>> =
+            BTreeMap::new();
         for val in portfolio_valuations.into_iter().filter(|valuation| {
             eligible_account_rows
                 .contains(&(valuation.account_id.clone(), valuation.valuation_date))
                 && eligible_valuation_ids.contains(&valuation.id)
         }) {
-            let entry = portfolio_by_date
+            let entry = portfolio_by_account
+                .entry(val.account_id.clone())
+                .or_default()
                 .entry(val.valuation_date)
                 .or_insert_with(|| PortfolioState {
                     value: Decimal::ZERO,
@@ -947,7 +956,11 @@ impl NetWorthServiceTrait for NetWorthService {
             entry.cash += val.cash_balance_base;
             entry.investments += val.investment_market_value_base;
         }
-        let first_portfolio_date = portfolio_by_date.keys().next().copied();
+        let first_portfolio_date = portfolio_by_account
+            .values()
+            .flat_map(|history| history.keys())
+            .min()
+            .copied();
         let history_seed_date = first_portfolio_date.unwrap_or(start_date);
 
         // =====================================================================
@@ -1109,8 +1122,12 @@ impl NetWorthServiceTrait for NetWorthService {
         let mut all_dates: Vec<NaiveDate> = Vec::new();
 
         if let Some(first_pf_date) = first_portfolio_date {
-            // Normal case: include portfolio dates
-            all_dates.extend(portfolio_by_date.keys().cloned());
+            // Normal case: include every eligible portfolio account date.
+            all_dates.extend(
+                portfolio_by_account
+                    .values()
+                    .flat_map(|history| history.keys().copied()),
+            );
 
             // Add quote dates that are >= first portfolio date
             for date in quotes_by_date.keys() {
@@ -1172,11 +1189,34 @@ impl NetWorthServiceTrait for NetWorthService {
         let mut current_credit_card_liabilities = initial_credit_card_liabilities.clone();
 
         let mut history: Vec<NetWorthHistoryPoint> = Vec::new();
+        let mut current_portfolios: HashMap<String, PortfolioState> = HashMap::new();
 
         for date in all_dates {
-            // Update portfolio state if we have data for this date
-            if let Some(pf) = portfolio_by_date.get(&date) {
-                current_portfolio = pf.clone();
+            // Update each account state if we have a valuation for this date,
+            // then carry every account's last eligible state forward. This keeps
+            // a temporarily missing provider row from making the aggregate graph
+            // drop an otherwise trusted account to zero.
+            for (account_id, account_history) in &portfolio_by_account {
+                if let Some(portfolio) = account_history.get(&date) {
+                    current_portfolios.insert(account_id.clone(), portfolio.clone());
+                }
+            }
+            if !current_portfolios.is_empty() {
+                current_portfolio = current_portfolios.values().fold(
+                    PortfolioState {
+                        value: Decimal::ZERO,
+                        net_contribution: Decimal::ZERO,
+                        cash: Decimal::ZERO,
+                        investments: Decimal::ZERO,
+                    },
+                    |mut total, portfolio| {
+                        total.value += portfolio.value;
+                        total.net_contribution += portfolio.net_contribution;
+                        total.cash += portfolio.cash;
+                        total.investments += portfolio.investments;
+                        total
+                    },
+                );
                 portfolio_initialized = true;
             }
 

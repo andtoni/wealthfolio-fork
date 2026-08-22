@@ -501,12 +501,60 @@ impl ValuationService {
         Ok(values)
     }
 
+    fn forward_fill_scoped_histories(
+        histories: Vec<Vec<DailyAccountValuation>>,
+    ) -> Vec<Vec<DailyAccountValuation>> {
+        let union_dates: BTreeSet<NaiveDate> = histories
+            .iter()
+            .flat_map(|history| history.iter().map(|valuation| valuation.valuation_date))
+            .collect();
+
+        histories
+            .into_iter()
+            .map(|mut history| {
+                history.sort_by_key(|valuation| valuation.valuation_date);
+                let mut cursor = 0;
+                let mut current: Option<DailyAccountValuation> = None;
+                let mut filled = Vec::new();
+
+                for date in &union_dates {
+                    while history
+                        .get(cursor)
+                        .is_some_and(|valuation| valuation.valuation_date <= *date)
+                    {
+                        current = history.get(cursor).cloned();
+                        cursor += 1;
+                    }
+
+                    let Some(mut valuation) = current.clone() else {
+                        continue;
+                    };
+                    if valuation.valuation_date != *date {
+                        // A carried value is display history only. Do not repeat
+                        // the source day's external flow on the filled date.
+                        valuation.valuation_date = *date;
+                        valuation.external_inflow_base = Decimal::ZERO;
+                        valuation.external_outflow_base = Decimal::ZERO;
+                        valuation.external_flow_source = ExternalFlowSource::NoFlow;
+                    }
+                    filled.push(valuation);
+                }
+
+                filled
+            })
+            .collect()
+    }
+
     fn aggregate_scoped_valuation_totals(
         scope_id: &str,
         account_ids: &[String],
         base_currency: &str,
         histories: Vec<Vec<DailyAccountValuation>>,
     ) -> CoreResult<Vec<DailyAccountValuation>> {
+        // This endpoint feeds value-history charts, not return calculations. A
+        // missing trailing row for one account should carry its last trusted
+        // value forward rather than make the whole chart fail with HTTP 400.
+        let histories = Self::forward_fill_scoped_histories(histories);
         Self::aggregate_scoped_valuations(
             scope_id,
             account_ids,
@@ -2344,6 +2392,74 @@ mod tests {
         assert_eq!(totals_day2.net_contribution_base, dec!(220));
         assert_eq!(totals_day2.external_inflow_base, dec!(70));
         assert_eq!(adjusted_day2.external_inflow_base, Decimal::ZERO);
+    }
+
+    #[test]
+    fn valuation_totals_forward_fill_missing_account_dates_for_display_history() {
+        let account_ids = ["acct_a".to_string(), "acct_b".to_string()];
+        let histories = vec![
+            vec![
+                valuation(
+                    "acct_a",
+                    "2026-04-01",
+                    dec!(100),
+                    dec!(100),
+                    Decimal::ZERO,
+                    Decimal::ZERO,
+                ),
+                valuation(
+                    "acct_a",
+                    "2026-04-02",
+                    dec!(110),
+                    dec!(100),
+                    Decimal::ZERO,
+                    Decimal::ZERO,
+                ),
+                valuation(
+                    "acct_a",
+                    "2026-04-03",
+                    dec!(120),
+                    dec!(100),
+                    Decimal::ZERO,
+                    Decimal::ZERO,
+                ),
+            ],
+            vec![
+                valuation(
+                    "acct_b",
+                    "2026-04-01",
+                    dec!(50),
+                    dec!(50),
+                    Decimal::ZERO,
+                    Decimal::ZERO,
+                ),
+                valuation(
+                    "acct_b",
+                    "2026-04-02",
+                    dec!(55),
+                    dec!(50),
+                    Decimal::ZERO,
+                    Decimal::ZERO,
+                ),
+            ],
+        ];
+
+        let totals = ValuationService::aggregate_scoped_valuation_totals(
+            "scope",
+            &account_ids,
+            "USD",
+            histories,
+        )
+        .expect("display history should tolerate a missing trailing account row");
+
+        let last = totals
+            .iter()
+            .find(|valuation| valuation.valuation_date == date("2026-04-03"))
+            .expect("last aggregate date present");
+        assert_eq!(last.total_value_base, dec!(175));
+        assert_eq!(last.net_contribution_base, dec!(150));
+        assert_eq!(last.external_inflow_base, Decimal::ZERO);
+        assert_eq!(last.external_outflow_base, Decimal::ZERO);
     }
 
     // Core availability contract: merging two provenances must never upgrade

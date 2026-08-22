@@ -2159,6 +2159,33 @@ async fn test_history_portfolio_only_no_alt_assets() {
 }
 
 #[tokio::test]
+async fn test_history_carries_forward_missing_account_valuation() {
+    let d1 = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    let d2 = NaiveDate::from_ymd_opt(2024, 1, 2).unwrap();
+    let d3 = NaiveDate::from_ymd_opt(2024, 1, 3).unwrap();
+
+    let valuations = vec![
+        create_total_valuation(d1, dec!(100), dec!(100)),
+        create_total_valuation(d2, dec!(110), dec!(100)),
+        create_total_valuation(d3, dec!(120), dec!(100)),
+        create_account_valuation("account-2", d1, dec!(50)),
+        create_account_valuation("account-2", d2, dec!(55)),
+    ];
+    let accounts = vec![
+        create_test_account("account-1", "SECURITIES", "USD"),
+        create_test_account("account-2", "CASH", "USD"),
+    ];
+
+    let service =
+        create_net_worth_service_with_valuations(accounts, vec![], vec![], vec![], valuations);
+    let history = service.get_net_worth_history(d1, d3).await.unwrap();
+
+    assert_eq!(history.len(), 3);
+    assert_eq!(history[2].portfolio_value, dec!(175));
+    assert_eq!(history[2].net_worth, dec!(175));
+}
+
+#[tokio::test]
 async fn test_history_credit_card_balance_is_split_to_liabilities() {
     let d1 = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
 

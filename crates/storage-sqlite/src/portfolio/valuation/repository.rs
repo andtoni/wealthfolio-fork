@@ -28,6 +28,52 @@ impl ValuationRepository {
     pub fn new(pool: Arc<Pool<ConnectionManager<SqliteConnection>>>, writer: WriteHandle) -> Self {
         Self { pool, writer }
     }
+
+    fn record_derived_provenance(
+        conn: &mut SqliteConnection,
+        records: &[DailyAccountValuationDB],
+    ) -> std::result::Result<(), StorageError> {
+        // A daily valuation is aggregate-eligible only when the snapshot that
+        // produced it is eligible. This keeps normal recalculation from
+        // silently promoting an unprovenanced provider row while repairing the
+        // derived-row provenance needed by history queries.
+        for record in records {
+            sql_query(
+                "INSERT INTO provenance_records(
+                    entity_type, entity_id, role, source_system, source_record_id, actor_id
+                 )
+                 SELECT 'daily_valuation', ?, 'live_canonical', 'WEALTHFOLIO_DERIVED', NULL, NULL
+                 WHERE EXISTS (
+                    SELECT 1
+                    FROM holdings_snapshots snapshot
+                    JOIN provenance_records snapshot_provenance
+                      ON snapshot_provenance.entity_type = 'snapshot'
+                     AND snapshot_provenance.entity_id = snapshot.id
+                    WHERE snapshot.account_id = ?
+                      AND snapshot.snapshot_date = ?
+                      AND (
+                        snapshot_provenance.role = 'live_canonical'
+                        OR (
+                          snapshot_provenance.role = 'opening_baseline'
+                          AND snapshot_provenance.coverage_start_date IS NOT NULL
+                          AND snapshot_provenance.coverage_start_date <= snapshot.snapshot_date
+                        )
+                        OR (
+                          snapshot_provenance.role = 'manual_current'
+                          AND snapshot_provenance.manual_current_approved = 1
+                        )
+                      )
+                 )
+                 ON CONFLICT(entity_type, entity_id) DO NOTHING",
+            )
+            .bind::<Text, _>(&record.id)
+            .bind::<Text, _>(&record.account_id)
+            .bind::<Text, _>(record.valuation_date.to_string())
+            .execute(conn)
+            .map_err(StorageError::from)?;
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -52,6 +98,7 @@ impl ValuationRepositoryTrait for ValuationRepository {
                         .execute(conn)
                         .map_err(StorageError::from)?;
                 }
+                Self::record_derived_provenance(conn, &records_to_save)?;
                 Ok(())
             })
             .await
@@ -99,6 +146,7 @@ impl ValuationRepositoryTrait for ValuationRepository {
                         .execute(conn)
                         .map_err(StorageError::from)?;
                 }
+                Self::record_derived_provenance(conn, &records_to_save)?;
 
                 Ok(())
             })
