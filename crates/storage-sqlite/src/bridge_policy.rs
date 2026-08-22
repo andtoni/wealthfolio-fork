@@ -1496,7 +1496,15 @@ fn current_state_write_decision(
         .as_deref()
         .and_then(|value| serde_json::from_str::<SnapshotProvenance>(value).ok())
     else {
-        return Ok(CurrentStateWriteDecision::Reject);
+        // A legacy BROKER_IMPORTED row may predate the provider provenance
+        // sidecar. The authenticated current-state operation is the
+        // provider-bound repair: admit it so persist_current_state can replace
+        // the row and append its snapshot/receipt/derived-valuation authority.
+        return Ok(if existing.source == "BROKER_IMPORTED" {
+            CurrentStateWriteDecision::Apply
+        } else {
+            CurrentStateWriteDecision::Reject
+        });
     };
     if existing.source != "BROKER_IMPORTED"
         || prior.provider_connection_id != state.provider_connection_id

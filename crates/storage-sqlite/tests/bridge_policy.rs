@@ -1,5 +1,6 @@
 #![allow(clippy::type_complexity)]
 
+use chrono::NaiveDate;
 use rusqlite::{params, Connection};
 use tempfile::TempDir;
 use wealthfolio_storage_sqlite::{bridge_policy::*, db};
@@ -396,6 +397,52 @@ async fn current_state_preserves_canonical_liability_and_market_value_precision(
         decoded["provider-vti"].to_string(),
         "0.1234567890123456789012345679"
     );
+}
+
+#[tokio::test]
+async fn current_state_repairs_legacy_broker_snapshot_without_provenance() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let connection = Connection::open(&path).unwrap();
+    let snapshot_id = wealthfolio_core::portfolio::snapshot::AccountStateSnapshot::stable_id(
+        "a1",
+        NaiveDate::parse_from_str("2026-07-18", "%Y-%m-%d").unwrap(),
+    );
+    connection
+        .execute(
+            "INSERT INTO holdings_snapshots(id,account_id,snapshot_date,currency,source) VALUES(?,?,?,?,?)",
+            params![snapshot_id, "a1", "2026-07-18", "USD", "BROKER_IMPORTED"],
+        )
+        .unwrap();
+    let generation = store.grant("alice", "a1").await.unwrap();
+
+    let receipt = store
+        .commit(current_state_operation(
+            "legacy-current-state",
+            generation,
+            "50",
+            "10",
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(receipt.outcome, ReceiptOutcome::Accepted);
+    let snapshot_role: String = connection
+        .query_row(
+            "SELECT role FROM provenance_records WHERE entity_type='snapshot' AND entity_id=?",
+            params![snapshot_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(snapshot_role, "live_canonical");
+    let verified_receipt_count: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM verified_receipts WHERE account_id='a1' AND verification_state='verified'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(verified_receipt_count, 1);
 }
 
 #[tokio::test]
