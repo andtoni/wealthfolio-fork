@@ -107,7 +107,7 @@ impl ProvenanceRepositoryTrait for ProvenanceRepository {
         .bind::<Text, _>(entity_type)
         .load::<EligibilityRow>(&mut connection)
         .map_err(to_core_err)?;
-        Ok(records
+        let mut eligible = records
             .into_iter()
             .filter_map(|record| {
                 let date = requested.get(&record.entity_id)?;
@@ -119,7 +119,49 @@ impl ProvenanceRepositoryTrait for ProvenanceRepository {
                     )
                     .then_some(record.entity_id)
             })
-            .collect())
+            .collect::<HashSet<_>>();
+
+        // Older derived valuation rows can predate the daily-valuation
+        // provenance sidecar. Keep aggregate reads fail-closed by admitting
+        // them only when the owning account has live provenance and a verified
+        // provider receipt whose coverage reaches the valuation date. New
+        // writes still stamp the explicit sidecar in ValuationRepository.
+        if entity_type == "daily_valuation" {
+            for (entity_id, date) in &requested {
+                if eligible.contains(entity_id) {
+                    continue;
+                }
+                let covered = sql_query(
+                    "SELECT valuation.id AS entity_id
+                     FROM daily_account_valuation valuation
+                     JOIN accounts account ON account.id = valuation.account_id
+                     JOIN verified_receipts receipt ON receipt.account_id = valuation.account_id
+                     JOIN provenance_records account_provenance
+                       ON account_provenance.entity_type = 'account'
+                      AND account_provenance.entity_id = valuation.account_id
+                     WHERE valuation.id = ?
+                       AND valuation.valuation_date = ?
+                       AND account.is_active = 1
+                       AND account.is_archived = 0
+                       AND account.include_in_net_worth = 1
+                       AND receipt.verification_state = 'verified'
+                       AND receipt.as_of >= ?
+                       AND account_provenance.role = 'live_canonical'
+                     LIMIT 1",
+                )
+                .bind::<Text, _>(entity_id)
+                .bind::<Text, _>(date.to_string())
+                .bind::<Text, _>(date.to_string())
+                .get_result::<EntityIdRow>(&mut connection)
+                .optional()
+                .map_err(to_core_err)?;
+                if covered.is_some() {
+                    eligible.insert(entity_id.clone());
+                }
+            }
+        }
+
+        Ok(eligible)
     }
 
     async fn eligible_entity_rows(
