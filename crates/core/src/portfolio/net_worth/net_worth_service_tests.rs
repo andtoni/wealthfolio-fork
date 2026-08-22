@@ -195,11 +195,20 @@ impl SnapshotRepositoryTrait for MockSnapshotRepository {
 
     fn get_snapshots_by_account(
         &self,
-        _account_id: &str,
-        _start_date: Option<NaiveDate>,
-        _end_date: Option<NaiveDate>,
+        account_id: &str,
+        start_date: Option<NaiveDate>,
+        end_date: Option<NaiveDate>,
     ) -> Result<Vec<AccountStateSnapshot>> {
-        unimplemented!()
+        Ok(self
+            .snapshots
+            .get(account_id)
+            .filter(|snapshot| {
+                start_date.is_none_or(|date| snapshot.snapshot_date >= date)
+                    && end_date.is_none_or(|date| snapshot.snapshot_date <= date)
+            })
+            .cloned()
+            .into_iter()
+            .collect())
     }
 
     fn get_latest_snapshot_before_date(
@@ -2219,6 +2228,35 @@ async fn test_history_credit_card_balance_is_split_to_liabilities() {
 }
 
 #[tokio::test]
+async fn test_history_uses_credit_card_snapshot_when_daily_valuation_lags() {
+    let d1 = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    let portfolio = create_total_valuation(d1, dec!(100000), dec!(100000));
+    let mut card_snapshot = create_test_snapshot("card1", vec![], HashMap::new());
+    card_snapshot.snapshot_date = d1;
+    card_snapshot.id = "card1_2024-01-15".to_string();
+    card_snapshot.source = SnapshotSource::BrokerImported;
+    card_snapshot.liability_balance = dec!(1250);
+    let card_valuation = create_account_valuation("card1", d1, Decimal::ZERO);
+    let accounts = vec![
+        create_test_account("account-1", "SECURITIES", "USD"),
+        create_test_account("card1", "CREDIT_CARD", "USD"),
+    ];
+
+    let service = create_net_worth_service_with_valuations(
+        accounts,
+        vec![],
+        vec![card_snapshot],
+        vec![],
+        vec![portfolio, card_valuation],
+    );
+    let history = service.get_net_worth_history(d1, d1).await.unwrap();
+
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].total_liabilities, dec!(1250));
+    assert_eq!(history[0].net_worth, dec!(98750));
+}
+
+#[tokio::test]
 async fn test_history_credit_card_balance_before_first_portfolio_date_is_seeded() {
     let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
     let card_date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
@@ -3404,17 +3442,20 @@ async fn test_net_worth_history_batches_row_policy_and_filters_semantic_roles() 
     );
     assert_eq!(
         *policy.row_calls.lock().unwrap(),
-        vec![(
-            ENTITY_DAILY_VALUATION.to_string(),
-            vec![
-                ("hist-live_2024-01-15".to_string(), d1),
-                ("hist-live_2024-01-16".to_string(), d2),
-                ("hist-context_2024-01-15".to_string(), d1),
-                ("hist-card_2024-01-14".to_string(), d0),
-                ("hist-card_2024-01-15".to_string(), d1),
-                ("hist-card_2024-01-16".to_string(), d2),
-            ],
-        )]
+        vec![
+            (
+                ENTITY_DAILY_VALUATION.to_string(),
+                vec![
+                    ("hist-live_2024-01-15".to_string(), d1),
+                    ("hist-live_2024-01-16".to_string(), d2),
+                    ("hist-context_2024-01-15".to_string(), d1),
+                    ("hist-card_2024-01-14".to_string(), d0),
+                    ("hist-card_2024-01-15".to_string(), d1),
+                    ("hist-card_2024-01-16".to_string(), d2),
+                ],
+            ),
+            ("snapshot".to_string(), Vec::new()),
+        ]
     );
 }
 
@@ -3500,14 +3541,17 @@ async fn net_worth_history_exact_account_date_pairs_filter_before_aggregation() 
     );
     assert_eq!(
         *policy.row_calls.lock().unwrap(),
-        vec![(
-            ENTITY_DAILY_VALUATION.to_string(),
-            vec![
-                ("pair-live_2024-01-15".to_string(), d1),
-                ("pair-live_2024-01-16".to_string(), d2),
-                ("pair-context_2024-01-15".to_string(), d1),
-            ],
-        )]
+        vec![
+            (
+                ENTITY_DAILY_VALUATION.to_string(),
+                vec![
+                    ("pair-live_2024-01-15".to_string(), d1),
+                    ("pair-live_2024-01-16".to_string(), d2),
+                    ("pair-context_2024-01-15".to_string(), d1),
+                ],
+            ),
+            ("snapshot".to_string(), Vec::new()),
+        ]
     );
 }
 

@@ -21,7 +21,7 @@ use crate::constants::DECIMAL_PRECISION;
 use crate::errors::Result;
 use crate::fx::currency::normalize_amount;
 use crate::fx::FxServiceTrait;
-use crate::portfolio::snapshot::{SnapshotRepositoryTrait, SnapshotSource};
+use crate::portfolio::snapshot::{AccountStateSnapshot, SnapshotRepositoryTrait, SnapshotSource};
 use crate::portfolio::valuation::{DailyAccountValuation, ValuationRepositoryTrait};
 use crate::quotes::QuoteServiceTrait;
 
@@ -344,6 +344,43 @@ impl NetWorthService {
             value
         } else {
             Decimal::ZERO
+        }
+    }
+
+    fn credit_card_snapshot_values(
+        &self,
+        snapshot: &AccountStateSnapshot,
+        base_currency: &str,
+    ) -> (Decimal, Decimal) {
+        let signed_value = if snapshot.liability_balance > Decimal::ZERO {
+            -self.convert_cash_balance_to_base(
+                snapshot.liability_balance,
+                &snapshot.currency,
+                base_currency,
+                snapshot.snapshot_date,
+            )
+        } else {
+            snapshot
+                .cash_balances
+                .iter()
+                .fold(Decimal::ZERO, |total, (currency, amount)| {
+                    total
+                        + self.convert_cash_balance_to_base(
+                            *amount,
+                            currency,
+                            base_currency,
+                            snapshot.snapshot_date,
+                        )
+                })
+        };
+
+        if signed_value < Decimal::ZERO {
+            (
+                Decimal::ZERO,
+                signed_value.abs().round_dp(DECIMAL_PRECISION),
+            )
+        } else {
+            (signed_value.round_dp(DECIMAL_PRECISION), Decimal::ZERO)
         }
     }
 
@@ -963,6 +1000,81 @@ impl NetWorthServiceTrait for NetWorthService {
             .copied();
         let history_seed_date = first_portfolio_date.unwrap_or(start_date);
 
+        let mut initial_credit_card_assets: HashMap<String, Decimal> = HashMap::new();
+        let mut initial_credit_card_liabilities: HashMap<String, Decimal> = HashMap::new();
+        let mut credit_card_assets_by_date: BTreeMap<NaiveDate, HashMap<String, Decimal>> =
+            BTreeMap::new();
+        let mut credit_card_liabilities_by_date: BTreeMap<NaiveDate, HashMap<String, Decimal>> =
+            BTreeMap::new();
+
+        // Provider snapshots are authoritative for credit-card balances. Daily
+        // valuation rows can legitimately lag a current-state bridge commit, so
+        // overlay eligible snapshot values to keep net-worth history aligned
+        // with the same evidence used by the point-in-time calculation.
+        let mut credit_card_snapshot_rows = Vec::new();
+        for account_id in &credit_card_account_ids {
+            credit_card_snapshot_rows.extend(self.snapshot_repository.get_snapshots_by_account(
+                account_id,
+                None,
+                Some(end_date),
+            )?);
+        }
+        let snapshot_rows: Vec<(String, NaiveDate)> = credit_card_snapshot_rows
+            .iter()
+            .map(|snapshot| (snapshot.id.clone(), snapshot.snapshot_date))
+            .collect();
+        let eligible_snapshot_ids = self
+            .aggregate_eligibility_service
+            .eligible_entity_ids_for_rows(ENTITY_SNAPSHOT, &snapshot_rows)
+            .await?;
+        let mut initial_credit_card_snapshot_values: HashMap<
+            String,
+            (NaiveDate, Decimal, Decimal),
+        > = HashMap::new();
+        let mut credit_card_snapshot_values_by_date: BTreeMap<
+            NaiveDate,
+            HashMap<String, (Decimal, Decimal)>,
+        > = BTreeMap::new();
+        for snapshot in credit_card_snapshot_rows
+            .into_iter()
+            .filter(|snapshot| eligible_snapshot_ids.contains(&snapshot.id))
+        {
+            let (asset_value, liability_value) =
+                self.credit_card_snapshot_values(&snapshot, &base_currency);
+            if snapshot.snapshot_date <= history_seed_date
+                && initial_credit_card_snapshot_values
+                    .get(&snapshot.account_id)
+                    .is_none_or(|(date, _, _)| *date < snapshot.snapshot_date)
+            {
+                initial_credit_card_snapshot_values.insert(
+                    snapshot.account_id.clone(),
+                    (snapshot.snapshot_date, asset_value, liability_value),
+                );
+            }
+            if snapshot.snapshot_date >= start_date && snapshot.snapshot_date <= end_date {
+                credit_card_snapshot_values_by_date
+                    .entry(snapshot.snapshot_date)
+                    .or_default()
+                    .insert(snapshot.account_id.clone(), (asset_value, liability_value));
+            }
+        }
+        for (account_id, (_, asset_value, liability_value)) in initial_credit_card_snapshot_values {
+            initial_credit_card_assets.insert(account_id.clone(), asset_value);
+            initial_credit_card_liabilities.insert(account_id, liability_value);
+        }
+        for (date, values) in credit_card_snapshot_values_by_date {
+            for (account_id, (asset_value, liability_value)) in values {
+                credit_card_assets_by_date
+                    .entry(date)
+                    .or_default()
+                    .insert(account_id.clone(), asset_value);
+                credit_card_liabilities_by_date
+                    .entry(date)
+                    .or_default()
+                    .insert(account_id, liability_value);
+            }
+        }
+
         // =====================================================================
         // 2. Load alternative assets and organize by type
         // =====================================================================
@@ -1058,13 +1170,6 @@ impl NetWorthServiceTrait for NetWorthService {
         // =====================================================================
         // 5. Load credit card liability valuations
         // =====================================================================
-        let mut initial_credit_card_assets: HashMap<String, Decimal> = HashMap::new();
-        let mut initial_credit_card_liabilities: HashMap<String, Decimal> = HashMap::new();
-        let mut credit_card_assets_by_date: BTreeMap<NaiveDate, HashMap<String, Decimal>> =
-            BTreeMap::new();
-        let mut credit_card_liabilities_by_date: BTreeMap<NaiveDate, HashMap<String, Decimal>> =
-            BTreeMap::new();
-
         for account_id in &credit_card_account_ids {
             if let Some(initial_valuation) = initial_credit_card_valuations
                 .remove(account_id)
@@ -1078,14 +1183,12 @@ impl NetWorthServiceTrait for NetWorthService {
                 })
                 .max_by_key(|valuation| valuation.valuation_date)
             {
-                initial_credit_card_assets.insert(
-                    account_id.clone(),
-                    Self::credit_card_asset_value(&initial_valuation),
-                );
-                initial_credit_card_liabilities.insert(
-                    account_id.clone(),
-                    Self::credit_card_liability_value(&initial_valuation),
-                );
+                initial_credit_card_assets
+                    .entry(account_id.clone())
+                    .or_insert_with(|| Self::credit_card_asset_value(&initial_valuation));
+                initial_credit_card_liabilities
+                    .entry(account_id.clone())
+                    .or_insert_with(|| Self::credit_card_liability_value(&initial_valuation));
             }
 
             for valuation in credit_card_valuations
@@ -1101,17 +1204,13 @@ impl NetWorthServiceTrait for NetWorthService {
                 credit_card_assets_by_date
                     .entry(valuation.valuation_date)
                     .or_default()
-                    .insert(
-                        account_id.clone(),
-                        Self::credit_card_asset_value(&valuation),
-                    );
+                    .entry(account_id.clone())
+                    .or_insert_with(|| Self::credit_card_asset_value(&valuation));
                 credit_card_liabilities_by_date
                     .entry(valuation.valuation_date)
                     .or_default()
-                    .insert(
-                        account_id.clone(),
-                        Self::credit_card_liability_value(&valuation),
-                    );
+                    .entry(account_id.clone())
+                    .or_insert_with(|| Self::credit_card_liability_value(&valuation));
             }
         }
 
