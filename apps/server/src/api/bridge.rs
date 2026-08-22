@@ -2,12 +2,14 @@
 //! extract state from AppState. The `router()` function is kept for backward
 //! compatibility but routes are now inlined in api.rs.
 use axum::{extract::State, Extension, Json};
+use chrono::NaiveDate;
 use std::sync::Arc;
 
 use crate::auth::AuthenticatedSubject;
 use crate::error::ApiError;
-use crate::events::{ServerEvent, PORTFOLIO_UPDATE_COMPLETE};
+use crate::events::{ServerEvent, PORTFOLIO_UPDATE_COMPLETE, PORTFOLIO_UPDATE_START};
 use crate::main_lib::AppState;
+use wealthfolio_core::portfolio::valuation::{ValuationRecalcMode, ValuationServiceTrait};
 
 fn get_bridge(
     state: &AppState,
@@ -199,6 +201,33 @@ pub async fn handle_receipt(
     }
 }
 
+fn enqueue_current_state_valuation_refresh(
+    state: Arc<AppState>,
+    account_id: String,
+    as_of_date: String,
+) {
+    let Ok(as_of_date) = NaiveDate::parse_from_str(&as_of_date, "%Y-%m-%d") else {
+        tracing::warn!(%account_id, "Skipping current-state valuation refresh with invalid date");
+        return;
+    };
+
+    tokio::spawn(async move {
+        state
+            .event_bus
+            .publish(ServerEvent::new(PORTFOLIO_UPDATE_START));
+        if let Err(error) = state
+            .valuation_service
+            .calculate_valuation_history(&account_id, ValuationRecalcMode::SinceDate(as_of_date))
+            .await
+        {
+            tracing::warn!(%account_id, %as_of_date, %error, "Current-state valuation refresh failed");
+        }
+        state
+            .event_bus
+            .publish(ServerEvent::new(PORTFOLIO_UPDATE_COMPLETE));
+    });
+}
+
 pub async fn handle_commit(
     State(state): State<Arc<AppState>>,
     auth: Option<Extension<AuthenticatedSubject>>,
@@ -207,12 +236,28 @@ pub async fn handle_commit(
     require_own_subject(auth, &op.subject)?;
     let store = get_bridge(&state)?;
     let invalidate_activity_queries = changes_activity_queries(op.kind);
+    let current_state_refresh = (op.kind
+        == wealthfolio_storage_sqlite::bridge_policy::DisclosureKind::CurrentStateUpsert)
+        .then(|| {
+            op.current_state
+                .as_ref()
+                .map(|state| (state.account_id.clone(), state.as_of_date.clone()))
+        })
+        .flatten();
     match store.commit(op).await {
         Ok(r) => {
             if invalidate_activity_queries {
                 state
                     .event_bus
                     .publish(ServerEvent::new(PORTFOLIO_UPDATE_COMPLETE));
+            }
+            if matches!(
+                &r.outcome,
+                wealthfolio_storage_sqlite::bridge_policy::ReceiptOutcome::Accepted
+            ) {
+                if let Some((account_id, as_of_date)) = current_state_refresh {
+                    enqueue_current_state_valuation_refresh(state.clone(), account_id, as_of_date);
+                }
             }
             Ok(Json(receipt(r)))
         }
