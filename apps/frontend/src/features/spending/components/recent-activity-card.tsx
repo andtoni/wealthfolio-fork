@@ -23,13 +23,11 @@ export function RecentActivityCard({
   activities,
   accountTypeById,
   categoriesMeta,
-  currency,
   uncategorizedCount = 0,
 }: {
   activities: Activity[];
   accountTypeById?: Map<string, string>;
   categoriesMeta: CategoryMetaMap;
-  currency: string;
   uncategorizedCount?: number;
 }) {
   const { t } = useTranslation();
@@ -194,7 +192,7 @@ export function RecentActivityCard({
                     )}
                   >
                     {isOutflow ? "−" : "+"}
-                    <PrivacyAmount value={amount} currency={currency} />
+                    <PrivacyAmount value={amount} currency={a.currency} />
                   </div>
                 </Link>
               );
