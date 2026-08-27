@@ -1,9 +1,11 @@
 import {
   admitProviderAccount,
   completePlaidConnection,
+  completePlaidUpdate,
   getAccounts,
   listDiscoveredProviderAccounts,
   listProviderConnections,
+  startPlaidUpdate,
   startProviderConnection,
   type ProviderConnectionStatus,
 } from "@/adapters";
@@ -77,7 +79,11 @@ export function validatedHttpsRedirect(value: string): string {
   return redirect.href;
 }
 
-export async function openPlaid(linkToken: string, continuationToken: string): Promise<void> {
+export async function openPlaid(
+  linkToken: string,
+  continuationToken: string,
+  update = false,
+): Promise<void> {
   if (!linkToken || !continuationToken)
     throw new Error("Plaid did not return a complete link session.");
   const plaid = await loadPlaidLink();
@@ -87,7 +93,10 @@ export async function openPlaid(linkToken: string, continuationToken: string): P
       token: linkToken,
       onSuccess: (publicToken) => {
         completionStarted = true;
-        void completePlaidConnection(publicToken, continuationToken)
+        const completion = update
+          ? completePlaidUpdate(continuationToken)
+          : completePlaidConnection(publicToken, continuationToken);
+        void completion
           .then(() => resolve())
           .catch(reject)
           .finally(() => handler.destroy());
@@ -105,6 +114,10 @@ export async function openPlaid(linkToken: string, continuationToken: string): P
     });
     handler.open();
   });
+}
+
+export function openPlaidUpdate(linkToken: string, continuationToken: string): Promise<void> {
+  return openPlaid(linkToken, continuationToken, true);
 }
 
 const PROVIDER_NAMES: Record<string, string> = {
@@ -136,6 +149,8 @@ function ProviderCard({
   const visibleConnectedAccounts =
     status.provider === "snaptrade" && !providerReportsConnected ? [] : connectedAccounts;
   const isConnected = visibleConnectedAccounts.length > 0;
+  const plaidConnectionConfigured =
+    status.provider === "plaid" && (status.status === "configured" || providerReportsConnected);
   const supportsConnect = status.provider === "plaid" || !isConnected;
   const canConnect =
     status.status === "available" ||
@@ -151,14 +166,17 @@ function ProviderCard({
 
   const startMutation = useMutation({
     mutationFn: async () => {
-      const result = await startProviderConnection(status.provider);
+      const updatingPlaid = plaidConnectionConfigured && isConnected;
+      const result = updatingPlaid
+        ? await startPlaidUpdate()
+        : await startProviderConnection(status.provider);
       if (status.provider === "snaptrade" && result.status === "link_ready") {
         if (!result.redirectUrl) throw new Error("SnapTrade did not return a redirect.");
         window.location.assign(validatedHttpsRedirect(result.redirectUrl));
         return;
       }
       if (status.provider === "plaid") {
-        await openPlaid(result.linkToken ?? "", result.continuationToken ?? "");
+        await openPlaid(result.linkToken ?? "", result.continuationToken ?? "", updatingPlaid);
       }
     },
     onSuccess: () => {
@@ -190,7 +208,7 @@ function ProviderCard({
       : status.status === "configured"
         ? "Configured"
         : status.status.replaceAll("_", " ");
-  const connectLabel = status.provider === "plaid" && isConnected ? "Add institution" : "Connect";
+  const connectLabel = plaidConnectionConfigured && isConnected ? "Add accounts" : "Connect";
 
   return (
     <Card className="border">

@@ -109,6 +109,14 @@ pub async fn start_provider_connection(provider: String) -> Result<(), String> {
     ))
 }
 
+#[tauri::command]
+pub async fn start_plaid_update() -> Result<(), String> {
+    Err(
+        "Plaid account updates are not available in this runtime. Use the authenticated Wealthfolio web application."
+            .to_string(),
+    )
+}
+
 /// Provider account discovery is web-only; desktop keeps the shared adapter
 /// contract registered while exposing no accounts.
 #[tauri::command]
@@ -140,6 +148,15 @@ pub async fn complete_plaid_connection(
 ) -> Result<(), String> {
     Err(
         "Plaid completion is not available in this runtime. Use the authenticated Wealthfolio web application."
+            .to_string(),
+    )
+}
+
+/// Tauri has no server-authenticated subject for Plaid update completion.
+#[tauri::command]
+pub async fn complete_plaid_update(_continuation_token: String) -> Result<(), String> {
+    Err(
+        "Plaid account update completion is not available in this runtime. Use the authenticated Wealthfolio web application."
             .to_string(),
     )
 }

@@ -321,8 +321,10 @@ export {
 export {
   admitProviderAccount,
   completePlaidConnection,
+  completePlaidUpdate,
   listDiscoveredProviderAccounts,
   listProviderConnections,
+  startPlaidUpdate,
   startProviderConnection,
 } from "../shared/provider-connections";
 

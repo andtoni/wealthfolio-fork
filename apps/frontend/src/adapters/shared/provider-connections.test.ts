@@ -10,7 +10,9 @@ vi.mock("#platform", () => ({
 
 import {
   completePlaidConnection,
+  completePlaidUpdate,
   listProviderConnections,
+  startPlaidUpdate,
   startProviderConnection,
 } from "./provider-connections";
 
@@ -52,6 +54,20 @@ describe("provider-connections shared adapter", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("start_provider_connection", { provider: "plaid" });
   });
 
+  it("starts an existing Plaid Item update without exposing a durable token", async () => {
+    const response = {
+      provider: "plaid",
+      status: "link_ready",
+      message: "Ready to add accounts.",
+      linkToken: "link-short-lived",
+      continuationToken: "continuation-short-lived",
+    };
+    mocks.invoke.mockResolvedValue(response);
+
+    await expect(startPlaidUpdate()).resolves.toEqual(response);
+    expect(mocks.invoke).toHaveBeenCalledWith("start_plaid_update");
+  });
+
   it("sends Plaid completion tokens only to the completion command", async () => {
     const response = { provider: "plaid", status: "completed", message: "Connected." };
     mocks.invoke.mockResolvedValue(response);
@@ -65,13 +81,25 @@ describe("provider-connections shared adapter", () => {
     });
   });
 
+  it("completes an existing Plaid Item update with only its continuation", async () => {
+    const response = { provider: "plaid", status: "pending", message: "Choose accounts." };
+    mocks.invoke.mockResolvedValue(response);
+
+    await expect(completePlaidUpdate("continuation-short-lived")).resolves.toEqual(response);
+    expect(mocks.invoke).toHaveBeenCalledWith("complete_plaid_update", {
+      continuationToken: "continuation-short-lived",
+    });
+  });
+
   it("propagates backend failures", async () => {
     mocks.invoke.mockRejectedValue(new Error("Provider connection service is unavailable."));
 
     await expect(listProviderConnections()).rejects.toThrow("unavailable");
     await expect(startProviderConnection("snaptrade")).rejects.toThrow("unavailable");
+    await expect(startPlaidUpdate()).rejects.toThrow("unavailable");
     await expect(completePlaidConnection("public-token", "continuation-token")).rejects.toThrow(
       "unavailable",
     );
+    await expect(completePlaidUpdate("continuation-token")).rejects.toThrow("unavailable");
   });
 });

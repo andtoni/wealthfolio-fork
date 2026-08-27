@@ -124,10 +124,22 @@ struct PlaidCompleteRequest {
     continuation_token: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PlaidUpdateCompleteRequest {
+    continuation_token: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct FinanceSyncPlaidCompleteRequest<'a> {
     public_token: &'a str,
+    continuation_token: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FinanceSyncPlaidUpdateCompleteRequest<'a> {
     continuation_token: &'a str,
 }
 
@@ -658,6 +670,30 @@ async fn start_provider_connection(
     Ok(Json(response))
 }
 
+async fn start_plaid_update(
+    State(state): State<Arc<AppState>>,
+    auth_subject: Option<Extension<AuthenticatedSubject>>,
+) -> ApiResult<Json<ProviderConnectionStartResponse>> {
+    if state.auth.is_none() && state.oidc.is_none() {
+        return Err(ApiError::Unauthorized(
+            "Authentication is required.".to_string(),
+        ));
+    }
+    let subject = subject(auth_subject)?;
+    let response: ProviderConnectionStartResponse = FinanceSyncControl::from_env()?
+        .post::<_, ()>(
+            "/control/v1/provider-connections/plaid/update",
+            subject.as_str(),
+            None,
+        )
+        .await?;
+    if response.provider != ProviderKind::Plaid {
+        return Err(service_unavailable());
+    }
+    validate_start(&response)?;
+    Ok(Json(response))
+}
+
 async fn complete_plaid_connection(
     State(state): State<Arc<AppState>>,
     auth_subject: Option<Extension<AuthenticatedSubject>>,
@@ -689,6 +725,42 @@ async fn complete_plaid_connection(
     let response: ProviderConnectionCompleteResponse = FinanceSyncControl::from_env()?
         .post(
             "/control/v1/provider-connections/plaid/complete",
+            subject.as_str(),
+            Some(&body),
+        )
+        .await?;
+    if response.provider != ProviderKind::Plaid || response.message.len() > MAX_LINK_VALUE_BYTES {
+        return Err(service_unavailable());
+    }
+    Ok(Json(response))
+}
+
+async fn complete_plaid_update(
+    State(state): State<Arc<AppState>>,
+    auth_subject: Option<Extension<AuthenticatedSubject>>,
+    Json(request): Json<PlaidUpdateCompleteRequest>,
+) -> ApiResult<Json<ProviderConnectionCompleteResponse>> {
+    if state.auth.is_none() && state.oidc.is_none() {
+        return Err(ApiError::Unauthorized(
+            "Authentication is required.".to_string(),
+        ));
+    }
+    let continuation = request.continuation_token.trim();
+    if continuation.len() < 32
+        || continuation.len() > MAX_LINK_VALUE_BYTES
+        || continuation.chars().any(char::is_control)
+    {
+        return Err(ApiError::BadRequest(
+            "Invalid Plaid update completion request.".to_string(),
+        ));
+    }
+    let subject = subject(auth_subject)?;
+    let body = FinanceSyncPlaidUpdateCompleteRequest {
+        continuation_token: continuation,
+    };
+    let response: ProviderConnectionCompleteResponse = FinanceSyncControl::from_env()?
+        .post(
+            "/control/v1/provider-connections/plaid/update/complete",
             subject.as_str(),
             Some(&body),
         )
@@ -1423,6 +1495,14 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(
             "/provider-connections/plaid/complete",
             post(complete_plaid_connection),
+        )
+        .route(
+            "/provider-connections/plaid/update",
+            post(start_plaid_update),
+        )
+        .route(
+            "/provider-connections/plaid/update/complete",
+            post(complete_plaid_update),
         )
         .route(
             "/provider-connections/{provider}/accounts",

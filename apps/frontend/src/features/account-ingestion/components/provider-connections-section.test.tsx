@@ -3,14 +3,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/adapters", () => ({
   admitProviderAccount: vi.fn(),
   completePlaidConnection: vi.fn(),
+  completePlaidUpdate: vi.fn(),
   getAccounts: vi.fn().mockResolvedValue([]),
   listDiscoveredProviderAccounts: vi.fn().mockResolvedValue([]),
   listProviderConnections: vi.fn(),
+  startPlaidUpdate: vi.fn(),
   startProviderConnection: vi.fn(),
 }));
 
-import { completePlaidConnection } from "@/adapters";
-import { loadPlaidLink, openPlaid, validatedHttpsRedirect } from "./provider-connections-section";
+import { completePlaidConnection, completePlaidUpdate } from "@/adapters";
+import {
+  loadPlaidLink,
+  openPlaid,
+  openPlaidUpdate,
+  validatedHttpsRedirect,
+} from "./provider-connections-section";
 
 describe("provider connection browser safeguards", () => {
   afterEach(() => {
@@ -81,5 +88,28 @@ describe("provider connection browser safeguards", () => {
 
     await expect(pending).resolves.toBeUndefined();
     expect(completePlaidConnection).toHaveBeenCalledWith("public-token", "continuation-token");
+  });
+
+  it("uses the update completion without exchanging a public token", async () => {
+    let callbacks: Parameters<NonNullable<Window["Plaid"]>["create"]>[0] | undefined;
+    vi.mocked(completePlaidUpdate).mockResolvedValue({
+      provider: "plaid",
+      status: "pending",
+      message: "Choose accounts to add.",
+    });
+    window.Plaid = {
+      create: vi.fn((options) => {
+        callbacks = options;
+        return { open: vi.fn(), destroy: vi.fn() };
+      }),
+    };
+
+    const pending = openPlaidUpdate("update-link-token", "continuation-token");
+    await vi.waitFor(() => expect(callbacks).toBeDefined());
+    callbacks?.onSuccess("ignored-public-token");
+
+    await expect(pending).resolves.toBeUndefined();
+    expect(completePlaidUpdate).toHaveBeenCalledWith("continuation-token");
+    expect(completePlaidConnection).not.toHaveBeenCalled();
   });
 });

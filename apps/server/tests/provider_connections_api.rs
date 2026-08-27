@@ -116,6 +116,36 @@ async fn start_control_server(root: &TempDir) -> tokio::task::JoinHandle<()> {
             ),
         )
     }
+    async fn update(headers: HeaderMap) -> impl IntoResponse {
+        if !valid_control_headers(&headers) {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error":"unauthorized"})),
+            );
+        }
+        (
+            StatusCode::OK,
+            Json(
+                json!({"provider":"plaid","status":"link_ready","message":"Plaid Link is ready to add accounts.","linkToken":"update-link","continuationToken":"update-continuation-token-1234567890123456"}),
+            ),
+        )
+    }
+    async fn update_complete(headers: HeaderMap, Json(body): Json<Value>) -> impl IntoResponse {
+        if !valid_control_headers(&headers)
+            || body != json!({"continuationToken":"update-continuation-token-1234567890123456"})
+        {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error":"request_failed"})),
+            );
+        }
+        (
+            StatusCode::OK,
+            Json(
+                json!({"provider":"plaid","status":"pending","message":"Choose the Plaid accounts to add."}),
+            ),
+        )
+    }
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -129,6 +159,14 @@ async fn start_control_server(root: &TempDir) -> tokio::task::JoinHandle<()> {
         .route(
             "/control/v1/provider-connections/plaid/complete",
             post(complete),
+        )
+        .route(
+            "/control/v1/provider-connections/plaid/update",
+            post(update),
+        )
+        .route(
+            "/control/v1/provider-connections/plaid/update/complete",
+            post(update_complete),
         );
     tokio::spawn(async move { axum::serve(listener, router).await.unwrap() })
 }
@@ -286,8 +324,15 @@ async fn routes_fail_closed_without_application_auth() {
     for (method, uri) in [
         ("GET", "/api/v1/provider-connections"),
         ("POST", "/api/v1/provider-connections/plaid/start"),
+        ("POST", "/api/v1/provider-connections/plaid/update"),
         ("POST", "/api/v1/provider-connections/plaid/complete"),
+        ("POST", "/api/v1/provider-connections/plaid/update/complete"),
     ] {
+        let body = if uri.ends_with("update/complete") {
+            "{\"continuationToken\":\"continuation-token-1234567890123456\"}"
+        } else {
+            "{\"publicToken\":\"x\",\"continuationToken\":\"continuation-token-1234567890123456\"}"
+        };
         let response = app
             .clone()
             .oneshot(
@@ -295,7 +340,7 @@ async fn routes_fail_closed_without_application_auth() {
                     .method(method)
                     .uri(uri)
                     .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from("{\"publicToken\":\"x\",\"continuationToken\":\"continuation-token-1234567890123456\"}"))
+                    .body(Body::from(body))
                     .unwrap(),
             )
             .await
@@ -375,6 +420,48 @@ async fn plaid_start_and_completion_proxy_only_short_lived_browser_values() {
         serde_json::from_slice(&to_bytes(start.into_body(), 64 * 1024).await.unwrap()).unwrap();
     assert_eq!(payload["linkToken"], "short-lived-link");
     assert!(payload.get("accessToken").is_none());
+
+    let update = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/provider-connections/plaid/update")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(update.status(), StatusCode::OK);
+    let payload: Value =
+        serde_json::from_slice(&to_bytes(update.into_body(), 64 * 1024).await.unwrap()).unwrap();
+    assert_eq!(payload["linkToken"], "update-link");
+    assert!(payload.get("accessToken").is_none());
+
+    let update_complete = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/provider-connections/plaid/update/complete")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    "{\"continuationToken\":\"update-continuation-token-1234567890123456\"}",
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(update_complete.status(), StatusCode::OK);
+    let payload: Value = serde_json::from_slice(
+        &to_bytes(update_complete.into_body(), 64 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(payload["status"], "pending");
 
     let complete = app
         .oneshot(

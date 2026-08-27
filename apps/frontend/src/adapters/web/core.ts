@@ -413,7 +413,9 @@ export const COMMANDS: CommandMap = {
   // Provider Connections (typed allowlist: investec, mercury, plaid, snaptrade)
   list_provider_connections: { method: "GET", path: "/provider-connections" },
   start_provider_connection: { method: "POST", path: "/provider-connections/{provider}/start" },
+  start_plaid_update: { method: "POST", path: "/provider-connections/plaid/update" },
   complete_plaid_connection: { method: "POST", path: "/provider-connections/plaid/complete" },
+  complete_plaid_update: { method: "POST", path: "/provider-connections/plaid/update/complete" },
   list_discovered_provider_accounts: {
     method: "GET",
     path: "/provider-connections/{provider}/accounts",
@@ -507,6 +509,10 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       url = `${API_PREFIX}/provider-connections/${encodeURIComponent(provider)}/start`;
       break;
     }
+    case "start_plaid_update": {
+      url = `${API_PREFIX}/provider-connections/plaid/update`;
+      break;
+    }
     case "list_discovered_provider_accounts":
     case "admit_provider_account": {
       const { provider } = payload as { provider: string };
@@ -528,6 +534,11 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
         continuationToken: string;
       };
       body = JSON.stringify({ publicToken, continuationToken });
+      break;
+    }
+    case "complete_plaid_update": {
+      const { continuationToken } = payload as { continuationToken: string };
+      body = JSON.stringify({ continuationToken });
       break;
     }
     case "update_settings": {

@@ -1868,13 +1868,10 @@ async fn legacy_prime_saver_supersession_preserves_linked_overlay_and_provider_n
         currency: "ZAR".into(),
         notes: Some("Transfer to Card Internet Value Date 06Aug26 MBP0000000001 10000000001 A Example 10000000001".into()),
         source_record_id: Some("synthetic-v2:strong".into()),
+        source_group_id: Some("provider-group".into()),
         ..Default::default()
     });
     store.commit(target).await.unwrap();
-    connection.execute(
-        "UPDATE activities SET activity_type_override='TRANSFER_OUT',is_user_modified=1 WHERE id=?",
-        ["wealthfolio-production:incarnation:synthetic-v2:strong"],
-    ).unwrap();
 
     let correction = DisclosureOperation::new(
         "legacy-prime-correction",
@@ -1892,6 +1889,7 @@ async fn legacy_prime_saver_supersession_preserves_linked_overlay_and_provider_n
         currency: "ZAR".into(),
         notes: Some("Transfer to Card Internet Value Date 06Aug26 MBP0000000001 10000000001 A Example 10000000001".into()),
         source_record_id: Some("synthetic-v2:strong".into()),
+        source_group_id: Some("provider-group".into()),
         ..Default::default()
     }).with_superseded_resources(["wealthfolio-production:incarnation:synthetic-v2:weak".to_string()]);
     store.commit(correction).await.unwrap();
@@ -1904,10 +1902,70 @@ async fn legacy_prime_saver_supersession_preserves_linked_overlay_and_provider_n
         )
         .unwrap();
     assert_eq!(result.0, 0);
-    assert_eq!(result.1, "Transfer to Card Internet Value Date 06Aug26 MBP0000000001 10000000001 A Example 10000000001");
+    assert_eq!(result.1, "A Example 10000000001");
     assert_eq!(result.2.as_deref(), Some("TRANSFER_OUT"));
     assert_eq!(result.3.as_deref(), Some("group-1"));
     assert!(result.4.contains("A Example 10000000001"));
+}
+
+#[tokio::test]
+async fn provider_identity_supersession_rejects_nonlegacy_transfer_group_conflict() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let connection = Connection::open(&path).unwrap();
+    connection.execute(
+        "INSERT INTO provenance_records(entity_type,entity_id,role,source_system,source_record_id,actor_id) VALUES('activity','x1','live_canonical','finance','x1','alice')",
+        [],
+    ).unwrap();
+    connection
+        .execute(
+            "UPDATE activities SET source_group_id='user-group',is_user_modified=1 WHERE id='x1'",
+            [],
+        )
+        .unwrap();
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let operation = DisclosureOperation::new(
+        "conflicting-provider-group",
+        "alice",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "new-provider-resource",
+    )
+    .with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "WITHDRAWAL".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-07-18".into(),
+        activity_date_precision: Some(wealthfolio_core::activities::ActivityDatePrecision::Date),
+        amount: "10.00".into(),
+        currency: "USD".into(),
+        source_record_id: Some("new-provider-resource".into()),
+        source_group_id: Some("provider-group".into()),
+        ..Default::default()
+    })
+    .with_superseded_resources(["x1".to_string()]);
+    assert!(matches!(
+        store.commit(operation).await.unwrap_err(),
+        BridgePolicyError::Storage(_)
+    ));
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM activities WHERE id='x1'", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT count(*) FROM activities WHERE id='new-provider-resource'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
 }
 
 #[tokio::test]

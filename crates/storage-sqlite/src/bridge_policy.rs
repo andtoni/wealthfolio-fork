@@ -1250,6 +1250,12 @@ fn supersede_activity_identity(
         activity_supersession_row(c, canonical)?.ok_or(diesel::result::Error::NotFound)?;
     let legacy_provider_identity_correction =
         is_legacy_provider_identity_correction(loser, &loser_row, &canonical_row);
+    // A pre-migration PrimeSaver row may already carry a user-linked transfer
+    // group while the corrected provider resource carries its own source group.
+    // The user-owned link must survive this narrowly identified replacement.
+    let preserve_user_source_group = legacy_provider_identity_correction
+        && loser_row.is_user_modified == 1
+        && canonical_row.is_user_modified == 0;
     if loser_row.account_id != account_id || canonical_row.account_id != account_id {
         return Err(diesel::result::Error::RollbackTransaction);
     }
@@ -1300,6 +1306,7 @@ fn supersede_activity_identity(
     if loser_row.source_group_id.is_some()
         && canonical_row.source_group_id.is_some()
         && loser_row.source_group_id != canonical_row.source_group_id
+        && !preserve_user_source_group
     {
         return Err(diesel::result::Error::RollbackTransaction);
     }
@@ -1345,10 +1352,17 @@ fn supersede_activity_identity(
             None
         },
     );
-    let source_group_id = canonical_row
-        .source_group_id
-        .clone()
-        .or(loser_row.source_group_id.clone());
+    let source_group_id = if preserve_user_source_group {
+        loser_row
+            .source_group_id
+            .clone()
+            .or(canonical_row.source_group_id.clone())
+    } else {
+        canonical_row
+            .source_group_id
+            .clone()
+            .or(loser_row.source_group_id.clone())
+    };
     sql_query("UPDATE activities SET notes=?,activity_type_override=?,subtype=?,metadata=?,source_group_id=?,is_user_modified=max(is_user_modified,?),needs_review=max(needs_review,?),updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?")
         .bind::<Nullable<Text>, _>(notes.as_deref())
         .bind::<Nullable<Text>, _>(activity_type_override.as_deref())

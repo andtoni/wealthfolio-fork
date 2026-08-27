@@ -8,9 +8,11 @@ import AccountIngestionPage from "./account-ingestion-page";
 vi.mock("@/adapters", () => ({
   admitProviderAccount: vi.fn(),
   completePlaidConnection: vi.fn(),
+  completePlaidUpdate: vi.fn(),
   getAccounts: vi.fn().mockResolvedValue([]),
   listDiscoveredProviderAccounts: vi.fn().mockResolvedValue([]),
   listProviderConnections: vi.fn().mockResolvedValue([]),
+  startPlaidUpdate: vi.fn(),
   startProviderConnection: vi.fn().mockRejectedValue(new Error("Not implemented")),
 }));
 
@@ -76,7 +78,7 @@ describe("AccountIngestionPage", () => {
     expect(screen.getByText("Your Data Stays Local")).toBeInTheDocument();
   });
 
-  it("shows already connected Plaid accounts and an add-institution action", async () => {
+  it("shows already connected Plaid accounts and an add-accounts action", async () => {
     vi.mocked(listProviderConnections).mockResolvedValueOnce([
       { provider: "plaid", status: "configured", message: "Provider is configured." },
     ]);
@@ -102,10 +104,10 @@ describe("AccountIngestionPage", () => {
 
     expect(await screen.findByText("Connected accounts")).toBeInTheDocument();
     expect(screen.getByText("Connected savings")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add institution" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Add accounts" })).toBeEnabled();
   });
 
-  it("keeps Add institution enabled when Plaid reports a completed connection", async () => {
+  it("keeps Add accounts enabled when Plaid reports a completed connection", async () => {
     vi.mocked(listProviderConnections).mockResolvedValueOnce([
       { provider: "plaid", status: "completed", message: "Connection completed." },
     ]);
@@ -129,7 +131,7 @@ describe("AccountIngestionPage", () => {
 
     renderPage();
 
-    expect(await screen.findByRole("button", { name: "Add institution" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "Add accounts" })).toBeEnabled();
   });
 
   it("shows provider failures instead of masking them as connected", async () => {

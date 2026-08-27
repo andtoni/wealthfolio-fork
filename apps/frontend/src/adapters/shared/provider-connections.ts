@@ -59,6 +59,10 @@ export async function startProviderConnection(
   return invoke<ProviderConnectionStartResponse>("start_provider_connection", { provider });
 }
 
+export async function startPlaidUpdate(): Promise<ProviderConnectionStartResponse> {
+  return invoke<ProviderConnectionStartResponse>("start_plaid_update");
+}
+
 export async function listDiscoveredProviderAccounts(
   provider: ProviderKind,
 ): Promise<DiscoveredProviderAccount[]> {
@@ -78,6 +82,14 @@ export async function completePlaidConnection(
 ): Promise<ProviderConnectionCompleteResponse> {
   return invoke<ProviderConnectionCompleteResponse>("complete_plaid_connection", {
     publicToken,
+    continuationToken,
+  });
+}
+
+export async function completePlaidUpdate(
+  continuationToken: string,
+): Promise<ProviderConnectionCompleteResponse> {
+  return invoke<ProviderConnectionCompleteResponse>("complete_plaid_update", {
     continuationToken,
   });
 }
