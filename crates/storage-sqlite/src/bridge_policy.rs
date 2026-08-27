@@ -1198,7 +1198,9 @@ fn is_legacy_provider_identity_correction(
         && loser_row
             .source_record_id
             .as_deref()
-            .is_none_or(|source_record_id| source_record_id == loser)
+            .is_none_or(|source_record_id| {
+                source_record_id == loser || loser.ends_with(&format!(":{source_record_id}"))
+            })
         && canonical_row
             .source_record_id
             .as_deref()

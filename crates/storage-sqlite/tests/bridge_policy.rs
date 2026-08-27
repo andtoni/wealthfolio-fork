@@ -1847,7 +1847,7 @@ async fn legacy_prime_saver_supersession_preserves_linked_overlay_and_provider_n
         [],
     ).unwrap();
     connection.execute(
-        "UPDATE activities SET activity_type='TRANSFER_OUT',source_record_id='wealthfolio-production:incarnation:synthetic-v2:weak',notes='A Example 10000000001',source_group_id='group-1',is_user_modified=1 WHERE id='wealthfolio-production:incarnation:synthetic-v2:weak'",
+        "UPDATE activities SET activity_type='TRANSFER_OUT',source_record_id='synthetic-v2:weak',notes='A Example 10000000001',source_group_id='group-1',is_user_modified=1 WHERE id='wealthfolio-production:incarnation:synthetic-v2:weak'",
         [],
     ).unwrap();
     let generation = store.grant("alice", "a1").await.unwrap();
