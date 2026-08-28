@@ -1254,10 +1254,12 @@ fn supersede_activity_identity(
         is_legacy_provider_identity_correction(loser, &loser_row, &canonical_row);
     // A pre-migration PrimeSaver row may already carry a user-linked transfer
     // group while the corrected provider resource carries its own source group.
-    // The user-owned link must survive this narrowly identified replacement.
-    let preserve_user_source_group = legacy_provider_identity_correction
-        && loser_row.is_user_modified == 1
-        && canonical_row.is_user_modified == 0;
+    // Preserve the user-owned link; a provider-owned loser can safely be
+    // replaced by the corrected provider group in this narrow flow.
+    let allow_legacy_source_group_replacement =
+        legacy_provider_identity_correction && canonical_row.is_user_modified == 0;
+    let preserve_user_source_group =
+        allow_legacy_source_group_replacement && loser_row.is_user_modified == 1;
     if loser_row.account_id != account_id || canonical_row.account_id != account_id {
         return Err(diesel::result::Error::RollbackTransaction);
     }
@@ -1308,7 +1310,7 @@ fn supersede_activity_identity(
     if loser_row.source_group_id.is_some()
         && canonical_row.source_group_id.is_some()
         && loser_row.source_group_id != canonical_row.source_group_id
-        && !preserve_user_source_group
+        && !allow_legacy_source_group_replacement
     {
         return Err(diesel::result::Error::RollbackTransaction);
     }

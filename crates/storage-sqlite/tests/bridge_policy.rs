@@ -1909,6 +1909,53 @@ async fn legacy_prime_saver_supersession_preserves_linked_overlay_and_provider_n
 }
 
 #[tokio::test]
+async fn legacy_prime_saver_supersession_replaces_provider_transfer_group() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let connection = Connection::open(&path).unwrap();
+    connection.execute(
+        "UPDATE activities SET id='wealthfolio-production:incarnation:synthetic-v2:weak',source_record_id='synthetic-v2:weak',source_group_id='old-provider-group' WHERE id='x1'",
+        [],
+    ).unwrap();
+    connection.execute(
+        "INSERT INTO provenance_records(entity_type,entity_id,role,source_system,source_record_id,actor_id) VALUES('activity','wealthfolio-production:incarnation:synthetic-v2:weak','live_canonical','finance','synthetic-v2:weak','alice')",
+        [],
+    ).unwrap();
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let operation = DisclosureOperation::new(
+        "legacy-provider-group-replacement",
+        "alice",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "wealthfolio-production:incarnation:synthetic-v2:strong",
+    )
+    .with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "WITHDRAWAL".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-07-18".into(),
+        activity_date_precision: Some(wealthfolio_core::activities::ActivityDatePrecision::Date),
+        amount: "10.00".into(),
+        currency: "USD".into(),
+        source_record_id: Some("synthetic-v2:strong".into()),
+        source_group_id: Some("new-provider-group".into()),
+        ..Default::default()
+    })
+    .with_superseded_resources([
+        "wealthfolio-production:incarnation:synthetic-v2:weak".to_string()
+    ]);
+    store.commit(operation).await.unwrap();
+    let result: (i64, Option<String>, i32) = connection
+        .query_row(
+            "SELECT (SELECT count(*) FROM activities WHERE id='wealthfolio-production:incarnation:synthetic-v2:weak'), source_group_id, is_user_modified FROM activities WHERE id='wealthfolio-production:incarnation:synthetic-v2:strong'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(result, (0, Some("new-provider-group".into()), 0));
+}
+
+#[tokio::test]
 async fn provider_identity_supersession_rejects_nonlegacy_transfer_group_conflict() {
     let (_dir, path, store) = store(D1).await;
     seed(&path, &[D1], &["alice"]);
