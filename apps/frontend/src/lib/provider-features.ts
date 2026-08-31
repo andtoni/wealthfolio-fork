@@ -1,5 +1,5 @@
 import { isWeb } from "@/adapters";
-import { invoke } from "@/adapters/shared/platform";
+import { invoke } from "#platform";
 import type { AppInfo } from "@/adapters/types";
 import { useQuery } from "@tanstack/react-query";
 
