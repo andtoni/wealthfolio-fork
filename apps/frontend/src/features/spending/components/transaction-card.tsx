@@ -14,6 +14,7 @@ import {
 } from "@wealthfolio/ui";
 import type { Account } from "@/lib/types";
 import { getOriginalCurrencyDisplay, isProvisionalCardSpending } from "@/lib/original-currency";
+import { useInvestecCardLifecycleLinkEnabled } from "@/lib/provider-features";
 import { cn, formatDateTime } from "@/lib/utils";
 
 import { QuickCategorizePopover } from "./quick-categorize-popover";
@@ -48,6 +49,7 @@ interface TransactionCardProps {
   onDelete: (row: TransactionRowVM) => void;
   onLinkTransfer?: (row: TransactionRowVM) => void;
   onUnlinkTransfer?: (row: TransactionRowVM) => void;
+  onLinkInvestecCardLifecycle?: (row: TransactionRowVM) => void;
 }
 
 const CHIP =
@@ -71,8 +73,10 @@ function TransactionCardImpl({
   onDelete,
   onLinkTransfer,
   onUnlinkTransfer,
+  onLinkInvestecCardLifecycle,
 }: TransactionCardProps) {
   const { t } = useTranslation();
+  const investecCardLifecycleLinkEnabled = useInvestecCardLifecycleLinkEnabled();
   const a = row.activity;
   const originalCurrency = getOriginalCurrencyDisplay(a);
   const isProvisional = isProvisionalCardSpending(a);
@@ -86,6 +90,12 @@ function TransactionCardImpl({
   const transferLinkStatus = getTransferLinkStatus(a);
   const canMarkReimbursement =
     isIncome && !isCreditCardAccountType(account?.accountType) && activityType !== "CREDIT";
+  const canLinkInvestecCardLifecycle =
+    investecCardLifecycleLinkEnabled &&
+    a.status === "PENDING" &&
+    a.sourceSystem === "FINANCE" &&
+    a.sourceRecordId?.startsWith("investec-card:") === true &&
+    onLinkInvestecCardLifecycle !== undefined;
   const formattedDate = formatDateTime(a.activityDate, appTimezone, a.activityDatePrecision);
 
   return (
@@ -290,6 +300,12 @@ function TransactionCardImpl({
                   {t("spending:transactions.linkTransfer")}
                 </DropdownMenuItem>
               ) : null
+            ) : null}
+            {canLinkInvestecCardLifecycle ? (
+              <DropdownMenuItem onClick={() => onLinkInvestecCardLifecycle?.(row)}>
+                <Icons.Link className="mr-2 h-4 w-4" aria-hidden="true" />
+                {t("activity:operations.link_card_lifecycle")}
+              </DropdownMenuItem>
             ) : null}
             <DropdownMenuItem className="text-destructive" onClick={() => onDelete(row)}>
               <Icons.Trash className="mr-2 h-4 w-4" aria-hidden="true" />

@@ -1,6 +1,11 @@
 // Web-specific activity commands
-import type { ParseConfig, ParsedCsvResult } from "@/lib/types";
-import { API_PREFIX, logger } from "./core";
+import type {
+  InvestecCardLifecycleLinkRequest,
+  InvestecCardLifecycleLinkResponse,
+  ParseConfig,
+  ParsedCsvResult,
+} from "@/lib/types";
+import { API_PREFIX, invoke, logger } from "./core";
 
 async function extractErrorMessage(response: Response): Promise<string | null> {
   const contentType = response.headers.get("content-type") ?? "";
@@ -29,6 +34,19 @@ async function extractErrorMessage(response: Response): Promise<string | null> {
     return null;
   }
 }
+
+export const linkInvestecCardLifecycle = async (
+  request: InvestecCardLifecycleLinkRequest,
+): Promise<InvestecCardLifecycleLinkResponse> => {
+  try {
+    return await invoke<InvestecCardLifecycleLinkResponse>("link_investec_card_lifecycle", {
+      request,
+    });
+  } catch (err) {
+    logger.error("Error linking Investec card lifecycle.");
+    throw err;
+  }
+};
 
 /**
  * Parse a CSV file with the given configuration.

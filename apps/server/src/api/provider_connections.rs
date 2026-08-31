@@ -15,6 +15,7 @@ use sha2::{Digest, Sha256};
 use wealthfolio_core::accounts::{
     account_types, AccountServiceTrait, AccountUpdate, NewAccount as CoreNewAccount, TrackingMode,
 };
+use wealthfolio_core::activities::{Activity, ActivityStatus};
 
 use crate::{
     auth::AuthenticatedSubject,
@@ -141,6 +142,33 @@ struct FinanceSyncPlaidCompleteRequest<'a> {
 #[serde(rename_all = "camelCase")]
 struct FinanceSyncPlaidUpdateCompleteRequest<'a> {
     continuation_token: &'a str,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct InvestecCardLifecycleLinkRequest {
+    pending_activity_id: String,
+    posted_activity_id: String,
+    reason: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FinanceSyncCardLifecycleLinkRequest<'a> {
+    source_resource_incarnation_id: &'a str,
+    pending_transaction_id: &'a str,
+    posted_transaction_id: &'a str,
+    reason: &'a str,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct InvestecCardLifecycleLinkResponse {
+    override_id: String,
+    pending_resource_id: String,
+    posted_resource_id: String,
+    inserted: bool,
+    delivered: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -626,6 +654,138 @@ fn validate_start(response: &ProviderConnectionStartResponse) -> ApiResult<()> {
         }
     }
     Ok(())
+}
+
+fn provider_activity_identity(
+    deployment_id: &str,
+    activity: &Activity,
+) -> ApiResult<(String, String)> {
+    if activity.source_system.as_deref() != Some("FINANCE")
+        || activity.source_record_id.as_deref().is_none()
+    {
+        return Err(ApiError::BadRequest(
+            "Both activities must be Finance Sync provider activities.".to_string(),
+        ));
+    }
+    let prefix = format!("{deployment_id}:");
+    let remainder = activity.id.strip_prefix(&prefix).ok_or_else(|| {
+        ApiError::BadRequest("Activity is not a Finance Sync provider resource.".to_string())
+    })?;
+    let (source, transaction_id) = remainder.split_once(':').ok_or_else(|| {
+        ApiError::BadRequest("Activity provider identity is incomplete.".to_string())
+    })?;
+    if uuid::Uuid::parse_str(source).is_err()
+        || transaction_id.is_empty()
+        || activity.source_record_id.as_deref() != Some(transaction_id)
+    {
+        return Err(ApiError::BadRequest(
+            "Activity provider identity is invalid.".to_string(),
+        ));
+    }
+    Ok((source.to_string(), transaction_id.to_string()))
+}
+
+fn validate_lifecycle_link_response(response: &InvestecCardLifecycleLinkResponse) -> ApiResult<()> {
+    if response.override_id.is_empty()
+        || response.override_id.len() > MAX_LINK_VALUE_BYTES
+        || response.pending_resource_id.is_empty()
+        || response.pending_resource_id.len() > MAX_LINK_VALUE_BYTES
+        || response.posted_resource_id.is_empty()
+        || response.posted_resource_id.len() > MAX_LINK_VALUE_BYTES
+    {
+        return Err(service_unavailable());
+    }
+    Ok(())
+}
+
+async fn link_investec_card_lifecycle(
+    State(state): State<Arc<AppState>>,
+    auth_subject: Option<Extension<AuthenticatedSubject>>,
+    Json(request): Json<InvestecCardLifecycleLinkRequest>,
+) -> ApiResult<Json<InvestecCardLifecycleLinkResponse>> {
+    if !crate::features::investec_card_lifecycle_link_enabled() {
+        return Err(ApiError::Forbidden(
+            "Investec card lifecycle linking is disabled.".to_string(),
+        ));
+    }
+    if state.auth.is_none() && state.oidc.is_none() {
+        return Err(ApiError::Unauthorized(
+            "Authentication is required.".to_string(),
+        ));
+    }
+    let subject = subject(auth_subject)?;
+    let reason = request.reason.trim();
+    if request.pending_activity_id.is_empty()
+        || request.pending_activity_id.len() > MAX_LINK_VALUE_BYTES
+        || request.posted_activity_id.is_empty()
+        || request.posted_activity_id.len() > MAX_LINK_VALUE_BYTES
+        || request.pending_activity_id == request.posted_activity_id
+        || reason.is_empty()
+        || reason.len() > 2048
+        || reason
+            .chars()
+            .any(|character| character.is_control() && character != '\n' && character != '\r')
+    {
+        return Err(ApiError::BadRequest(
+            "Invalid Investec card lifecycle link request.".to_string(),
+        ));
+    }
+    let pending = state
+        .activity_service
+        .get_activity(&request.pending_activity_id)?;
+    let posted = state
+        .activity_service
+        .get_activity(&request.posted_activity_id)?;
+    if pending.status != ActivityStatus::Pending || posted.status != ActivityStatus::Posted {
+        return Err(ApiError::BadRequest(
+            "Select one pending and one posted activity.".to_string(),
+        ));
+    }
+    if pending.account_id != posted.account_id {
+        return Err(ApiError::BadRequest(
+            "The activities must use the same account.".to_string(),
+        ));
+    }
+    let account = state
+        .account_service
+        .get_all_accounts()?
+        .into_iter()
+        .find(|account| account.id == pending.account_id)
+        .ok_or_else(|| ApiError::BadRequest("The activity account was not found.".to_string()))?;
+    if !account
+        .provider
+        .as_deref()
+        .is_some_and(|provider| provider.eq_ignore_ascii_case("investec"))
+    {
+        return Err(ApiError::BadRequest(
+            "Only Investec card activities support manual lifecycle links.".to_string(),
+        ));
+    }
+    let (pending_source, pending_transaction_id) =
+        provider_activity_identity(&state.deployment_id, &pending)?;
+    let (posted_source, posted_transaction_id) =
+        provider_activity_identity(&state.deployment_id, &posted)?;
+    if pending_source != posted_source || !pending_transaction_id.starts_with("investec-card:") {
+        return Err(ApiError::BadRequest(
+            "The activities are not a compatible Investec card lifecycle pair.".to_string(),
+        ));
+    }
+    let body = FinanceSyncCardLifecycleLinkRequest {
+        source_resource_incarnation_id: &pending_source,
+        pending_transaction_id: &pending_transaction_id,
+        posted_transaction_id: &posted_transaction_id,
+        reason,
+    };
+    let response: InvestecCardLifecycleLinkResponse = FinanceSyncControl::from_env()?
+        .post(
+            "/control/v1/investec/card-lifecycle-links",
+            subject.as_str(),
+            Some(&body),
+        )
+        .await?;
+    validate_lifecycle_link_response(&response)?;
+    state.health_service.clear_cache().await;
+    Ok(Json(response))
 }
 
 async fn list_provider_connections(
@@ -1486,8 +1646,16 @@ async fn admit_provider_account(
 }
 
 pub fn router() -> Router<Arc<AppState>> {
-    Router::new()
-        .route("/provider-connections", get(list_provider_connections))
+    let router = Router::new().route("/provider-connections", get(list_provider_connections));
+    let router = if crate::features::investec_card_lifecycle_link_enabled() {
+        router.route(
+            "/provider-connections/investec/card-lifecycle-links",
+            post(link_investec_card_lifecycle),
+        )
+    } else {
+        router
+    };
+    router
         .route(
             "/provider-connections/{provider}/start",
             post(start_provider_connection),

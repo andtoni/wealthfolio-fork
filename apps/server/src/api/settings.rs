@@ -98,6 +98,7 @@ struct AppInfoResponse {
     version: String,
     db_path: String,
     logs_dir: String,
+    investec_card_lifecycle_link_enabled: bool,
 }
 
 async fn get_app_info(State(state): State<Arc<AppState>>) -> ApiResult<Json<AppInfoResponse>> {
@@ -119,6 +120,8 @@ async fn get_app_info(State(state): State<Arc<AppState>>) -> ApiResult<Json<AppI
         version,
         db_path,
         logs_dir,
+        investec_card_lifecycle_link_enabled: crate::features::investec_card_lifecycle_link_enabled(
+        ) && (state.auth.is_some() || state.oidc.is_some()),
     }))
 }
 

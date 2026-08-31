@@ -1,6 +1,7 @@
 import {
   createActivity,
   deleteActivity,
+  linkInvestecCardLifecycle,
   linkTransferActivities,
   logger,
   saveActivities,
@@ -327,6 +328,30 @@ export function useActivityMutations(
     },
   });
 
+  const linkInvestecCardLifecycleMutation = useMutation({
+    mutationFn: ({
+      pendingActivityId,
+      postedActivityId,
+      reason,
+    }: {
+      pendingActivityId: string;
+      postedActivityId: string;
+      reason: string;
+    }) => linkInvestecCardLifecycle({ pendingActivityId, postedActivityId, reason }),
+    onSuccess: () => {
+      queryClient.invalidateQueries();
+      toast.success("Card authorization linked", {
+        description: "The pending authorization is now reconciled with the posted charge.",
+      });
+    },
+    onError: (error: string) => {
+      logger.error(`Error linking card lifecycle: ${String(error)}`);
+      toast.error("Failed to link card authorization", {
+        description: String(error),
+      });
+    },
+  });
+
   const duplicateActivity = async (activityToDuplicate: ActivityDetails) => {
     const {
       id: _id,
@@ -456,5 +481,6 @@ export function useActivityMutations(
     saveInternalTransferPairMutation,
     linkTransferActivitiesMutation,
     unlinkTransferActivitiesMutation,
+    linkInvestecCardLifecycleMutation,
   };
 }

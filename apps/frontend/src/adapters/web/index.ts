@@ -118,7 +118,7 @@ export {
   searchActivities,
   updateActivity,
 } from "../shared/activities";
-export { parseCsv } from "./activities";
+export { linkInvestecCardLifecycle, parseCsv } from "./activities";
 
 // Goal Commands
 export {

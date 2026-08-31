@@ -82,6 +82,8 @@ services:
           path: pnpm-lock.yaml
         - action: rebuild
           path: pnpm-workspace.yaml
+        - action: rebuild
+          path: rust-toolchain.toml
 
 networks:
   devbox-proxy:

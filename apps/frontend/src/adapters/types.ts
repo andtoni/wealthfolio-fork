@@ -185,6 +185,7 @@ export interface AppInfo {
   version: string;
   dbPath: string;
   logsDir: string;
+  investecCardLifecycleLinkEnabled?: boolean;
 }
 
 /**

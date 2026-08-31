@@ -48,6 +48,7 @@ interface ActivityDataGridProps {
   isFetching: boolean;
   onPageChange: (pageIndex: number) => void;
   onPageSizeChange: (pageSize: number) => void;
+  onLinkInvestecCardLifecycle?: (activity: ActivityDetails) => void;
 }
 
 function canUseResolvedCurrency(result: SymbolSearchResult): boolean {
@@ -86,6 +87,7 @@ export function ActivityDataGrid({
   isFetching,
   onPageChange,
   onPageSizeChange,
+  onLinkInvestecCardLifecycle,
 }: ActivityDataGridProps) {
   const { t } = useTranslation();
 
@@ -420,6 +422,7 @@ export function ActivityDataGrid({
     onDelete: handleDelete,
     onLinkTransfer: handleRowLinkTransfer,
     onUnlinkTransfer: handleRowUnlinkTransfer,
+    onLinkInvestecCardLifecycle,
     onSymbolSelect: handleSymbolSelect,
     onCreateCustomAsset: handleCreateCustomAsset,
   });

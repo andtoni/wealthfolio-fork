@@ -1,6 +1,17 @@
 // Tauri-specific activity commands
-import type { ParseConfig, ParsedCsvResult } from "@/lib/types";
+import type {
+  InvestecCardLifecycleLinkRequest,
+  InvestecCardLifecycleLinkResponse,
+  ParseConfig,
+  ParsedCsvResult,
+} from "@/lib/types";
 import { invoke, logger } from "./core";
+
+export const linkInvestecCardLifecycle = async (
+  _request: InvestecCardLifecycleLinkRequest,
+): Promise<InvestecCardLifecycleLinkResponse> => {
+  throw new Error("Investec card lifecycle linking is available only in enabled web deployments.");
+};
 
 /**
  * Parse a CSV file with the given configuration.

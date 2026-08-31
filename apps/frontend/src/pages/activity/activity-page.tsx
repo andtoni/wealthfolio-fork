@@ -31,6 +31,7 @@ import { ActivityMobileControls } from "./components/activity-mobile-controls";
 import { ActivityPagination } from "./components/activity-pagination";
 import ActivityTable from "./components/activity-table/activity-table";
 import ActivityTableMobile from "./components/activity-table/activity-table-mobile";
+import { InvestecCardLifecycleLinkSheet } from "./components/investec-card-lifecycle-link-sheet";
 import { ActivityViewControls, type ActivityViewMode } from "./components/activity-view-controls";
 import { BulkHoldingsModal } from "./components/forms/bulk-holdings-modal";
 import { MobileActivityForm } from "./components/mobile-forms/mobile-activity-form";
@@ -90,6 +91,7 @@ const ActivityPage = () => {
     mode: "link" | "unlink";
     activity: ActivityDetails | null;
   }>({ open: false, mode: "link", activity: null });
+  const [lifecycleLinkActivity, setLifecycleLinkActivity] = useState<ActivityDetails | null>(null);
   const [showActionPalette, setShowActionPalette] = useState(false);
   const [showSpendingActionPalette, setShowSpendingActionPalette] = useState(false);
   const isMobileViewport = useIsMobileViewport();
@@ -507,6 +509,10 @@ const ActivityPage = () => {
     setTransferMatchDialog({ open: true, mode: "unlink", activity });
   }, []);
 
+  const handleLinkInvestecCardLifecycle = useCallback((activity: ActivityDetails) => {
+    setLifecycleLinkActivity(activity);
+  }, []);
+
   const investmentsFiltersActive =
     accountScope.type !== "all" ||
     effectiveActivityTypes.length > 0 ||
@@ -743,6 +749,7 @@ const ActivityPage = () => {
           onDuplicate={handleDuplicate}
           onLinkTransfer={handleLinkTransfer}
           onUnlinkTransfer={handleUnlinkTransfer}
+          onLinkInvestecCardLifecycle={handleLinkInvestecCardLifecycle}
           filtersActive={investmentsFiltersActive}
           onAdd={() => handleEdit(undefined)}
           onClearFilters={clearInvestmentsFilters}
@@ -754,6 +761,7 @@ const ActivityPage = () => {
           activities={datagridActivities}
           onRefetch={paginatedSearch.refetch}
           onEditActivity={handleEdit}
+          onLinkInvestecCardLifecycle={handleLinkInvestecCardLifecycle}
           sorting={sorting}
           onSortingChange={setSorting}
           pageIndex={pageIndex}
@@ -774,6 +782,7 @@ const ActivityPage = () => {
           handleDelete={handleDelete}
           onLinkTransfer={handleLinkTransfer}
           onUnlinkTransfer={handleUnlinkTransfer}
+          onLinkInvestecCardLifecycle={handleLinkInvestecCardLifecycle}
           filtersActive={investmentsFiltersActive}
           onAdd={() => handleEdit(undefined)}
           onClearFilters={clearInvestmentsFilters}
@@ -830,6 +839,15 @@ const ActivityPage = () => {
         open={showAlternativeAssetModal}
         onOpenChange={setShowAlternativeAssetModal}
       />
+      <InvestecCardLifecycleLinkSheet
+        open={lifecycleLinkActivity !== null}
+        sourceActivity={lifecycleLinkActivity}
+        accounts={accounts}
+        onOpenChange={(open) => {
+          if (!open) setLifecycleLinkActivity(null);
+        }}
+        onComplete={infiniteSearch.refetch}
+      />
       <TransferMatchDialog
         open={transferMatchDialog.open}
         mode={transferMatchDialog.mode}
@@ -870,7 +888,12 @@ const ActivityPage = () => {
       value: "spending",
       label: t("activity:page.spending"),
       icon: Icons.Wallet,
-      content: <SpendingTransactionsTab ref={spendingTabRef} />,
+      content: (
+        <SpendingTransactionsTab
+          ref={spendingTabRef}
+          onLinkInvestecCardLifecycle={handleLinkInvestecCardLifecycle}
+        />
+      ),
       actions: spendingActions,
     },
   ];

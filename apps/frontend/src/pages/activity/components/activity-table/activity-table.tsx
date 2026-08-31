@@ -59,6 +59,7 @@ interface ActivityTableProps {
   handleDelete: (activity: ActivityDetails) => void;
   onLinkTransfer?: (activity: ActivityDetails) => void;
   onUnlinkTransfer?: (activity: ActivityDetails) => void;
+  onLinkInvestecCardLifecycle?: (activity: ActivityDetails) => void;
   filtersActive?: boolean;
   onAdd?: () => void;
   onClearFilters?: () => void;
@@ -73,6 +74,7 @@ export const ActivityTable = ({
   handleDelete,
   onLinkTransfer,
   onUnlinkTransfer,
+  onLinkInvestecCardLifecycle,
   filtersActive = false,
   onAdd,
   onClearFilters,
@@ -556,6 +558,7 @@ export const ActivityTable = ({
               onDuplicate={handleDuplicate}
               onLinkTransfer={onLinkTransfer}
               onUnlinkTransfer={onUnlinkTransfer}
+              onLinkInvestecCardLifecycle={onLinkInvestecCardLifecycle}
             />
           );
         },
@@ -569,6 +572,7 @@ export const ActivityTable = ({
       handleDuplicate,
       onLinkTransfer,
       onUnlinkTransfer,
+      onLinkInvestecCardLifecycle,
       symbolExchangeCountMap,
       t,
     ],

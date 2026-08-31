@@ -31,6 +31,7 @@ interface ActivityTableMobileProps {
   onDuplicate: (activity: ActivityDetails) => Promise<void>;
   onLinkTransfer?: (activity: ActivityDetails) => void;
   onUnlinkTransfer?: (activity: ActivityDetails) => void;
+  onLinkInvestecCardLifecycle?: (activity: ActivityDetails) => void;
   filtersActive?: boolean;
   onAdd?: () => void;
   onClearFilters?: () => void;
@@ -45,6 +46,7 @@ export const ActivityTableMobile = ({
   onDuplicate,
   onLinkTransfer,
   onUnlinkTransfer,
+  onLinkInvestecCardLifecycle,
   filtersActive = false,
   onAdd,
   onClearFilters,
@@ -184,6 +186,7 @@ export const ActivityTableMobile = ({
                   onDuplicate={onDuplicate}
                   onLinkTransfer={onLinkTransfer}
                   onUnlinkTransfer={onUnlinkTransfer}
+                  onLinkInvestecCardLifecycle={onLinkInvestecCardLifecycle}
                 />
               </div>
             </Card>
@@ -226,6 +229,7 @@ export const ActivityTableMobile = ({
                   onDuplicate={onDuplicate}
                   onLinkTransfer={onLinkTransfer}
                   onUnlinkTransfer={onUnlinkTransfer}
+                  onLinkInvestecCardLifecycle={onLinkInvestecCardLifecycle}
                 />
               </div>
 

@@ -268,6 +268,42 @@ it mounts no production data or credentials. Open
 as disposable development data and never enter production provider credentials.
 This mutable stack never produces a staging or production image.
 
+#### Paired lifecycle fixture
+
+For end-to-end testing of provider lifecycle reconciliation, use the disposable
+paired stack instead of the standalone target. It builds the sibling Finance
+Sync checkout, a pinned PostgreSQL fixture, and Wealthfolio with the synthetic
+Investec adapter enabled:
+
+```bash
+WEALTHFOLIO_DEV_AUTH_PASSWORD_HASH='<Argon2id PHC hash>' \
+  docker compose -f compose.paired.dev.yml up --build --watch
+```
+
+The initial start builds the two development images. Keep Compose Watch running:
+subsequent Wealthfolio source edits sync into Vite or `cargo-watch`, while
+Finance Sync source edits sync into Bun's watcher. Only dependency manifests,
+lockfiles, toolchains, or development Dockerfiles trigger a cached image
+rebuild. Named package-manager, compiler, build, PostgreSQL, and fixture-data
+volumes survive ordinary container restarts.
+
+The paired fixture is served at `https://wealthfolio-paired.dev.example.com`
+when the host is connected to the Homelab development proxy. It uses only
+synthetic transactions and a separate named data volume. After both services are
+ready, admit the synthetic account through the normal authenticated provider
+flow and seed its data with:
+
+```bash
+WF_URL=https://wealthfolio-paired.dev.example.com \
+WF_AUTH_PASSWORD='<the password for the hash above>' \
+  node scripts/seed-paired-dev-fixture.mjs
+```
+
+The fixture contains one equal-amount pair that should auto-link and two
+same-currency amount-drift pairs that should remain separate until the user
+chooses **Link card authorization**. The standalone and paired development
+stacks are disposable and must never receive production data or credentials.
+
 #### Configuration
 
 All configuration is done via environment variables in `.env.web`.

@@ -401,6 +401,20 @@ export interface TransferMatchCandidate {
   reasons: string[];
   warnings: string[];
 }
+
+export interface InvestecCardLifecycleLinkRequest {
+  pendingActivityId: string;
+  postedActivityId: string;
+  reason: string;
+}
+
+export interface InvestecCardLifecycleLinkResponse {
+  overrideId: string;
+  pendingResourceId: string;
+  postedResourceId: string;
+  inserted: boolean;
+  delivered: number;
+}
 export type ActivityImport = z.infer<typeof importActivitySchema>;
 export type ImportMappingData = z.infer<typeof importMappingSchema>;
 export type ParseConfig = z.infer<typeof parseConfigSchema>;

@@ -73,6 +73,7 @@ interface UseActivityColumnsOptions {
   onDelete: (activity: ActivityDetails) => void;
   onLinkTransfer?: (activity: ActivityDetails) => void;
   onUnlinkTransfer?: (activity: ActivityDetails) => void;
+  onLinkInvestecCardLifecycle?: (activity: ActivityDetails) => void;
   /** Called when a symbol is selected from search, with the full result including exchangeMic */
   onSymbolSelect?: (rowIndex: number, result: SymbolSearchResult) => void;
   /** Called when user wants to create a custom asset. Opens a dialog to collect asset metadata. */
@@ -89,6 +90,7 @@ export function useActivityColumns({
   onDelete,
   onLinkTransfer,
   onUnlinkTransfer,
+  onLinkInvestecCardLifecycle,
   onSymbolSelect,
   onCreateCustomAsset,
 }: UseActivityColumnsOptions) {
@@ -467,6 +469,7 @@ export function useActivityColumns({
               onDelete={onDelete}
               onLinkTransfer={onLinkTransfer}
               onUnlinkTransfer={onUnlinkTransfer}
+              onLinkInvestecCardLifecycle={onLinkInvestecCardLifecycle}
             />
           </div>
         ),
@@ -482,6 +485,7 @@ export function useActivityColumns({
       onEditActivity,
       onLinkTransfer,
       onUnlinkTransfer,
+      onLinkInvestecCardLifecycle,
       onSymbolSelect,
       t,
     ],

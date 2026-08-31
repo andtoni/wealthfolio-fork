@@ -10,6 +10,7 @@ import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import type { Activity, ActivityDetails } from "@/lib/types";
 import { getEffectiveType } from "@/lib/types";
 import { ActivityType } from "@/lib/constants";
+import { useInvestecCardLifecycleLinkEnabled } from "@/lib/provider-features";
 import { Row } from "@tanstack/react-table";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -23,6 +24,7 @@ export interface ActivityOperationsProps<TData> {
   onDuplicate: (activity: ActivityDetails) => void | undefined | Promise<void> | Promise<Activity>;
   onLinkTransfer?: (activity: ActivityDetails) => void | undefined;
   onUnlinkTransfer?: (activity: ActivityDetails) => void | undefined;
+  onLinkInvestecCardLifecycle?: (activity: ActivityDetails) => void | undefined;
 }
 
 export function ActivityOperations<TData>({
@@ -33,8 +35,10 @@ export function ActivityOperations<TData>({
   onDuplicate,
   onLinkTransfer,
   onUnlinkTransfer,
+  onLinkInvestecCardLifecycle,
 }: ActivityOperationsProps<TData>) {
   const { t } = useTranslation();
+  const investecCardLifecycleLinkEnabled = useInvestecCardLifecycleLinkEnabled();
   const activity = activityProp ?? (row?.original as ActivityDetails);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
   const effectiveActivityType = getEffectiveType(activity);
@@ -43,6 +47,13 @@ export function ActivityOperations<TData>({
     effectiveActivityType === ActivityType.TRANSFER_OUT;
   const isNew = (activity as ActivityDetails & { isNew?: boolean }).isNew === true;
   const canShowTransferActions = isTransfer && !isNew && (onLinkTransfer || onUnlinkTransfer);
+  const canShowInvestecCardLifecycleAction =
+    investecCardLifecycleLinkEnabled &&
+    !isNew &&
+    activity.status === "PENDING" &&
+    activity.sourceSystem === "FINANCE" &&
+    activity.sourceRecordId?.startsWith("investec-card:") === true &&
+    onLinkInvestecCardLifecycle !== undefined;
 
   return (
     <>
@@ -81,6 +92,12 @@ export function ActivityOperations<TData>({
                 </DropdownMenuItem>
               ) : null}
             </>
+          ) : null}
+          {canShowInvestecCardLifecycleAction ? (
+            <DropdownMenuItem onClick={() => onLinkInvestecCardLifecycle?.(activity)}>
+              <Icons.Link className="mr-2 h-4 w-4" />
+              {t("activity:operations.link_card_lifecycle")}
+            </DropdownMenuItem>
           ) : null}
           <DropdownMenuSeparator />
           <DropdownMenuItem

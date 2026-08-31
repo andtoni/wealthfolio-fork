@@ -421,6 +421,10 @@ export const COMMANDS: CommandMap = {
     path: "/provider-connections/{provider}/accounts",
   },
   admit_provider_account: { method: "POST", path: "/provider-connections/{provider}/admit" },
+  link_investec_card_lifecycle: {
+    method: "POST",
+    path: "/provider-connections/investec/card-lifecycle-links",
+  },
 };
 
 /**
@@ -526,6 +530,11 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
         };
         body = JSON.stringify({ connectionId, providerAccountId, name });
       }
+      break;
+    }
+    case "link_investec_card_lifecycle": {
+      const { request } = payload as { request: Record<string, unknown> };
+      body = JSON.stringify(request);
       break;
     }
     case "complete_plaid_connection": {

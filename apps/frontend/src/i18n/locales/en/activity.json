@@ -304,7 +304,8 @@
   "operations": {
     "more_details": "More details",
     "unlink_transfer": "Unlink transfer",
-    "link_transfer": "Link transfer..."
+    "link_transfer": "Link transfer...",
+    "link_card_lifecycle": "Link card authorization..."
   },
   "date_sheet": {
     "title": "Activities on {{date}}",
@@ -352,6 +353,24 @@
     "record_info": "Record Info",
     "created": "Created",
     "updated": "Updated"
+  },
+  "lifecycle_link": {
+    "title": "Link card authorization",
+    "description": "Choose the posted charge for this pending authorization in {{account}}. The final posted amount will remain authoritative.",
+    "authorization": "Pending authorization",
+    "posted_candidates": "Posted charges within three days",
+    "days_after_one": "{{count}} day after",
+    "days_after_other": "{{count}} days after",
+    "difference": "Authorization difference: {{value}}",
+    "merchant_warning": "The merchant text does not clearly match; the server will reject incompatible facts.",
+    "confirm_warning": "This is a manual exception to strict automatic matching. Only continue if these are the same purchase.",
+    "amount_summary": "Authorization {{authorization}} → posted {{posted}} (difference {{difference}})",
+    "reason": "Reason",
+    "reason_placeholder": "Why are these the same purchase?",
+    "confirm": "Link authorization",
+    "no_candidates": "No compatible posted charges were found within three days.",
+    "invalid_date": "The authorization date is invalid.",
+    "load_error": "Unable to load posted charges."
   },
   "date_list": {
     "no_activities": "No activities",

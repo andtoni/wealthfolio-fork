@@ -8,6 +8,12 @@ pub fn device_sync_enabled() -> bool {
     cfg!(feature = "device-sync")
 }
 
+pub fn investec_card_lifecycle_link_enabled() -> bool {
+    std::env::var("WF_INVESTEC_CARD_LIFECYCLE_LINK_ENABLED")
+        .ok()
+        .is_some_and(|value| value.eq_ignore_ascii_case("true"))
+}
+
 pub fn cloud_sync_enabled() -> bool {
     connect_sync_enabled() || device_sync_enabled()
 }
