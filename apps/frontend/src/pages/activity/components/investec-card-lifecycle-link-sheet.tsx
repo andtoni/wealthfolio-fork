@@ -10,7 +10,6 @@ import {
   Button,
   formatAmount,
   Icons,
-  ScrollArea,
   Sheet,
   SheetContent,
   SheetDescription,
@@ -72,6 +71,45 @@ function merchantMatches(source: ActivityDetails, candidate: ActivityDetails): b
   const candidateMerchant = normalizedMerchant(candidate);
   if (sourceMerchant.length < 3 || !candidateMerchant) return false;
   return candidateMerchant === sourceMerchant || candidateMerchant.startsWith(`${sourceMerchant} `);
+}
+
+export function orderLifecycleCandidates(
+  source: ActivityDetails,
+  candidates: ActivityDetails[],
+): ActivityDetails[] {
+  const sourceAmount = amount(source);
+  const sourceDate = new Date(source.date).getTime();
+  return [...candidates].sort((left, right) => {
+    const merchantRank =
+      Number(merchantMatches(source, right)) - Number(merchantMatches(source, left));
+    if (merchantRank !== 0) return merchantRank;
+
+    const dateDistance = (candidate: ActivityDetails) => {
+      const value = new Date(candidate.date).getTime();
+      return Number.isFinite(sourceDate) && Number.isFinite(value)
+        ? Math.abs(value - sourceDate)
+        : Number.POSITIVE_INFINITY;
+    };
+    const leftDateDistance = dateDistance(left);
+    const rightDateDistance = dateDistance(right);
+    if (leftDateDistance !== rightDateDistance) {
+      return leftDateDistance < rightDateDistance ? -1 : 1;
+    }
+
+    const amountDistance = (candidate: ActivityDetails) => {
+      const value = amount(candidate);
+      return sourceAmount !== undefined && value !== undefined
+        ? Math.abs(value - sourceAmount)
+        : Number.POSITIVE_INFINITY;
+    };
+    const leftAmountDistance = amountDistance(left);
+    const rightAmountDistance = amountDistance(right);
+    if (leftAmountDistance !== rightAmountDistance) {
+      return leftAmountDistance < rightAmountDistance ? -1 : 1;
+    }
+
+    return left.id.localeCompare(right.id);
+  });
 }
 
 function isProviderActivity(activity: ActivityDetails): boolean {
@@ -225,13 +263,16 @@ export function InvestecCardLifecycleLinkSheet({
       }
       if (requestId !== candidateRequestId.current) return;
       setCandidates(
-        activities.filter(
-          (activity) =>
-            activity.id !== sourceActivity.id &&
-            activity.status === ActivityStatus.POSTED &&
-            activity.currency === sourceActivity.currency &&
-            isProviderActivity(activity) &&
-            !isAlreadyLinked(activity),
+        orderLifecycleCandidates(
+          sourceActivity,
+          activities.filter(
+            (activity) =>
+              activity.id !== sourceActivity.id &&
+              activity.status === ActivityStatus.POSTED &&
+              activity.currency === sourceActivity.currency &&
+              isProviderActivity(activity) &&
+              !isAlreadyLinked(activity),
+          ),
         ),
       );
     } catch (cause) {
@@ -328,19 +369,17 @@ export function InvestecCardLifecycleLinkSheet({
             ) : error ? (
               <div className="text-destructive rounded-md border p-3 text-sm">{error}</div>
             ) : candidates.length > 0 && sourceActivity ? (
-              <ScrollArea className="max-h-72">
-                <div className="space-y-2 pr-3">
-                  {candidates.map((candidate) => (
-                    <CandidateRow
-                      key={candidate.id}
-                      activity={candidate}
-                      source={sourceActivity}
-                      selected={selected?.id === candidate.id}
-                      onSelect={() => setSelected(candidate)}
-                    />
-                  ))}
-                </div>
-              </ScrollArea>
+              <div className="max-h-72 space-y-2 overflow-y-auto overscroll-contain pr-2">
+                {candidates.map((candidate) => (
+                  <CandidateRow
+                    key={candidate.id}
+                    activity={candidate}
+                    source={sourceActivity}
+                    selected={selected?.id === candidate.id}
+                    onSelect={() => setSelected(candidate)}
+                  />
+                ))}
+              </div>
             ) : (
               <div className="text-muted-foreground rounded-md border border-dashed p-4 text-center text-sm">
                 {t("activity:lifecycle_link.no_candidates")}
