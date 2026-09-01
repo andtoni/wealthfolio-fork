@@ -14,6 +14,13 @@ pub trait SpendingSettingsRepositoryTrait: Send + Sync {
     /// Upsert multiple setting values in one storage transaction.
     async fn set_settings(&self, values: Vec<(String, String)>) -> Result<()>;
 
-    /// Whether changing the cycle would strand concrete period data.
-    async fn has_concrete_budget_records(&self) -> Result<bool>;
+    /// Update a budget cycle and persist all settings atomically. Same-cadence
+    /// changes re-key concrete period data; cadence changes fail closed when
+    /// concrete period data exists.
+    async fn update_budget_cycle(
+        &self,
+        old_cycle: super::model::BudgetCycleSettings,
+        new_cycle: super::model::BudgetCycleSettings,
+        other_settings: Vec<(String, String)>,
+    ) -> Result<()>;
 }

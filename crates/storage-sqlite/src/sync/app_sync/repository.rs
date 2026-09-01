@@ -20,13 +20,16 @@ use wealthfolio_core::sync::{
 use crate::db::{get_connection, WriteHandle};
 use crate::errors::StorageError;
 use crate::schema::{
-    spending_preset_rule_deletions, sync_applied_events, sync_cursor, sync_device_config,
-    sync_engine_state, sync_entity_metadata, sync_outbox, sync_table_state,
+    app_settings, budget_rollover_settings, budget_targets, spending_preset_rule_deletions,
+    sync_applied_events, sync_cursor, sync_device_config, sync_engine_state, sync_entity_metadata,
+    sync_outbox, sync_table_state,
 };
 use crate::spending::deterministic_ids::preset_rule_deletion_id;
+use crate::spending::settings::rebase_budget_cycle_rows;
 use crate::sync::broker_activity_patch::{
     apply_broker_activity_user_patch_tx, BrokerActivityUserPatchApplyOutcome,
 };
+use wealthfolio_spending::settings::{BudgetCycleSettings, SETTING_KEY_BUDGET_CYCLE};
 
 use super::model::{
     SyncAppliedEventDB, SyncCursorDB, SyncDeviceConfigDB, SyncEngineStateDB, SyncEntityMetadataDB,
@@ -1933,6 +1936,82 @@ fn mark_table_incremental_applied_tx(conn: &mut SqliteConnection, table_name: &s
     Ok(())
 }
 
+fn budget_cycle_sync_error(message: impl Into<String>) -> Error {
+    Error::Database(DatabaseError::Internal(message.into()))
+}
+
+fn current_budget_cycle_tx(conn: &mut SqliteConnection) -> Result<BudgetCycleSettings> {
+    let value = app_settings::table
+        .filter(app_settings::setting_key.eq(SETTING_KEY_BUDGET_CYCLE))
+        .select(app_settings::setting_value)
+        .first::<String>(conn)
+        .optional()
+        .map_err(StorageError::from)?;
+    value
+        .map(|value| {
+            serde_json::from_str(&value).map_err(|error| {
+                budget_cycle_sync_error(format!("Invalid local budget cycle: {error}"))
+            })
+        })
+        .transpose()
+        .map(|cycle| cycle.unwrap_or_default())
+}
+
+fn incoming_budget_cycle(
+    op: SyncOperation,
+    payload: &serde_json::Value,
+) -> Result<BudgetCycleSettings> {
+    if op == SyncOperation::Delete {
+        return Ok(BudgetCycleSettings::default());
+    }
+    let value = payload
+        .get("settingValue")
+        .or_else(|| payload.get("setting_value"))
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| budget_cycle_sync_error("Synced budget cycle setting has no value"))?;
+    let cycle: BudgetCycleSettings = serde_json::from_str(value).map_err(|error| {
+        budget_cycle_sync_error(format!("Invalid synced budget cycle: {error}"))
+    })?;
+    if cycle.parsed_anchor_date().is_none() {
+        return Err(budget_cycle_sync_error(
+            "Synced budget cycle anchorDate must be a valid YYYY-MM-DD date",
+        ));
+    }
+    Ok(cycle)
+}
+
+fn prepare_remote_budget_cycle_tx(
+    conn: &mut SqliteConnection,
+    op: SyncOperation,
+    payload: &serde_json::Value,
+) -> Result<()> {
+    let old_cycle = current_budget_cycle_tx(conn)?;
+    let new_cycle = incoming_budget_cycle(op, payload)?;
+    if old_cycle == new_cycle {
+        return Ok(());
+    }
+
+    if old_cycle.cadence != new_cycle.cadence {
+        let target_count = budget_targets::table
+            .filter(budget_targets::period_key.ne("default"))
+            .count()
+            .get_result::<i64>(conn)
+            .map_err(StorageError::from)?;
+        let rollover_count = budget_rollover_settings::table
+            .count()
+            .get_result::<i64>(conn)
+            .map_err(StorageError::from)?;
+        if target_count > 0 || rollover_count > 0 {
+            return Err(budget_cycle_sync_error(
+                "Cannot apply a synced budget cadence change while cycle-specific budget records exist",
+            ));
+        }
+        return Ok(());
+    }
+
+    rebase_budget_cycle_rows(conn, &old_cycle, &new_cycle, true).map(|_| ())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn apply_remote_event_lww_tx(
     conn: &mut SqliteConnection,
@@ -1971,6 +2050,9 @@ fn apply_remote_event_lww_tx(
     let mut record_applied_event = true;
     if should_apply {
         let mut applied_entity_change = true;
+        if entity == SyncEntity::SpendingSetting && entity_id_value == SETTING_KEY_BUDGET_CYCLE {
+            prepare_remote_budget_cycle_tx(conn, op, &payload_json)?;
+        }
         if entity == SyncEntity::CustomTaxonomy {
             apply_custom_taxonomy_event(
                 conn,
@@ -3407,7 +3489,7 @@ mod tests {
     use crate::db::{create_pool, get_connection, init, run_migrations, write_actor::spawn_writer};
     use crate::goals::GoalRepository;
     use crate::schema::{
-        accounts, activities, app_settings, assets, goals, goals_allocation,
+        accounts, activities, app_settings, assets, budget_targets, goals, goals_allocation,
         import_account_templates, import_templates, platforms, spending_preset_rule_deletions,
         sync_applied_events, sync_device_config, sync_entity_metadata, sync_outbox, taxonomies,
         taxonomy_categories,
@@ -7822,6 +7904,65 @@ mod tests {
             .get_result(&mut conn)
             .expect("theme setting count");
         assert_eq!(theme_count, 0);
+    }
+
+    #[tokio::test]
+    async fn replay_budget_cycle_setting_rebases_existing_targets_without_local_outbox() {
+        let (pool, writer) = setup_db();
+        let mut conn = get_connection(&pool).expect("conn");
+        diesel::insert_into(budget_targets::table)
+            .values((
+                budget_targets::id.eq("remote-cycle-target"),
+                budget_targets::period_key.eq("2026-07-25"),
+                budget_targets::target_type.eq("category"),
+                budget_targets::taxonomy_id.eq(Some("spending_categories".to_string())),
+                budget_targets::category_id.eq(Some("cat_groceries".to_string())),
+                budget_targets::amount.eq("100"),
+            ))
+            .execute(&mut conn)
+            .expect("insert target");
+        drop(conn);
+
+        let repo = AppSyncRepository::new(pool.clone(), writer);
+        let applied = repo
+            .apply_remote_event_lww(
+                SyncEntity::SpendingSetting,
+                SETTING_KEY_BUDGET_CYCLE.to_string(),
+                SyncOperation::Update,
+                "evt-remote-budget-cycle".to_string(),
+                "2026-09-01T00:00:00Z".to_string(),
+                1,
+                serde_json::json!({
+                    "settingKey": SETTING_KEY_BUDGET_CYCLE,
+                    "settingValue": "{\"cadence\":\"monthly\",\"anchorDate\":\"2026-08-01\"}"
+                }),
+            )
+            .await
+            .expect("apply remote budget cycle");
+        assert!(applied);
+
+        let mut conn = get_connection(&pool).expect("conn");
+        let target: (String, String) = budget_targets::table
+            .select((budget_targets::id, budget_targets::period_key))
+            .filter(budget_targets::amount.eq("100"))
+            .first(&mut conn)
+            .expect("rebased target");
+        assert_ne!(target.0, "remote-cycle-target");
+        assert_eq!(target.1, "2026-07-01");
+        let cycle = app_settings::table
+            .filter(app_settings::setting_key.eq(SETTING_KEY_BUDGET_CYCLE))
+            .select(app_settings::setting_value)
+            .first::<String>(&mut conn)
+            .expect("budget cycle setting");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&cycle).unwrap(),
+            serde_json::json!({"cadence": "monthly", "anchorDate": "2026-08-01"})
+        );
+        let outbox_count: i64 = sync_outbox::table
+            .count()
+            .get_result(&mut conn)
+            .expect("outbox count");
+        assert_eq!(outbox_count, 0);
     }
 
     #[tokio::test]

@@ -1034,7 +1034,7 @@
       "biweekly": "Every two weeks",
       "monthly": "Every month",
       "current_period": "Current period",
-      "history_note": "Changing the cycle re-buckets actuals across budget history. Default amounts apply to each cycle. Remove any cycle-specific overrides before changing this setting.",
+      "history_note": "Changing the cycle re-buckets actuals and preserves your cycle-specific targets under the new periods. Graphs and summaries update automatically.",
       "save": "Save cycle",
       "saving": "Saving…"
     },

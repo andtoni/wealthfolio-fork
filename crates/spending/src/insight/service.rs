@@ -1760,8 +1760,13 @@ mod tests {
             unimplemented!()
         }
 
-        async fn has_concrete_budget_records(&self) -> Result<bool> {
-            Ok(false)
+        async fn update_budget_cycle(
+            &self,
+            _: crate::settings::BudgetCycleSettings,
+            _: crate::settings::BudgetCycleSettings,
+            _: Vec<(String, String)>,
+        ) -> Result<()> {
+            unimplemented!()
         }
     }
 

@@ -40,6 +40,10 @@ export function useSpendingSettingsMutation() {
       queryClient.invalidateQueries({ queryKey: [QueryKeys.ACTIVITY_DATA] });
       toast.success("Spending settings updated.");
     },
-    onError: () => toast.error("Failed to update spending settings."),
+    onError: (error) => {
+      const message =
+        error instanceof Error ? error.message : typeof error === "string" ? error : undefined;
+      toast.error(message || "Failed to update spending settings.");
+    },
   });
 }

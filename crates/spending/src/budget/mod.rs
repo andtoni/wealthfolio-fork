@@ -1,7 +1,7 @@
 //! Budget — backend-computed recurring-period targets, groups, and rollover state.
 
 pub mod model;
-pub(crate) mod period;
+pub mod period;
 pub mod service;
 pub mod traits;
 

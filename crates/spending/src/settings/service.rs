@@ -80,20 +80,14 @@ impl SpendingSettingsService {
         }
         if let Some(cycle) = patch.budget_cycle {
             validate_budget_cycle(&cycle)?;
-            if cycle != before.budget_cycle && self.repo.has_concrete_budget_records().await? {
-                return Err(SpendingError::InvalidInput {
-                    message:
-                        "Remove cycle-specific budget overrides before changing the budget cycle"
-                            .to_string(),
-                }
-                .into());
+            if cycle != before.budget_cycle {
+                self.repo
+                    .update_budget_cycle(before.budget_cycle.clone(), cycle, values)
+                    .await?;
+            } else if !values.is_empty() {
+                self.repo.set_settings(values).await?;
             }
-            values.push((
-                SETTING_KEY_BUDGET_CYCLE.to_string(),
-                serde_json::to_string(&cycle)?,
-            ));
-        }
-        if !values.is_empty() {
+        } else if !values.is_empty() {
             self.repo.set_settings(values).await?;
         }
         let after = self.read_settings().await?;
@@ -163,8 +157,22 @@ mod tests {
             Ok(())
         }
 
-        async fn has_concrete_budget_records(&self) -> Result<bool> {
-            Ok(self.has_concrete_budget_records)
+        async fn update_budget_cycle(
+            &self,
+            old_cycle: BudgetCycleSettings,
+            new_cycle: BudgetCycleSettings,
+            mut other_settings: Vec<(String, String)>,
+        ) -> Result<()> {
+            if old_cycle.cadence != new_cycle.cadence && self.has_concrete_budget_records {
+                return Err(anyhow::anyhow!(
+                    "Changing budget cadence requires no cycle-specific budget records"
+                ));
+            }
+            other_settings.push((
+                SETTING_KEY_BUDGET_CYCLE.to_string(),
+                serde_json::to_string(&new_cycle)?,
+            ));
+            self.set_settings(other_settings).await
         }
     }
 
@@ -207,7 +215,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_cycle_changes_that_would_strand_concrete_budget_records() {
+    async fn allows_same_cadence_anchor_changes_with_concrete_budget_records() {
+        let service = SpendingSettingsService::new(Arc::new(MockSettingsRepo {
+            values: StdMutex::new(HashMap::new()),
+            has_concrete_budget_records: true,
+        }));
+        let cycle = BudgetCycleSettings {
+            cadence: BudgetCadence::Monthly,
+            anchor_date: "2026-08-01".to_string(),
+        };
+
+        let updated = service
+            .update(SpendingSettingsUpdate {
+                budget_cycle: Some(cycle.clone()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(updated.budget_cycle, cycle);
+    }
+
+    #[tokio::test]
+    async fn rejects_cadence_changes_with_concrete_budget_records() {
         let service = SpendingSettingsService::new(Arc::new(MockSettingsRepo {
             values: StdMutex::new(HashMap::new()),
             has_concrete_budget_records: true,
@@ -226,7 +256,7 @@ mod tests {
 
         assert!(error
             .to_string()
-            .contains("Remove cycle-specific budget overrides"));
+            .contains("Changing budget cadence requires no cycle-specific budget records"));
         assert_eq!(
             service.get().await.unwrap().budget_cycle,
             BudgetCycleSettings::default()

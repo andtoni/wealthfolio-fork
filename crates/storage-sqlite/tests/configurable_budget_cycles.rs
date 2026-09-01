@@ -121,12 +121,20 @@ fn migrations_seed_configurable_cycle_and_restore_native_editing() {
             [],
         )
         .unwrap();
-    assert!(connection
+    let budget_cycle_guard_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name IN ('spending_budget_cycle_guard_insert', 'spending_budget_cycle_guard_update')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(budget_cycle_guard_count, 0);
+    connection
         .execute(
             "INSERT OR REPLACE INTO app_settings(setting_key,setting_value) VALUES('spending.budget_cycle','{\"cadence\":\"weekly\",\"anchorDate\":\"2026-07-25\"}')",
             [],
         )
-        .is_err());
+        .unwrap();
     for (id, period_key) in [("test-month", "2026-07"), ("test-date", "2026-02-30")] {
         assert!(connection
             .execute(
