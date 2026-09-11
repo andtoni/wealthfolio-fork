@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 vi.mock("@/adapters", () => ({
   admitProviderAccount: vi.fn(),
@@ -11,15 +13,75 @@ vi.mock("@/adapters", () => ({
   startProviderConnection: vi.fn(),
 }));
 
-import { completePlaidConnection, completePlaidUpdate } from "@/adapters";
+import {
+  completePlaidConnection,
+  completePlaidUpdate,
+  getAccounts,
+  listProviderConnections,
+  startPlaidUpdate,
+  startProviderConnection,
+} from "@/adapters";
 import {
   loadPlaidLink,
   openPlaid,
   openPlaidUpdate,
+  ProviderConnectionsSection,
   validatedHttpsRedirect,
 } from "./provider-connections-section";
 
 describe("provider connection browser safeguards", () => {
+  it("starts a new Plaid connection when Add accounts is clicked", async () => {
+    vi.mocked(listProviderConnections).mockResolvedValue([
+      { provider: "plaid", status: "completed", message: "Connection completed." },
+    ]);
+    vi.mocked(getAccounts).mockResolvedValue([
+      {
+        id: "plaid-account",
+        name: "Connected checking",
+        provider: "plaid",
+        isArchived: false,
+        accountType: "CASH",
+        currency: "USD",
+      } as never,
+    ]);
+    vi.mocked(startProviderConnection).mockResolvedValue({
+      provider: "plaid",
+      status: "link_ready",
+      message: "Plaid Link is ready.",
+      linkToken: "new-link-token",
+      continuationToken: "new-continuation-token",
+    });
+    vi.mocked(completePlaidConnection).mockResolvedValue({
+      provider: "plaid",
+      status: "pending",
+      message: "Choose accounts to add.",
+    });
+    window.Plaid = {
+      create: vi.fn((options) => ({
+        open: () => options.onSuccess("public-token"),
+        destroy: vi.fn(),
+      })),
+    };
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ProviderConnectionsSection />
+      </QueryClientProvider>,
+    );
+
+    const button = await screen.findByRole("button", { name: "Add accounts" });
+    fireEvent.click(button);
+
+    await waitFor(() => expect(startProviderConnection).toHaveBeenCalledWith("plaid"));
+    expect(startPlaidUpdate).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(completePlaidConnection).toHaveBeenCalledWith(
+        "public-token",
+        "new-continuation-token",
+      ),
+    );
+  });
+
   afterEach(() => {
     document.querySelectorAll("script[src*='cdn.plaid.com']").forEach((script) => script.remove());
     delete window.Plaid;

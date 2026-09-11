@@ -5,7 +5,6 @@ import {
   getAccounts,
   listDiscoveredProviderAccounts,
   listProviderConnections,
-  startPlaidUpdate,
   startProviderConnection,
   type ProviderConnectionStatus,
 } from "@/adapters";
@@ -166,17 +165,16 @@ function ProviderCard({
 
   const startMutation = useMutation({
     mutationFn: async () => {
-      const updatingPlaid = plaidConnectionConfigured && isConnected;
-      const result = updatingPlaid
-        ? await startPlaidUpdate()
-        : await startProviderConnection(status.provider);
+      // Add accounts must start a new Plaid Item so Link opens institution search.
+      // Plaid update mode is Item-bound and therefore cannot connect another bank.
+      const result = await startProviderConnection(status.provider);
       if (status.provider === "snaptrade" && result.status === "link_ready") {
         if (!result.redirectUrl) throw new Error("SnapTrade did not return a redirect.");
         window.location.assign(validatedHttpsRedirect(result.redirectUrl));
         return;
       }
       if (status.provider === "plaid") {
-        await openPlaid(result.linkToken ?? "", result.continuationToken ?? "", updatingPlaid);
+        await openPlaid(result.linkToken ?? "", result.continuationToken ?? "");
       }
     },
     onSuccess: () => {
