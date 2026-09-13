@@ -1,0 +1,1 @@
+DROP INDEX idx_disclosure_receipts_terminal_lifecycle;

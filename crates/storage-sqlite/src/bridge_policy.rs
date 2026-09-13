@@ -257,6 +257,15 @@ struct ActivityIdentity {
     status: String,
 }
 #[derive(QueryableByName)]
+struct ActivitySourceIdentity {
+    #[diesel(sql_type=Text)]
+    account_id: String,
+    #[diesel(sql_type=Text)]
+    status: String,
+    #[diesel(sql_type=Nullable<Text>)]
+    source_record_id: Option<String>,
+}
+#[derive(QueryableByName)]
 struct ActivityIdRow {
     #[diesel(sql_type=Text)]
     id: String,
@@ -860,6 +869,27 @@ fn validate_current_state_operation(op: &DisclosureOperation) -> Result<()> {
         _ => {}
     }
     Ok(())
+}
+
+fn source_resource_parts<'a>(deployment: &str, resource: &'a str) -> Option<(&'a str, &'a str)> {
+    let prefix = format!("{}:", deployment.trim());
+    resource
+        .strip_prefix(&prefix)
+        .and_then(|suffix| suffix.split_once(':'))
+        .and_then(|(incarnation, external_id)| {
+            (!incarnation.trim().is_empty() && !external_id.trim().is_empty())
+                .then_some((incarnation, external_id))
+        })
+}
+
+fn same_source_incarnation(deployment: &str, predecessor: &str, successor: &str) -> bool {
+    match (
+        source_resource_parts(deployment, predecessor),
+        source_resource_parts(deployment, successor),
+    ) {
+        (Some((predecessor, _)), Some((successor, _))) => predecessor == successor,
+        _ => false,
+    }
 }
 
 fn normalize_activity_date(value: &str) -> String {
@@ -1842,7 +1872,15 @@ impl BridgePolicyStore {
                                 if let Some(ref act) = op.activity {
                                     Account { account_id: act.account_id.clone() }
                                 } else {
-                                    return Ok(Err(BridgePolicyError::AccessDenied));
+                                    let accounts = sql_query("SELECT account_id FROM disclosure_receipts WHERE deployment_id=? AND operation='activity_upsert' AND resource_id=? AND lifecycle_successor_id IS NOT NULL AND outcome='accepted' GROUP BY account_id")
+                                        .bind::<Text, _>(&d)
+                                        .bind::<Text, _>(&op.resource_id)
+                                        .load::<Account>(c)?;
+                                    if accounts.len() == 1 {
+                                        accounts.into_iter().next().expect("one account")
+                                    } else {
+                                        return Ok(Err(BridgePolicyError::AccessDenied));
+                                    }
                                 }
                             }
                         }
@@ -1863,6 +1901,191 @@ impl BridgePolicyStore {
                     .count > 0;
                 if !allowed {
                     return Ok(Err(BridgePolicyError::AccessDenied));
+                }
+
+                // A lifecycle receipt is terminal evidence for its exact, authenticated
+                // source identity. Do not let a later ordinary pending upsert recreate
+                // the predecessor after the producer lost the lifecycle response.
+                // Validate the receipt binding and the native posted successor before
+                // recording an accepted no-op; an alias by itself is not authoritative.
+                if op.kind == DisclosureKind::ActivityUpsert
+                    && op.lifecycle_successor_id.is_none()
+                    && op.activity.as_ref().is_some_and(|activity| activity.status == "PENDING")
+                {
+                    let activity = op.activity.as_ref().expect("pending activity checked");
+                    let terminal_receipts = sql_query(
+                        "SELECT person_subject_id subject,idempotency_key,access_generation,operation,resource_id,account_id,lifecycle_successor_id,binding_version,receipt_binding,payload_digest,outcome FROM disclosure_receipts WHERE deployment_id=? AND operation='activity_upsert' AND resource_id=? AND lifecycle_successor_id IS NOT NULL AND outcome='accepted'",
+                    )
+                    .bind::<Text, _>(&d)
+                    .bind::<Text, _>(&op.resource_id)
+                    .load::<ReceiptRow>(c)?;
+                    if !terminal_receipts.is_empty() {
+                        let predecessor_exists = sql_query(
+                            "SELECT count(*) AS count FROM activities WHERE id=? AND account_id=?",
+                        )
+                        .bind::<Text, _>(&op.resource_id)
+                        .bind::<Text, _>(&account.account_id)
+                        .get_result::<Count>(c)?
+                        .count
+                            == 1;
+                        if predecessor_exists {
+                            return Ok(Err(BridgePolicyError::InvalidActivity(
+                                "terminal lifecycle evidence conflicts with existing predecessor; recovery required".into(),
+                            )));
+                        }
+                        if !op.superseded_resource_ids.is_empty() {
+                            return Ok(Err(BridgePolicyError::InvalidActivity(
+                                "terminal lifecycle evidence cannot acknowledge identity supersession".into(),
+                            )));
+                        }
+                        if !activity
+                                .source_record_id
+                                .as_deref()
+                                .is_some_and(|value| !value.trim().is_empty())
+                        {
+                            return Ok(Err(BridgePolicyError::InvalidActivity(
+                                "terminal lifecycle evidence is ambiguous or lacks source identity".into(),
+                            )));
+                        }
+                        let terminal = &terminal_receipts[0];
+                        if terminal_receipts.iter().any(|candidate| {
+                            candidate.account_id != account.account_id
+                                || candidate.lifecycle_successor_id != terminal.lifecycle_successor_id
+                        }) {
+                            return Ok(Err(BridgePolicyError::InvalidActivity(
+                                "terminal lifecycle evidence has conflicting account or successor".into(),
+                            )));
+                        }
+                        for candidate in &terminal_receipts {
+                            let expected_binding = canonical_receipt_binding(
+                                &d,
+                                &candidate.subject,
+                                &candidate.idempotency_key,
+                                candidate.access_generation,
+                                &candidate.operation,
+                                &candidate.resource_id,
+                                &candidate.account_id,
+                                candidate.lifecycle_successor_id.as_deref(),
+                                &candidate.outcome,
+                                None,
+                            );
+                            if candidate.binding_version != RECEIPT_BINDING_VERSION
+                                || candidate.receipt_binding.as_deref().is_none_or(|binding| {
+                                    !is_canonical_receipt_binding(binding, &expected_binding)
+                                })
+                            {
+                                return Ok(Err(BridgePolicyError::InvalidActivity(
+                                    "terminal lifecycle evidence is invalid".into(),
+                                )));
+                            }
+                        }
+                        let expected_binding = canonical_receipt_binding(
+                            &d,
+                            &terminal.subject,
+                            &terminal.idempotency_key,
+                            terminal.access_generation,
+                            &terminal.operation,
+                            &terminal.resource_id,
+                            &terminal.account_id,
+                            terminal.lifecycle_successor_id.as_deref(),
+                            &terminal.outcome,
+                            None,
+                        );
+                        let successor = terminal.lifecycle_successor_id.as_deref().expect("filtered successor");
+                        let successor_identity = sql_query(
+                            "SELECT activities.account_id,activities.status,coalesce(activities.source_record_id,provenance_records.source_record_id) source_record_id FROM activities LEFT JOIN provenance_records ON provenance_records.entity_type='activity' AND provenance_records.entity_id=activities.id AND provenance_records.role='live_canonical' AND provenance_records.source_system='finance' WHERE activities.id=?",
+                        )
+                        .bind::<Text, _>(successor)
+                        .get_result::<ActivitySourceIdentity>(c)
+                        .optional()?;
+                        let source_matches = successor_identity.as_ref().is_some_and(|identity| {
+                            let incoming_source = activity.source_record_id.as_deref();
+                            let pair_suffix_matches = match (
+                                source_resource_parts(&d, &terminal.resource_id),
+                                source_resource_parts(&d, successor),
+                                incoming_source,
+                            ) {
+                                (Some((_, predecessor_id)), Some((_, successor_id)), Some(source)) => {
+                                    source == predecessor_id || source == successor_id
+                                }
+                                _ => false,
+                            };
+                            identity.account_id == account.account_id
+                                && identity.status == "POSTED"
+                                && identity
+                                    .source_record_id
+                                    .as_deref()
+                                    .is_some_and(|value| {
+                                        !value.trim().is_empty()
+                                            && source_resource_parts(&d, successor)
+                                                .is_some_and(|(_, external_id)| value == external_id)
+                                    })
+                                && pair_suffix_matches
+                                && same_source_incarnation(
+                                    &d,
+                                    &terminal.resource_id,
+                                    successor,
+                                )
+                        });
+                        let source_claimed_elsewhere = sql_query(
+                            "SELECT count(*) AS count FROM activities LEFT JOIN provenance_records ON provenance_records.entity_type='activity' AND provenance_records.entity_id=activities.id WHERE activities.account_id=? AND coalesce(activities.source_record_id,provenance_records.source_record_id)=? AND activities.id<>? AND (activities.source_system='FINANCE' OR (provenance_records.role='live_canonical' AND provenance_records.source_system='finance'))",
+                        )
+                        .bind::<Text, _>(&account.account_id)
+                        .bind::<Text, _>(activity.source_record_id.as_deref().unwrap_or(""))
+                        .bind::<Text, _>(successor)
+                        .get_result::<Count>(c)?
+                        .count
+                            != 0;
+                        if terminal.binding_version != RECEIPT_BINDING_VERSION
+                            || terminal.receipt_binding.as_deref().is_none_or(|binding| {
+                                !is_canonical_receipt_binding(binding, &expected_binding)
+                            })
+                            || !source_matches
+                            || source_claimed_elsewhere
+                        {
+                            return Ok(Err(BridgePolicyError::InvalidActivity(
+                                "terminal lifecycle evidence is invalid".into(),
+                            )));
+                        }
+                        let binding = canonical_receipt_binding(
+                            &d,
+                            &op.subject,
+                            &op.idempotency_key,
+                            actual,
+                            op.kind.as_str(),
+                            &op.resource_id,
+                            &account.account_id,
+                            None,
+                            "accepted",
+                            None,
+                        );
+                        sql_query("INSERT INTO disclosure_receipts(deployment_id,person_subject_id,idempotency_key,account_id,access_generation,operation,resource_id,lifecycle_successor_id,binding_version,receipt_binding,payload_digest,outcome) VALUES(?,?,?,?,?,?,?,?,3,?,?,'accepted')")
+                            .bind::<Text, _>(&d)
+                            .bind::<Text, _>(&op.subject)
+                            .bind::<Text, _>(&op.idempotency_key)
+                            .bind::<Text, _>(&account.account_id)
+                            .bind::<BigInt, _>(actual)
+                            .bind::<Text, _>(op.kind.as_str())
+                            .bind::<Text, _>(&op.resource_id)
+                            .bind::<Nullable<Text>, _>(None::<&str>)
+                            .bind::<Text, _>(&binding)
+                            .bind::<Text, _>(&payload_digest)
+                            .execute(c)?;
+                        return Ok(Ok(DisclosureReceipt {
+                            deployment_id: d,
+                            account_id: account.account_id,
+                            subject: op.subject,
+                            idempotency_key: op.idempotency_key,
+                            access_generation: actual,
+                            operation: op.kind.as_str().into(),
+                            resource_id: op.resource_id,
+                            lifecycle_successor_id: None,
+                            outcome: ReceiptOutcome::Accepted,
+                            binding_version: RECEIPT_BINDING_VERSION,
+                            receipt_binding: binding,
+                            semantic_hash: None,
+                        }));
+                    }
                 }
 
                 // Concurrent projection workers can deliver an older same-generation
@@ -1930,6 +2153,83 @@ impl BridgePolicyStore {
                     upsert_activity_row(c, &op.resource_id, &op.subject, activity)?;
                     for loser in &op.superseded_resource_ids {
                         supersede_activity_identity(c, loser, &op.resource_id, &account.account_id, &d, &op.subject)?;
+                    }
+                }
+
+                // A fanout worker may receive the lifecycle after another subject
+                // already completed it. A valid terminal receipt plus the subject's
+                // existing disclosure projection is an acknowledgement, not a new
+                // migration; never recreate the absent predecessor.
+                if op.kind == DisclosureKind::ActivityUpsert
+                    && op.superseded_resource_ids.is_empty()
+                    && op.lifecycle_successor_id.is_some()
+                    && op
+                        .activity
+                        .as_ref()
+                        .is_none_or(|activity| activity.status == "POSTED")
+                    && sql_query("SELECT count(*) AS count FROM activities WHERE id=?")
+                        .bind::<Text, _>(&op.resource_id)
+                        .get_result::<Count>(c)?
+                        .count
+                        == 0
+                {
+                    let successor = op.lifecycle_successor_id.as_deref().expect("checked successor");
+                    let terminal_receipts = sql_query("SELECT person_subject_id subject,idempotency_key,access_generation,operation,resource_id,account_id,lifecycle_successor_id,binding_version,receipt_binding,payload_digest,outcome FROM disclosure_receipts WHERE deployment_id=? AND operation='activity_upsert' AND resource_id=? AND lifecycle_successor_id IS NOT NULL AND outcome='accepted'")
+                        .bind::<Text, _>(&d)
+                        .bind::<Text, _>(&op.resource_id)
+                        .load::<ReceiptRow>(c)?;
+                    let compatible = !terminal_receipts.is_empty()
+                        && (op.activity.is_none()
+                            || terminal_receipts.iter().any(|candidate| {
+                                candidate.payload_digest.as_deref() == Some(payload_digest.as_str())
+                            }))
+                        && terminal_receipts.iter().all(|candidate| {
+                            candidate.account_id == account.account_id
+                                && candidate.lifecycle_successor_id.as_deref() == Some(successor)
+                                && candidate.binding_version == RECEIPT_BINDING_VERSION
+                                && candidate.receipt_binding.as_deref().is_some_and(|binding| {
+                                    let expected = canonical_receipt_binding(&d, &candidate.subject, &candidate.idempotency_key, candidate.access_generation, &candidate.operation, &candidate.resource_id, &candidate.account_id, candidate.lifecycle_successor_id.as_deref(), &candidate.outcome, None);
+                                    is_canonical_receipt_binding(binding, &expected)
+                                })
+                        });
+                    let projected_predecessor = sql_query("SELECT count(*) AS count FROM activity_disclosure_projections WHERE deployment_id=? AND person_subject_id=? AND activity_id=? AND account_id=? AND access_generation=?")
+                        .bind::<Text, _>(&d).bind::<Text, _>(&op.subject).bind::<Text, _>(&op.resource_id)
+                        .bind::<Text, _>(&account.account_id).bind::<BigInt, _>(actual)
+                        .get_result::<Count>(c)?.count == 1;
+                    let successor_identity = sql_query("SELECT activities.account_id,activities.status,coalesce(activities.source_record_id,provenance_records.source_record_id) source_record_id FROM activities LEFT JOIN provenance_records ON provenance_records.entity_type='activity' AND provenance_records.entity_id=activities.id AND provenance_records.role='live_canonical' AND provenance_records.source_system='finance' WHERE activities.id=?")
+                        .bind::<Text, _>(successor)
+                        .get_result::<ActivitySourceIdentity>(c)
+                        .optional()?;
+                    let native_identity = successor_identity.as_ref().is_some_and(|identity| {
+                        let canonical_source = source_resource_parts(&d, successor)
+                            .map(|(_, external_id)| external_id);
+                        identity.account_id == account.account_id
+                            && identity.status == "POSTED"
+                            && same_source_incarnation(&d, &op.resource_id, successor)
+                            && canonical_source.is_some_and(|source| {
+                                identity.source_record_id.as_deref() == Some(source)
+                                    && op.activity.as_ref().is_none_or(|activity| {
+                                        activity.source_record_id.as_deref() == Some(source)
+                                    })
+                            })
+                    });
+                    if compatible && native_identity {
+                        if projected_predecessor {
+                            sql_query("UPDATE activity_disclosure_projections SET activity_id=? WHERE deployment_id=? AND person_subject_id=? AND activity_id=? AND account_id=? AND access_generation=?")
+                                .bind::<Text, _>(successor).bind::<Text, _>(&d).bind::<Text, _>(&op.subject)
+                                .bind::<Text, _>(&op.resource_id).bind::<Text, _>(&account.account_id).bind::<BigInt, _>(actual)
+                                .execute(c)?;
+                        }
+                        sql_query("INSERT OR IGNORE INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?)")
+                            .bind::<Text, _>(&d).bind::<Text, _>(&op.subject).bind::<Text, _>(successor)
+                            .bind::<Text, _>(&account.account_id).bind::<BigInt, _>(actual).execute(c)?;
+                        let binding = canonical_receipt_binding(&d, &op.subject, &op.idempotency_key, actual, op.kind.as_str(), &op.resource_id, &account.account_id, Some(successor), "accepted", None);
+                        sql_query("INSERT INTO disclosure_receipts(deployment_id,person_subject_id,idempotency_key,account_id,access_generation,operation,resource_id,lifecycle_successor_id,binding_version,receipt_binding,payload_digest,outcome) VALUES(?,?,?,?,?,?,?,?,3,?,?,'accepted')")
+                            .bind::<Text, _>(&d).bind::<Text, _>(&op.subject).bind::<Text, _>(&op.idempotency_key)
+                            .bind::<Text, _>(&account.account_id).bind::<BigInt, _>(actual).bind::<Text, _>(op.kind.as_str())
+                            .bind::<Text, _>(&op.resource_id).bind::<Nullable<Text>, _>(Some(successor))
+                            .bind::<Text, _>(&binding).bind::<Text, _>(&payload_digest).execute(c)?;
+                        return Ok(Ok(DisclosureReceipt { deployment_id: d, account_id: account.account_id, subject: op.subject, idempotency_key: op.idempotency_key, access_generation: actual, operation: op.kind.as_str().into(), resource_id: op.resource_id, lifecycle_successor_id: Some(successor.into()), outcome: ReceiptOutcome::Accepted, binding_version: RECEIPT_BINDING_VERSION, receipt_binding: binding, semantic_hash: None }));
                     }
                 }
 
@@ -2322,6 +2622,35 @@ fn sqlerr(e: diesel::result::Error) -> BridgePolicyError {
 #[cfg(test)]
 mod contract_fixture_tests {
     use super::*;
+
+    #[test]
+    fn source_incarnation_parser_rejects_malformed_boundaries() {
+        assert!(same_source_incarnation(
+            "deployment-1",
+            "deployment-1:inc-1:pending:with:colon",
+            "deployment-1:inc-1:posted:with:colon",
+        ));
+        assert!(!same_source_incarnation(
+            "deployment-1",
+            "deployment-1:inc-1",
+            "deployment-1:inc-1:posted",
+        ));
+        assert!(!same_source_incarnation(
+            "deployment-1",
+            "deployment-1::pending",
+            "deployment-1::posted",
+        ));
+        assert!(!same_source_incarnation(
+            "deployment-1",
+            "deployment-1:inc-1:pending",
+            "deployment-1:inc-2:posted",
+        ));
+        assert!(!same_source_incarnation(
+            "deployment-1",
+            "deployment-1:inc-1:pending",
+            "deployment-2:inc-1:posted",
+        ));
+    }
 
     #[test]
     fn finance_current_state_and_v3_receipt_fixture_match_receiver_authority() {

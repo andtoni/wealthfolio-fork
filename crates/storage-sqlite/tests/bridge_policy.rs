@@ -1119,6 +1119,466 @@ async fn commit_lifecycle_path_migrates_only_projected_candidate() {
 }
 
 #[tokio::test]
+async fn ordinary_pending_replay_after_terminal_lifecycle_is_accepted_noop() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice", "bob"]);
+    store
+        .seed_migration_fixture(
+            "deployment-1:incarnation-1:pending-terminal",
+            "deployment-1:incarnation-1:posted-terminal",
+        )
+        .await
+        .unwrap();
+    store.grant("alice", "a1").await.unwrap();
+    let generation = store.grant("bob", "a1").await.unwrap();
+    let c = Connection::open(&path).unwrap();
+    for subject in ["alice", "bob"] {
+        c.execute(
+            "INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?)",
+            params![D1, subject, "deployment-1:incarnation-1:pending-terminal", "a1", generation],
+        )
+        .unwrap();
+    }
+
+    c.execute(
+        "UPDATE provenance_records SET source_record_id='posted-terminal' WHERE entity_id='deployment-1:incarnation-1:posted-terminal'",
+        [],
+    )
+    .unwrap();
+    // Model producer receipt loss: the lifecycle commit succeeds, but its
+    // response is ignored and a new ordinary pending key is retried.
+    store
+        .commit(
+            DisclosureOperation::new(
+                "terminal-lifecycle",
+                "alice",
+                generation,
+                DisclosureKind::ActivityUpsert,
+                "deployment-1:incarnation-1:pending-terminal",
+            )
+            .with_lifecycle("deployment-1:incarnation-1:posted-terminal")
+            .with_activity(ActivityPayload {
+                account_id: "a1".into(),
+                activity_type: "DEPOSIT".into(),
+                status: "POSTED".into(),
+                activity_date: "2026-01-01".into(),
+                amount: "1".into(),
+                currency: "USD".into(),
+                source_record_id: Some("posted-terminal".into()),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap();
+    let pending_payload = ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "DEPOSIT".into(),
+        status: "PENDING".into(),
+        activity_date: "2026-01-01".into(),
+        amount: "1".into(),
+        currency: "USD".into(),
+        source_record_id: Some("pending-terminal".into()),
+        ..Default::default()
+    };
+    let retry = DisclosureOperation::new(
+        "ordinary-pending-retry",
+        "alice",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "deployment-1:incarnation-1:pending-terminal",
+    )
+    .with_activity(pending_payload);
+    let no_op_receipt = store.commit(retry.clone()).await.unwrap();
+    assert_eq!(no_op_receipt.idempotency_key, "ordinary-pending-retry");
+    assert_eq!(no_op_receipt.lifecycle_successor_id, None);
+    assert!(!no_op_receipt.receipt_binding.is_empty());
+    assert_eq!(store.commit(retry).await.unwrap(), no_op_receipt);
+
+    let state: (i64, i64, i64) = c
+        .query_row(
+            "SELECT (SELECT count(*) FROM activities WHERE id='deployment-1:incarnation-1:pending-terminal'), (SELECT count(*) FROM activities WHERE id='deployment-1:incarnation-1:posted-terminal' AND status='POSTED'), (SELECT count(*) FROM disclosure_receipts)",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    let bob_retry = DisclosureOperation::new(
+        "bob-ordinary-pending-retry",
+        "bob",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "deployment-1:incarnation-1:pending-terminal",
+    )
+    .with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "DEPOSIT".into(),
+        status: "PENDING".into(),
+        activity_date: "2026-01-01".into(),
+        amount: "1".into(),
+        currency: "USD".into(),
+        source_record_id: Some("pending-terminal".into()),
+        ..Default::default()
+    });
+    store.commit(bob_retry).await.unwrap();
+    let bob_lifecycle = DisclosureOperation::new(
+        "bob-lifecycle-retry",
+        "bob",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "deployment-1:incarnation-1:pending-terminal",
+    )
+    .with_lifecycle("deployment-1:incarnation-1:posted-terminal")
+    .with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "DEPOSIT".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-01-01".into(),
+        amount: "1".into(),
+        currency: "USD".into(),
+        source_record_id: Some("posted-terminal".into()),
+        ..Default::default()
+    });
+    for field in ["amount", "currency", "activity_date", "activity_type"] {
+        let before = canonical_snapshot(&c);
+        let mut changed = bob_lifecycle.clone();
+        changed.idempotency_key = format!("bob-changed-{field}");
+        let activity = changed.activity.as_mut().expect("payload present");
+        match field {
+            "amount" => activity.amount = "2".into(),
+            "currency" => activity.currency = "ZAR".into(),
+            "activity_date" => activity.activity_date = "2026-01-02".into(),
+            "activity_type" => activity.activity_type = "WITHDRAWAL".into(),
+            _ => unreachable!(),
+        }
+        assert!(store.commit(changed).await.is_err(), "changed {field}");
+        assert_eq!(canonical_snapshot(&c), before, "changed {field}");
+        assert_eq!(
+            c.query_row(
+                "SELECT count(*) FROM disclosure_receipts WHERE idempotency_key=?",
+                [format!("bob-changed-{field}")],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+    }
+    let bob_receipt = store.commit(bob_lifecycle.clone()).await.unwrap();
+    assert_eq!(
+        bob_receipt.lifecycle_successor_id.as_deref(),
+        Some("deployment-1:incarnation-1:posted-terminal")
+    );
+    assert_eq!(store.commit(bob_lifecycle).await.unwrap(), bob_receipt);
+    let bob_payloadless = DisclosureOperation::new(
+        "bob-payloadless-lifecycle",
+        "bob",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "deployment-1:incarnation-1:pending-terminal",
+    )
+    .with_lifecycle("deployment-1:incarnation-1:posted-terminal");
+    let payloadless_receipt = store.commit(bob_payloadless.clone()).await.unwrap();
+    assert_eq!(
+        payloadless_receipt.lifecycle_successor_id.as_deref(),
+        Some("deployment-1:incarnation-1:posted-terminal")
+    );
+    assert_eq!(
+        store.commit(bob_payloadless).await.unwrap(),
+        payloadless_receipt
+    );
+
+    assert_eq!(state, (0, 1, 2));
+    let receipt_count: i64 = c
+        .query_row("SELECT count(*) FROM disclosure_receipts", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(receipt_count, 5);
+    let preserved: (Option<String>, i64, i64, i64) = c
+        .query_row(
+            "SELECT notes,is_user_modified,(SELECT count(*) FROM activity_taxonomy_assignments WHERE activity_id='deployment-1:incarnation-1:posted-terminal'),(SELECT count(*) FROM activity_attribution_overlays WHERE deployment_id=? AND activity_id='deployment-1:incarnation-1:posted-terminal') FROM activities WHERE id='deployment-1:incarnation-1:posted-terminal'",
+            [D1],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+    assert_eq!(preserved, (Some("pending note".into()), 1, 1, 1));
+}
+
+#[tokio::test]
+async fn ordinary_pending_replay_with_existing_terminal_predecessor_fails_closed() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    store
+        .seed_migration_fixture(
+            "deployment-1:incarnation-1:pending-corrupt",
+            "deployment-1:incarnation-1:posted-corrupt",
+        )
+        .await
+        .unwrap();
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let c = Connection::open(&path).unwrap();
+    c.execute(
+        "INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?)",
+        params![D1, "alice", "deployment-1:incarnation-1:pending-corrupt", "a1", generation],
+    )
+    .unwrap();
+    c.execute(
+        "UPDATE provenance_records SET source_record_id='posted-corrupt' WHERE entity_id='deployment-1:incarnation-1:posted-corrupt'",
+        [],
+    )
+    .unwrap();
+    store
+        .commit(
+            DisclosureOperation::new(
+                "corrupt-lifecycle",
+                "alice",
+                generation,
+                DisclosureKind::ActivityUpsert,
+                "deployment-1:incarnation-1:pending-corrupt",
+            )
+            .with_lifecycle("deployment-1:incarnation-1:posted-corrupt"),
+        )
+        .await
+        .unwrap();
+    // Reintroduce the known duplicate as pre-existing corruption. The guard
+    // must neither delete it nor claim that the no-op repaired it.
+    c.execute(
+        "INSERT INTO activities(id,account_id,activity_type,status,activity_date,amount,currency,notes,is_user_modified,needs_review,created_at,updated_at) VALUES('deployment-1:incarnation-1:pending-corrupt','a1','DEPOSIT','PENDING','2026-01-01','1','USD','recovery-required',1,1,'now','now')",
+        [],
+    )
+    .unwrap();
+    c.execute(
+        "INSERT INTO activity_taxonomy_assignments(id,activity_id,taxonomy_id,category_id) VALUES('corrupt-assignment','deployment-1:incarnation-1:pending-corrupt','bridge-taxonomy','bridge-category')",
+        [],
+    )
+    .unwrap();
+    let pending_payload = ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "DEPOSIT".into(),
+        status: "PENDING".into(),
+        activity_date: "2026-01-01".into(),
+        amount: "1".into(),
+        currency: "USD".into(),
+        source_record_id: Some("deployment-1:incarnation-1:posted-corrupt".into()),
+        ..Default::default()
+    };
+    assert!(matches!(
+        store
+            .commit(
+                DisclosureOperation::new(
+                    "ordinary-corrupt-retry",
+                    "alice",
+                    generation,
+                    DisclosureKind::ActivityUpsert,
+                    "deployment-1:incarnation-1:pending-corrupt",
+                )
+                .with_activity(pending_payload),
+            )
+            .await,
+        Err(BridgePolicyError::InvalidActivity(message)) if message.contains("recovery required")
+    ));
+    let state: (i64, i64, String, i64, i64, i64) = c
+        .query_row(
+            "SELECT (SELECT count(*) FROM activities WHERE id='deployment-1:incarnation-1:pending-corrupt'), (SELECT count(*) FROM activities WHERE id='deployment-1:incarnation-1:posted-corrupt' AND status='POSTED'), (SELECT notes FROM activities WHERE id='deployment-1:incarnation-1:pending-corrupt'), (SELECT is_user_modified FROM activities WHERE id='deployment-1:incarnation-1:pending-corrupt'), (SELECT count(*) FROM activity_taxonomy_assignments WHERE activity_id='deployment-1:incarnation-1:pending-corrupt'), (SELECT count(*) FROM disclosure_receipts)",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+        )
+        .unwrap();
+    assert_eq!(state, (1, 1, "recovery-required".into(), 1, 1, 1));
+}
+
+#[tokio::test]
+async fn terminal_guard_negative_matrix_fails_closed_without_mutation() {
+    let cases = [
+        ("wrong-account", "a2", "pending-terminal", false, "posted"),
+        (
+            "unrelated-source",
+            "a1",
+            "unrelated-source",
+            false,
+            "posted",
+        ),
+        ("claimed-source", "a1", "pending-terminal", true, "posted"),
+        (
+            "superseded-resources",
+            "a1",
+            "pending-terminal",
+            false,
+            "superseded",
+        ),
+        (
+            "missing-successor",
+            "a1",
+            "pending-terminal",
+            false,
+            "missing",
+        ),
+        ("void-successor", "a1", "pending-terminal", false, "void"),
+    ];
+    for (name, account, source_record_id, claimed_elsewhere, disposition) in cases {
+        let (_dir, path, store) = store(D1).await;
+        seed(&path, &[D1], &["alice"]);
+        store
+            .seed_migration_fixture(
+                "deployment-1:incarnation-1:pending-terminal",
+                "deployment-1:incarnation-1:posted-terminal",
+            )
+            .await
+            .unwrap();
+        store.grant("alice", "a1").await.unwrap();
+        store.grant("alice", "a2").await.unwrap();
+        let c = Connection::open(&path).unwrap();
+        c.execute(
+            "UPDATE provenance_records SET source_record_id='posted-terminal' WHERE entity_id='deployment-1:incarnation-1:posted-terminal'",
+            [],
+        )
+        .unwrap();
+        let generation = store.grant("alice", "a1").await.unwrap();
+        c.execute(
+            "INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?)",
+            params![D1, "alice", "deployment-1:incarnation-1:pending-terminal", "a1", generation],
+        )
+        .unwrap();
+        store
+            .commit(
+                DisclosureOperation::new(
+                    format!("{name}-lifecycle"),
+                    "alice",
+                    generation,
+                    DisclosureKind::ActivityUpsert,
+                    "deployment-1:incarnation-1:pending-terminal",
+                )
+                .with_lifecycle("deployment-1:incarnation-1:posted-terminal"),
+            )
+            .await
+            .unwrap();
+        if claimed_elsewhere {
+            c.execute(
+                "INSERT INTO activities(id,account_id,activity_type,status,activity_date,amount,currency,source_system,source_record_id,is_user_modified,needs_review,created_at,updated_at) VALUES('third-live','a1','DEPOSIT','POSTED','2026-01-01','1','USD','FINANCE','pending-terminal',0,0,'now','now')",
+                [],
+            )
+            .unwrap();
+        }
+        match disposition {
+            "missing" => {
+                c.execute(
+                    "DELETE FROM activities WHERE id='deployment-1:incarnation-1:posted-terminal'",
+                    [],
+                )
+                .unwrap();
+            }
+            "void" => {
+                c.execute("UPDATE activities SET status='VOID' WHERE id='deployment-1:incarnation-1:posted-terminal'", [])
+                    .unwrap();
+            }
+            _ => {}
+        }
+        let before = canonical_snapshot(&c);
+        let mut operation = DisclosureOperation::new(
+            format!("{name}-retry"),
+            "alice",
+            generation,
+            DisclosureKind::ActivityUpsert,
+            "deployment-1:incarnation-1:pending-terminal",
+        )
+        .with_activity(ActivityPayload {
+            account_id: account.into(),
+            activity_type: "DEPOSIT".into(),
+            status: "PENDING".into(),
+            activity_date: "2026-01-01".into(),
+            amount: "1".into(),
+            currency: "USD".into(),
+            source_record_id: Some(source_record_id.into()),
+            ..Default::default()
+        });
+        if disposition == "superseded" {
+            operation = operation.with_superseded_resources(["loser-resource".into()]);
+        }
+        assert!(store.commit(operation).await.is_err(), "case {name}");
+        assert_eq!(canonical_snapshot(&c), before, "case {name}");
+        assert_eq!(c.query_row("SELECT count(*) FROM activities WHERE id='deployment-1:incarnation-1:pending-terminal'", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(
+            c.query_row(
+                "SELECT count(*) FROM disclosure_receipts WHERE idempotency_key=?",
+                [format!("{name}-retry")],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+    }
+}
+
+#[tokio::test]
+async fn bob_lifecycle_acknowledgement_rejects_unrelated_or_missing_source_identity() {
+    for (name, source_record_id) in [("unrelated", Some("other-source")), ("missing", None)] {
+        let (_dir, path, store) = store(D1).await;
+        seed(&path, &[D1], &["alice", "bob"]);
+        store
+            .seed_migration_fixture(
+                "deployment-1:incarnation-1:pending-bob",
+                "deployment-1:incarnation-1:posted-bob",
+            )
+            .await
+            .unwrap();
+        store.grant("alice", "a1").await.unwrap();
+        let generation = store.grant("bob", "a1").await.unwrap();
+        let c = Connection::open(&path).unwrap();
+        c.execute(
+            "UPDATE provenance_records SET source_record_id='posted-bob' WHERE entity_id='deployment-1:incarnation-1:posted-bob'",
+            [],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?)",
+            params![D1, "alice", "deployment-1:incarnation-1:pending-bob", "a1", generation],
+        )
+        .unwrap();
+        store
+            .commit(
+                DisclosureOperation::new(
+                    format!("{name}-alice-lifecycle"),
+                    "alice",
+                    generation,
+                    DisclosureKind::ActivityUpsert,
+                    "deployment-1:incarnation-1:pending-bob",
+                )
+                .with_lifecycle("deployment-1:incarnation-1:posted-bob"),
+            )
+            .await
+            .unwrap();
+        let before = canonical_snapshot(&c);
+        let operation = DisclosureOperation::new(
+            format!("{name}-bob-lifecycle"),
+            "bob",
+            generation,
+            DisclosureKind::ActivityUpsert,
+            "deployment-1:incarnation-1:pending-bob",
+        )
+        .with_lifecycle("deployment-1:incarnation-1:posted-bob")
+        .with_activity(ActivityPayload {
+            account_id: "a1".into(),
+            activity_type: "DEPOSIT".into(),
+            status: "POSTED".into(),
+            activity_date: "2026-01-01".into(),
+            amount: "1".into(),
+            currency: "USD".into(),
+            source_record_id: source_record_id.map(str::to_owned),
+            ..Default::default()
+        });
+        assert!(store.commit(operation).await.is_err(), "case {name}");
+        assert_eq!(canonical_snapshot(&c), before, "case {name}");
+        assert_eq!(
+            c.query_row(
+                "SELECT count(*) FROM disclosure_receipts WHERE idempotency_key=?",
+                [format!("{name}-bob-lifecycle")],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+    }
+}
+
+#[tokio::test]
 async fn commit_lifecycle_rebinds_an_older_projection_generation() {
     let (_dir, path, store) = store(D1).await;
     seed(&path, &[D1], &["alice"]);
