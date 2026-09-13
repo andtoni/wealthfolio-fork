@@ -315,7 +315,7 @@
     "same_asset": "Gleicher Vermögenswert",
     "cash_only": "Nur Bargeld",
     "match_mode": "Abgleichmodus",
-    "exact_amount": "Exakter Betrag/Menge",
+    "exact_amount": "Exakter Betrag/Menge, wenn vergleichbar",
     "any_eligible": "Jede berechtigte Übertragung",
     "eligible_count_one": "{{count}} berechtigte Übertragung",
     "eligible_count_other": "{{count}} berechtigte Übertragungen",

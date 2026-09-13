@@ -61,7 +61,7 @@ interface TransferMatchDialogProps {
   onComplete?: () => void | Promise<unknown>;
 }
 
-interface NormalizedTransferActivity {
+export interface NormalizedTransferActivity {
   id: string;
   accountId: string;
   accountName: string;
@@ -215,6 +215,26 @@ function canLinkCandidate(
     );
   }
   return true;
+}
+
+export function isStrictTransferMatch(
+  source: NormalizedTransferActivity,
+  candidate: NormalizedTransferActivity,
+): boolean {
+  // Cash legs in different currencies are intentionally not amount-matched:
+  // each leg retains its own stored amount, and the user confirms the link.
+  const sourceAmount = parseNumber(source.amount);
+  const candidateAmount = parseNumber(candidate.amount);
+  return (
+    sameExactShape(source, candidate) ||
+    (!isSecurityTransfer(source) &&
+      !isSecurityTransfer(candidate) &&
+      source.currency.trim().toUpperCase() !== candidate.currency.trim().toUpperCase() &&
+      sourceAmount != null &&
+      candidateAmount != null &&
+      sourceAmount !== 0 &&
+      candidateAmount !== 0)
+  );
 }
 
 function dateDiffDays(a: Date | string, b: Date | string): number | undefined {
@@ -595,7 +615,7 @@ export function TransferMatchDialog({
         if (assetFilter === SAME_ASSET && assetKey(candidate) !== assetKey(source)) return false;
         if (assetFilter === CASH_ASSET && assetKey(candidate)) return false;
         if (!canLinkCandidate(source, candidate)) return false;
-        if (matchMode === STRICT && !sameExactShape(source, candidate)) return false;
+        if (matchMode === STRICT && !isStrictTransferMatch(source, candidate)) return false;
         return activityMatchesText(candidate, searchText);
       })
       .sort((left, right) => activitySortKey(right).localeCompare(activitySortKey(left)))

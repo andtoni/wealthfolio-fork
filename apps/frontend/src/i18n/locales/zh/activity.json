@@ -420,7 +420,7 @@
     "same_asset": "相同资产",
     "cash_only": "仅现金",
     "match_mode": "匹配模式",
-    "exact_amount": "精确金额/数量",
+    "exact_amount": "可比较时精确金额/数量",
     "any_eligible": "任何符合条件的转账",
     "eligible_count_one": "{{count}} 笔符合条件的转账",
     "eligible_count_other": "{{count}} 笔符合条件的转账",

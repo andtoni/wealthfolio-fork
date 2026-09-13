@@ -442,7 +442,7 @@
     "same_asset": "Same asset",
     "cash_only": "Cash only",
     "match_mode": "Match mode",
-    "exact_amount": "Exact amount/quantity",
+    "exact_amount": "Exact amount/quantity when comparable",
     "any_eligible": "Any eligible transfer",
     "eligible_count_one": "{{count}} eligible transfer",
     "eligible_count_other": "{{count}} eligible transfers",

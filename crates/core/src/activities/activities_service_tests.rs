@@ -8877,12 +8877,38 @@ mod tests {
             "USD",
         ));
         activity_repository.add_activity(create_cash_transfer_activity(
+            "exact-same-day",
+            "acc-b",
+            "TRANSFER_IN",
+            "2024-01-15T00:00:00Z",
+            dec!(100),
+            "USD",
+        ));
+        activity_repository.add_activity(create_cash_transfer_activity(
             "wrong-amount",
             "acc-b",
             "TRANSFER_IN",
             "2024-01-17T00:00:00Z",
             dec!(101),
             "USD",
+        ));
+        let mut missing_cross_currency = create_cash_transfer_activity(
+            "missing-cross-currency",
+            "acc-b",
+            "TRANSFER_IN",
+            "2024-01-17T00:00:00Z",
+            dec!(1),
+            "ZAR",
+        );
+        missing_cross_currency.amount = None;
+        activity_repository.add_activity(missing_cross_currency);
+        activity_repository.add_activity(create_cash_transfer_activity(
+            "zero-cross-currency",
+            "acc-b",
+            "TRANSFER_IN",
+            "2024-01-17T00:00:00Z",
+            dec!(0),
+            "ZAR",
         ));
         activity_repository.add_activity(create_cash_transfer_activity(
             "same-account",
@@ -8899,6 +8925,14 @@ mod tests {
             "2024-01-17T00:00:00Z",
             dec!(135),
             "CAD",
+        ));
+        activity_repository.add_activity(create_cash_transfer_activity(
+            "plaid-zar-match",
+            "acc-b",
+            "TRANSFER_IN",
+            "2024-01-17T00:00:00Z",
+            dec!(96000.00),
+            "ZAR",
         ));
         let mut linked = create_cash_transfer_activity(
             "already-linked",
@@ -8942,8 +8976,15 @@ mod tests {
                 .iter()
                 .map(|candidate| candidate.activity.id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["cash-match", "same-account-fx"]
+            vec![
+                "exact-same-day",
+                "cash-match",
+                "same-account-fx",
+                "plaid-zar-match"
+            ]
         );
+        assert_eq!(candidates[0].activity.id, "exact-same-day");
+        assert_eq!(candidates[0].confidence, "high");
         let cash_match = candidates
             .iter()
             .find(|candidate| candidate.activity.id == "cash-match")
@@ -8963,9 +9004,122 @@ mod tests {
             .reasons
             .iter()
             .any(|reason| reason == "Cash FX conversion"));
-        assert!(!candidates
+        let cross_currency_match = candidates
             .iter()
-            .any(|candidate| candidate.activity.id == "same-account"));
+            .find(|candidate| candidate.activity.id == "plaid-zar-match")
+            .expect("cross-currency cash candidate");
+        assert_eq!(cross_currency_match.match_kind, "cash");
+        assert_eq!(cross_currency_match.confidence, "low");
+        assert!(cross_currency_match
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("amounts are not directly comparable")));
+        assert!(!candidates.iter().any(|candidate| {
+            matches!(
+                candidate.activity.id.as_str(),
+                "same-account" | "missing-cross-currency" | "zero-cross-currency"
+            )
+        }));
+    }
+
+    #[test]
+    fn whitespace_equivalent_currencies_are_not_cross_currency_matches() {
+        let account_service = Arc::new(MockAccountService::new());
+        let asset_service = Arc::new(MockAssetService::new());
+        let fx_service = Arc::new(MockFxService::new());
+        let activity_repository = Arc::new(MockActivityRepository::new());
+        activity_repository.add_activity(create_cash_transfer_activity(
+            "source-out",
+            "acc-a",
+            "TRANSFER_OUT",
+            "2024-01-15T00:00:00Z",
+            dec!(100),
+            "USD",
+        ));
+        activity_repository.add_activity(create_cash_transfer_activity(
+            "same-currency-unequal",
+            "acc-b",
+            "TRANSFER_IN",
+            "2024-01-15T00:00:00Z",
+            dec!(90),
+            " USD ",
+        ));
+        activity_repository.add_activity(create_cash_transfer_activity(
+            "same-currency-equal",
+            "acc-b",
+            "TRANSFER_IN",
+            "2024-01-15T00:00:00Z",
+            dec!(100),
+            " USD ",
+        ));
+        let activity_service = ActivityService::new(
+            activity_repository,
+            account_service,
+            asset_service,
+            fx_service,
+            Arc::new(MockQuoteService),
+        );
+        let candidates = activity_service
+            .find_transfer_match_candidates(TransferMatchCandidateRequest {
+                activity_id: "source-out".to_string(),
+                window_days: Some(7),
+                limit: Some(25),
+            })
+            .expect("candidate search should succeed");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].activity.id, "same-currency-equal");
+        assert_eq!(candidates[0].confidence, "high");
+    }
+
+    #[test]
+    fn exact_same_currency_match_outranks_same_day_fx_candidates_at_limit() {
+        let account_service = Arc::new(MockAccountService::new());
+        let asset_service = Arc::new(MockAssetService::new());
+        let fx_service = Arc::new(MockFxService::new());
+        let activity_repository = Arc::new(MockActivityRepository::new());
+        activity_repository.add_activity(create_cash_transfer_activity(
+            "source-out",
+            "acc-a",
+            "TRANSFER_OUT",
+            "2024-01-15T00:00:00Z",
+            dec!(100),
+            "USD",
+        ));
+        activity_repository.add_activity(create_cash_transfer_activity(
+            "exact-four-days",
+            "acc-b",
+            "TRANSFER_IN",
+            "2024-01-19T00:00:00Z",
+            dec!(100),
+            "USD",
+        ));
+        for index in 0..30 {
+            activity_repository.add_activity(create_cash_transfer_activity(
+                &format!("fx-{index}"),
+                "acc-b",
+                "TRANSFER_IN",
+                "2024-01-15T00:00:00Z",
+                dec!(1),
+                "EUR",
+            ));
+        }
+        let activity_service = ActivityService::new(
+            activity_repository,
+            account_service,
+            asset_service,
+            fx_service,
+            Arc::new(MockQuoteService),
+        );
+        let candidates = activity_service
+            .find_transfer_match_candidates(TransferMatchCandidateRequest {
+                activity_id: "source-out".to_string(),
+                window_days: Some(7),
+                limit: Some(25),
+            })
+            .expect("candidate search should succeed");
+        assert_eq!(candidates.len(), 25);
+        assert_eq!(candidates[0].activity.id, "exact-four-days");
+        assert_eq!(candidates[0].confidence, "low");
     }
 
     #[test]

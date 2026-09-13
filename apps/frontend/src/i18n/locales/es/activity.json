@@ -420,7 +420,7 @@
     "same_asset": "Mismo activo",
     "cash_only": "Solo efectivo",
     "match_mode": "Modo de coincidencia",
-    "exact_amount": "Importe/cantidad exactos",
+    "exact_amount": "Importe/cantidad exactos cuando sean comparables",
     "any_eligible": "Cualquier transferencia elegible",
     "eligible_count_one": "{{count}} transferencia elegible",
     "eligible_count_other": "{{count}} transferencias elegibles",

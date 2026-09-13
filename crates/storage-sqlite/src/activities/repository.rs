@@ -4433,6 +4433,38 @@ mod tests {
             Some(r#"{"flow":{"is_external":true}}"#),
             "CAD",
         );
+        insert_transfer_activity_with_currency(
+            &mut conn,
+            "cross-currency-out",
+            "acc-a",
+            "TRANSFER_OUT",
+            None,
+            Some(r#"{"source":{"id":"plaid"},"flow":{"is_external":true}}"#),
+            "USD",
+        );
+        insert_transfer_activity_with_currency(
+            &mut conn,
+            "cross-currency-in",
+            "acc-b",
+            "TRANSFER_IN",
+            None,
+            Some(r#"{"source":{"id":"plaid"},"flow":{"is_external":true}}"#),
+            "ZAR",
+        );
+        diesel::update(activities::table.find("cross-currency-out"))
+            .set((
+                activities::amount.eq("1250.75"),
+                activities::notes.eq("Moved out"),
+            ))
+            .execute(&mut conn)
+            .expect("cross-currency-out values");
+        diesel::update(activities::table.find("cross-currency-in"))
+            .set((
+                activities::amount.eq("19875.40"),
+                activities::notes.eq("Moved in"),
+            ))
+            .execute(&mut conn)
+            .expect("cross-currency-in values");
 
         let same_account = repo
             .link_transfer_activities("same-account-in".to_string(), "transfer-out".to_string())
@@ -4469,6 +4501,26 @@ mod tests {
         assert_eq!(activity_user_modified(&mut conn, "same-account-fx-in"), 1);
         assert_eq!(activity_user_modified(&mut conn, "same-account-fx-out"), 1);
 
+        let (cross_currency_in, cross_currency_out) = repo
+            .link_transfer_activities(
+                "cross-currency-in".to_string(),
+                "cross-currency-out".to_string(),
+            )
+            .await
+            .expect("cross-currency cash link should succeed");
+        assert_eq!(cross_currency_in.amount, Some(Decimal::new(1_987_540, 2)));
+        assert_eq!(cross_currency_in.currency, "ZAR");
+        assert_eq!(cross_currency_in.notes.as_deref(), Some("Moved in"));
+        assert_eq!(cross_currency_in.source_system.as_deref(), Some("MANUAL"));
+        assert_eq!(cross_currency_out.amount, Some(Decimal::new(125_075, 2)));
+        assert_eq!(cross_currency_out.currency, "USD");
+        assert_eq!(cross_currency_out.notes.as_deref(), Some("Moved out"));
+        assert_eq!(cross_currency_out.source_system.as_deref(), Some("MANUAL"));
+        assert_eq!(
+            cross_currency_in.source_group_id,
+            cross_currency_out.source_group_id
+        );
+
         let (transfer_in, transfer_out) = repo
             .link_transfer_activities("transfer-in".to_string(), "transfer-out".to_string())
             .await
@@ -4498,7 +4550,7 @@ mod tests {
         );
         assert_eq!(activity_user_modified(&mut conn, "transfer-in"), 1);
         assert_eq!(activity_user_modified(&mut conn, "transfer-out"), 1);
-        assert_eq!(sync_outbox_count(&mut conn), 4);
+        assert_eq!(sync_outbox_count(&mut conn), 6);
     }
 
     #[tokio::test]

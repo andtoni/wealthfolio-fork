@@ -727,6 +727,10 @@ impl ActivityService {
         Decimal::new(1, 6)
     }
 
+    fn transfer_currency_key(currency: &str) -> String {
+        currency.trim().to_ascii_uppercase()
+    }
+
     fn opposite_transfer_type(activity_type: &str) -> Option<&'static str> {
         match activity_type {
             ACTIVITY_TYPE_TRANSFER_IN => Some(ACTIVITY_TYPE_TRANSFER_OUT),
@@ -757,6 +761,10 @@ impl ActivityService {
             .amount
             .or_else(|| Some(activity.quantity? * activity.unit_price?))
             .map(|value| value.abs())
+    }
+
+    fn has_nonzero_cash_amount(activity: &Activity) -> bool {
+        activity.amount.is_some_and(|amount| !amount.is_zero())
     }
 
     fn decimals_match(left: Option<Decimal>, right: Option<Decimal>) -> bool {
@@ -815,7 +823,9 @@ impl ActivityService {
             }
             reasons.push("Same asset".to_string());
             reasons.push("Same quantity".to_string());
-            if source.currency != candidate.currency {
+            if Self::transfer_currency_key(&source.currency)
+                != Self::transfer_currency_key(&candidate.currency)
+            {
                 warnings.push(format!(
                     "Currencies differ ({} vs {}).",
                     source.currency, candidate.currency
@@ -867,17 +877,29 @@ impl ActivityService {
             });
         }
 
-        if !source.currency.eq_ignore_ascii_case(&candidate.currency) {
+        let currencies_match = Self::transfer_currency_key(&source.currency)
+            == Self::transfer_currency_key(&candidate.currency);
+        if currencies_match
+            && !Self::decimals_match(
+                Self::transfer_abs_value(source),
+                Self::transfer_abs_value(candidate),
+            )
+        {
             return None;
         }
-        if !Self::decimals_match(
-            Self::transfer_abs_value(source),
-            Self::transfer_abs_value(candidate),
-        ) {
-            return None;
+        if currencies_match {
+            reasons.push("Same amount".to_string());
+            reasons.push("Same currency".to_string());
+        } else {
+            if !Self::has_nonzero_cash_amount(source) || !Self::has_nonzero_cash_amount(candidate) {
+                return None;
+            }
+            reasons.push("Cash transfer".to_string());
+            warnings.push(format!(
+                "Currencies differ ({} vs {}); amounts are not directly comparable.",
+                source.currency, candidate.currency
+            ));
         }
-        reasons.push("Same amount".to_string());
-        reasons.push("Same currency".to_string());
         if day_diff == 0 {
             reasons.push("Same date".to_string());
         } else {
@@ -887,7 +909,13 @@ impl ActivityService {
         Some(TransferMatchCandidate {
             activity: candidate.clone(),
             match_kind: "cash".to_string(),
-            confidence,
+            // A same-day FX candidate is date-proximate, but its unequal legs
+            // cannot establish amount equivalence without an FX rate.
+            confidence: if currencies_match {
+                confidence
+            } else {
+                "low".to_string()
+            },
             score,
             reasons,
             warnings,
@@ -4049,9 +4077,28 @@ impl ActivityServiceTrait for ActivityService {
             .collect();
 
         candidates.sort_by(|left, right| {
-            right
-                .score
-                .cmp(&left.score)
+            let match_quality = |candidate: &TransferMatchCandidate| {
+                if candidate.match_kind == "security"
+                    || candidate.match_kind == "cash_fx_conversion"
+                    || Self::transfer_currency_key(&candidate.activity.currency)
+                        == Self::transfer_currency_key(&source.currency)
+                {
+                    2
+                } else {
+                    1
+                }
+            };
+            let confidence_rank = |confidence: &str| match confidence {
+                "high" => 2,
+                "medium" => 1,
+                _ => 0,
+            };
+            match_quality(right)
+                .cmp(&match_quality(left))
+                .then_with(|| {
+                    confidence_rank(&right.confidence).cmp(&confidence_rank(&left.confidence))
+                })
+                .then_with(|| right.score.cmp(&left.score))
                 .then_with(|| {
                     left.activity
                         .activity_date

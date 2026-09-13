@@ -420,7 +420,7 @@
     "same_asset": "Même actif",
     "cash_only": "Espèces uniquement",
     "match_mode": "Mode de correspondance",
-    "exact_amount": "Montant/quantité exact",
+    "exact_amount": "Montant/quantité exacts lorsque comparables",
     "any_eligible": "Tout transfert éligible",
     "eligible_count_one": "{{count}} transfert éligible",
     "eligible_count_other": "{{count}} transferts éligibles",
