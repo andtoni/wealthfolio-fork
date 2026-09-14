@@ -1854,6 +1854,69 @@ async fn commit_lifecycle_exact_replay_uses_durable_receipt_after_pending_remova
 }
 
 #[tokio::test]
+async fn stale_lifecycle_preserves_newer_ordinary_successor_metadata_and_migrates_overlays() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    store
+        .seed_migration_fixture("p-stale", "n-stale")
+        .await
+        .unwrap();
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let c = Connection::open(&path).unwrap();
+    c.execute("INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?)", params![D1, "alice", "p-stale", "a1", generation]).unwrap();
+    c.execute("UPDATE activities SET is_user_modified=0,activity_type_override=NULL,metadata=?,amount='50',currency='USD' WHERE id='n-stale'", [r#"{"providerOwned":{"observationRevision":10,"observationPayloadDigest":"newer","investec":{"actionDate":"2026-09-16"}}}"#]).unwrap();
+    let mut stale = DisclosureOperation::new(
+        "stale-lifecycle",
+        "alice",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "p-stale",
+    )
+    .with_lifecycle("n-stale")
+    .with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "DEPOSIT".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-01-01".into(),
+        amount: "999".into(),
+        currency: "EUR".into(),
+        metadata: Some(
+            serde_json::json!({"providerOwned":{"investec":{"actionDate":"2026-09-14"}}}),
+        ),
+        ..Default::default()
+    });
+    stale.observation_revision = Some(9);
+    let accepted = store.commit(stale.clone()).await.unwrap();
+    assert_eq!(accepted.outcome, ReceiptOutcome::Accepted);
+    assert_eq!(store.commit(stale).await.unwrap(), accepted);
+    let (metadata, amount, currency, notes): (String, String, String, String) = c
+        .query_row(
+            "SELECT metadata,amount,currency,notes FROM activities WHERE id='n-stale'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .unwrap();
+    let metadata: serde_json::Value = serde_json::from_str(&metadata).unwrap();
+    assert_eq!(metadata["providerOwned"]["observationRevision"], 10);
+    assert_eq!(
+        metadata["providerOwned"]["investec"]["actionDate"],
+        "2026-09-16"
+    );
+    assert_eq!(
+        (amount.as_str(), currency.as_str(), notes.as_str()),
+        ("50", "USD", "pending note")
+    );
+    let state = store.migration_state("p-stale", "n-stale").await.unwrap();
+    assert!(!state.pending_exists && state.posted_exists && state.ignored && state.needs_review);
+    assert_eq!(
+        (state.assignments, state.splits, state.event_tags),
+        (1, 1, 1)
+    );
+    assert_eq!(state.attribution.as_deref(), Some("alice"));
+    assert_eq!(store.receipt_count().await.unwrap(), 1);
+}
+
+#[tokio::test]
 async fn lifecycle_replay_rejects_different_successor_and_account() {
     let (_dir, path, store) = store(D1).await;
     seed(&path, &[D1], &["alice"]);
@@ -2655,4 +2718,358 @@ async fn provider_upsert_omitting_original_preserves_existing_provider_original(
         .unwrap();
     assert_eq!(metadata3["providerOwned"]["original"]["amount"], "7");
     assert_eq!(metadata3["providerOwned"]["original"]["currency"], "EUR");
+}
+
+#[tokio::test]
+async fn ordinary_provider_revisions_are_monotonic_and_preserve_user_overlays() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice", "bob"]);
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let activity = |key: &str, revision: Option<i64>, action_date: &str| {
+        let mut op = DisclosureOperation::new(
+            key,
+            "alice",
+            generation,
+            DisclosureKind::ActivityUpsert,
+            "x-order",
+        )
+        .with_activity(ActivityPayload {
+            account_id: "a1".into(),
+            activity_type: "WITHDRAWAL".into(),
+            status: "POSTED".into(),
+            activity_date: "2026-08-14".into(),
+            amount: "10".into(),
+            currency: "USD".into(),
+            metadata: Some(
+                serde_json::json!({"providerOwned":{"investec":{"actionDate":action_date}}}),
+            ),
+            ..Default::default()
+        });
+        op.observation_revision = revision;
+        op
+    };
+    store
+        .commit(activity("newer", Some(2), "2026-08-18"))
+        .await
+        .unwrap();
+    let c = Connection::open(&path).unwrap();
+    c.execute(
+        "UPDATE activities SET is_user_modified=1, notes='user-overlay' WHERE id='x-order'",
+        [],
+    )
+    .unwrap();
+    store
+        .commit(activity("older", Some(1), "2026-08-17"))
+        .await
+        .unwrap();
+    let row: (String, String) = c
+        .query_row(
+            "SELECT notes, metadata FROM activities WHERE id='x-order'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(row.0, "user-overlay");
+    assert!(row.1.contains("2026-08-18"));
+    let equal = activity("equal-conflict", Some(2), "2026-08-19");
+    assert!(matches!(
+        store.commit(equal).await,
+        Err(BridgePolicyError::IdempotencyConflict)
+    ));
+    let missing = activity("missing-token", None, "2026-08-20");
+    assert!(matches!(
+        store.commit(missing).await,
+        Err(BridgePolicyError::IdempotencyConflict)
+    ));
+}
+
+fn ordered_activity(
+    key: &str,
+    subject: &str,
+    generation: i64,
+    resource: &str,
+    revision: i64,
+) -> DisclosureOperation {
+    let mut op = DisclosureOperation::new(
+        key,
+        subject,
+        generation,
+        DisclosureKind::ActivityUpsert,
+        resource,
+    )
+    .with_activity(ActivityPayload {
+        account_id: "a1".into(),
+        activity_type: "DEPOSIT".into(),
+        status: "POSTED".into(),
+        activity_date: "2026-09-14".into(),
+        amount: "10".into(),
+        currency: "USD".into(),
+        metadata: Some(
+            serde_json::json!({"providerOwned":{"investec":{"actionDate":"2026-09-16"}}}),
+        ),
+        ..Default::default()
+    });
+    op.observation_revision = Some(revision);
+    op
+}
+
+#[tokio::test]
+async fn delivered_lifecycle_and_identical_ordinary_revision_share_provider_write_not_receipt_digest(
+) {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    store
+        .seed_migration_fixture("p-digest", "n-digest")
+        .await
+        .unwrap();
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let c = Connection::open(&path).unwrap();
+    c.execute(
+        "UPDATE activities SET is_user_modified=0,activity_type_override=NULL WHERE id='n-digest'",
+        [],
+    )
+    .unwrap();
+    c.execute("INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?)", params![D1, "alice", "p-digest", "a1", generation]).unwrap();
+    let lifecycle = ordered_activity("lifecycle-digest", "alice", generation, "p-digest", 7)
+        .with_lifecycle("n-digest");
+    let first = store.commit(lifecycle.clone()).await.unwrap();
+    let ordinary = ordered_activity("ordinary-digest", "alice", generation, "n-digest", 7);
+    assert_ne!(
+        disclosure_payload_digest(&lifecycle),
+        disclosure_payload_digest(&ordinary)
+    );
+    // Exercise the actual JSON numeric revision representation expected from FS.
+    let wire = serde_json::to_value(&ordinary).unwrap();
+    assert!(wire["observation_revision"].is_i64());
+    let decoded: DisclosureOperation = serde_json::from_value(wire).unwrap();
+    let before: String = c
+        .query_row(
+            "SELECT metadata FROM activities WHERE id='n-digest'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let second = store.commit(decoded).await.unwrap();
+    assert_eq!(second.outcome, ReceiptOutcome::Accepted);
+    assert_eq!(store.commit(lifecycle).await.unwrap(), first);
+    assert_eq!(store.commit(ordinary.clone()).await.unwrap(), second);
+    let after: String = c
+        .query_row(
+            "SELECT metadata FROM activities WHERE id='n-digest'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(before, after);
+    let state = store.migration_state("p-digest", "n-digest").await.unwrap();
+    assert!(!state.pending_exists && state.posted_exists && state.ignored);
+    assert_eq!(
+        (state.assignments, state.splits, state.event_tags),
+        (1, 1, 1)
+    );
+    let mut conflict = ordinary;
+    conflict.idempotency_key = "same-revision-different-facts".into();
+    conflict.activity.as_mut().unwrap().amount = "11".into();
+    assert!(matches!(
+        store.commit(conflict).await,
+        Err(BridgePolicyError::IdempotencyConflict)
+    ));
+    assert_eq!(store.receipt_count().await.unwrap(), 2);
+}
+
+#[tokio::test]
+async fn equal_and_stale_provider_writes_still_project_authorized_subject_and_generation() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice", "bob"]);
+    store.grant("alice", "a1").await.unwrap();
+    let generation = store.grant("bob", "a1").await.unwrap();
+    store
+        .commit(ordered_activity(
+            "alice-facts",
+            "alice",
+            generation,
+            "shared-facts",
+            7,
+        ))
+        .await
+        .unwrap();
+    store
+        .commit(ordered_activity(
+            "bob-facts",
+            "bob",
+            generation,
+            "shared-facts",
+            7,
+        ))
+        .await
+        .unwrap();
+    let c = Connection::open(&path).unwrap();
+    let count: i64 = c.query_row("SELECT count(*) FROM activity_disclosure_projections WHERE activity_id='shared-facts' AND access_generation=?", [generation], |r| r.get(0)).unwrap();
+    assert_eq!(count, 2);
+    let next_generation = store.grant("alice", "a2").await.unwrap();
+    let mut stale = ordered_activity("bob-stale", "bob", next_generation, "shared-facts", 6);
+    stale.activity.as_mut().unwrap().amount = "999".into();
+    assert_eq!(
+        store.commit(stale).await.unwrap().outcome,
+        ReceiptOutcome::Accepted
+    );
+    let row: (i64, String) = c.query_row("SELECT p.access_generation,a.amount FROM activity_disclosure_projections p JOIN activities a ON a.id=p.activity_id WHERE p.activity_id='shared-facts' AND p.person_subject_id='bob'", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    assert_eq!(row, (next_generation, "10".into()));
+}
+
+#[tokio::test]
+async fn stale_provider_write_still_migrates_valid_supersession_and_rejects_invalid_losers() {
+    for scenario in ["valid", "cross-account", "non-provider"] {
+        let (_dir, path, store) = store(D1).await;
+        seed(&path, &[D1], &["alice"]);
+        let generation = store.grant("alice", "a1").await.unwrap();
+        store
+            .commit(ordered_activity(
+                "canonical",
+                "alice",
+                generation,
+                "canonical-order",
+                7,
+            ))
+            .await
+            .unwrap();
+        let c = Connection::open(&path).unwrap();
+        let loser = if scenario == "cross-account" {
+            "x2"
+        } else {
+            "x1"
+        };
+        if scenario != "non-provider" {
+            c.execute("INSERT INTO provenance_records(entity_type,entity_id,role,source_system,source_record_id,actor_id) VALUES('activity',?,'live_canonical','finance',?,'alice')", params![loser, loser]).unwrap();
+        }
+        c.execute(
+            "UPDATE activities SET notes='keep loser overlay',is_user_modified=1 WHERE id=?",
+            [loser],
+        )
+        .unwrap();
+        let mut stale =
+            ordered_activity("supersede-stale", "alice", generation, "canonical-order", 6)
+                .with_superseded_resources([loser.into()]);
+        stale.activity.as_mut().unwrap().amount = "999".into();
+        let before = canonical_snapshot(&c);
+        let result = store.commit(stale).await;
+        if scenario == "valid" {
+            assert_eq!(result.unwrap().outcome, ReceiptOutcome::Accepted);
+            let row: (String, String, i64) = c.query_row("SELECT amount,notes,(SELECT count(*) FROM activities WHERE id='x1') FROM activities WHERE id='canonical-order'", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
+            assert_eq!(row, ("10".into(), "keep loser overlay".into(), 0));
+            assert_eq!(store.receipt_count().await.unwrap(), 2);
+        } else {
+            assert!(result.is_err(), "{scenario}");
+            assert_eq!(canonical_snapshot(&c), before);
+            assert_eq!(store.receipt_count().await.unwrap(), 1);
+        }
+    }
+}
+
+#[tokio::test]
+async fn observation_revision_wire_requires_positive_safe_json_integer() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let op = ordered_activity(
+        "numeric-boundary",
+        "alice",
+        generation,
+        "numeric-boundary",
+        9_007_199_254_740_991,
+    );
+    let mut json = serde_json::to_value(&op).unwrap();
+    assert!(serde_json::from_value::<DisclosureOperation>(json.clone()).is_ok());
+    json["observation_revision"] = serde_json::json!("9007199254740991");
+    assert!(serde_json::from_value::<DisclosureOperation>(json.clone()).is_err());
+    json["observation_revision"] = serde_json::json!(1.5);
+    assert!(serde_json::from_value::<DisclosureOperation>(json).is_err());
+    for revision in [0, -1, 9_007_199_254_740_992, i64::MAX] {
+        let invalid = ordered_activity(
+            "invalid-numeric",
+            "alice",
+            generation,
+            "numeric-boundary",
+            revision,
+        );
+        assert!(matches!(
+            store.commit(invalid).await,
+            Err(BridgePolicyError::InvalidActivity(_))
+        ));
+    }
+    assert_eq!(store.receipt_count().await.unwrap(), 0);
+    assert_eq!(
+        store.commit(op).await.unwrap().outcome,
+        ReceiptOutcome::Accepted
+    );
+}
+
+#[tokio::test]
+async fn postgres_finance_sync_wire_lifecycle_then_identical_sweep_is_accepted() {
+    // Captured from actual PostgreSQL-backed Finance Sync persistAndEnqueue,
+    // then an unchanged sweep after lifecycle delivery. No receiver-shaped mock.
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/finance_sync_terminal_revision.json")).unwrap();
+    let deployment = fixture["deploymentId"].as_str().unwrap();
+    let lifecycle: DisclosureOperation =
+        serde_json::from_value(fixture["lifecycle"].clone()).unwrap();
+    let ordinary: DisclosureOperation =
+        serde_json::from_value(fixture["ordinary"].clone()).unwrap();
+    assert_eq!(
+        fixture["lifecycle"]["activity"],
+        fixture["ordinary"]["activity"]
+    );
+    assert_eq!(
+        lifecycle.observation_revision,
+        ordinary.observation_revision
+    );
+    assert!(lifecycle.observation_revision.unwrap() > 0);
+    assert_ne!(
+        disclosure_payload_digest(&lifecycle),
+        disclosure_payload_digest(&ordinary)
+    );
+    let (_dir, path, store) = store(deployment).await;
+    seed(&path, &[deployment], &[&lifecycle.subject, "alice"]);
+    let predecessor = &lifecycle.resource_id;
+    let successor = lifecycle.lifecycle_successor_id.as_deref().unwrap();
+    store
+        .seed_migration_fixture(predecessor, successor)
+        .await
+        .unwrap();
+    let generation = store.grant(&lifecycle.subject, "a1").await.unwrap();
+    assert_eq!(generation, lifecycle.access_generation);
+    let c = Connection::open(&path).unwrap();
+    c.execute(
+        "UPDATE activities SET is_user_modified=0,activity_type_override=NULL WHERE id=?",
+        [successor],
+    )
+    .unwrap();
+    c.execute("INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?)", params![deployment, lifecycle.subject, predecessor, "a1", generation]).unwrap();
+    let terminal = store.commit(lifecycle.clone()).await.unwrap();
+    let before: (String, String, String) = c
+        .query_row(
+            "SELECT metadata,amount,currency FROM activities WHERE id=?",
+            [successor],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    let repeated = store.commit(ordinary.clone()).await.unwrap();
+    assert_eq!(repeated.outcome, ReceiptOutcome::Accepted);
+    let after: (String, String, String) = c
+        .query_row(
+            "SELECT metadata,amount,currency FROM activities WHERE id=?",
+            [successor],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(before, after);
+    let state = store.migration_state(predecessor, successor).await.unwrap();
+    assert!(!state.pending_exists && state.posted_exists && state.ignored);
+    assert_eq!(
+        (state.assignments, state.splits, state.event_tags),
+        (1, 1, 1)
+    );
+    assert_eq!(store.commit(lifecycle).await.unwrap(), terminal);
+    assert_eq!(store.commit(ordinary).await.unwrap(), repeated);
+    assert_eq!(store.receipt_count().await.unwrap(), 2);
 }

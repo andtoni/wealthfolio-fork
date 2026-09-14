@@ -78,7 +78,7 @@ mod tests {
     fn merchant_context_wire_shape_is_strict() {
         let valid = serde_json::json!({
             "idempotency_key": "key", "subject": "subject", "access_generation": 1,
-            "kind": "ActivityUpsert", "resource_id": "activity", "lifecycle_successor_id": null,
+            "kind": "ActivityUpsert", "resource_id": "activity", "lifecycle_successor_id": null, "observation_revision": 7,
             "activity": {
                 "account_id": "account", "activity_type": "WITHDRAWAL", "status": "POSTED",
                 "activity_date": "2026-01-01T00:00:00Z", "amount": "1", "currency": "USD",

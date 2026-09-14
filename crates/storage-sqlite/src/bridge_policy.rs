@@ -132,6 +132,9 @@ pub struct DisclosureOperation {
     /// and child rows atomically, then removes each superseded local resource.
     #[serde(default)]
     pub superseded_resource_ids: Vec<String>,
+    /// Durable Finance observation order for provider-owned activity revisions.
+    #[serde(default)]
+    pub observation_revision: Option<i64>,
     #[serde(default)]
     pub semantic_hash: Option<String>,
     #[serde(default)]
@@ -154,6 +157,7 @@ impl DisclosureOperation {
             activity: None,
             lifecycle_successor_id: None,
             superseded_resource_ids: Vec::new(),
+            observation_revision: None,
             semantic_hash: None,
             current_state: None,
         }
@@ -423,6 +427,16 @@ struct State {
 }
 
 // ── SQL helpers that return diesel errors for the transaction closure to convert ──
+// Revision equality compares provider activity facts, not delivery identity. A
+// lifecycle P->S and a later ordinary S upsert can carry the same observation.
+// Keep the full operation digest below unchanged for durable receipt replay.
+fn provider_write_digest(op: &DisclosureOperation) -> String {
+    let mut provider_write =
+        DisclosureOperation::new("", "", 0, DisclosureKind::ActivityUpsert, "");
+    provider_write.activity = op.activity.clone();
+    disclosure_payload_digest(&provider_write)
+}
+
 pub fn disclosure_payload_digest(op: &DisclosureOperation) -> String {
     if matches!(op.kind, DisclosureKind::CurrentStateUpsert) {
         if let (Some(state), Some(semantic_hash)) = (&op.current_state, &op.semantic_hash) {
@@ -446,6 +460,10 @@ pub fn disclosure_payload_digest(op: &DisclosureOperation) -> String {
     field(&mut hasher, op.kind.as_str());
     field(&mut hasher, &op.resource_id);
     optional_field(&mut hasher, op.lifecycle_successor_id.as_deref());
+    if let Some(revision) = op.observation_revision {
+        field(&mut hasher, "observation-revision-v1");
+        field(&mut hasher, &revision.to_string());
+    }
     if !op.superseded_resource_ids.is_empty() {
         let mut superseded_resource_ids = op.superseded_resource_ids.clone();
         superseded_resource_ids.sort();
@@ -911,6 +929,8 @@ fn upsert_activity_row(
     resource_id: &str,
     subject: &str,
     act: &ActivityPayload,
+    observation_revision: Option<i64>,
+    payload_digest: &str,
 ) -> std::result::Result<(), diesel::result::Error> {
     let resolved_precision =
         resolved_activity_precision(act).map_err(|_| diesel::result::Error::RollbackTransaction)?;
@@ -955,6 +975,19 @@ fn upsert_activity_row(
         .cloned()
         .unwrap_or_else(|| serde_json::json!({}));
     root.insert("providerOwned".into(), incoming_provider_owned);
+    if let Some(revision) = observation_revision {
+        root.get_mut("providerOwned")
+            .and_then(serde_json::Value::as_object_mut)
+            .expect("provider-owned object")
+            .insert("observationRevision".into(), serde_json::json!(revision));
+        root.get_mut("providerOwned")
+            .and_then(serde_json::Value::as_object_mut)
+            .expect("provider-owned object")
+            .insert(
+                "observationPayloadDigest".into(),
+                serde_json::json!(payload_digest),
+            );
+    }
     let provider_owned = root
         .get_mut("providerOwned")
         .and_then(serde_json::Value::as_object_mut)
@@ -1457,9 +1490,18 @@ fn do_upsert_activity(
     actual: i64,
     account_id: &str,
     d: &str,
+    skip_provider_write: bool,
 ) -> std::result::Result<(), diesel::result::Error> {
-    if let Some(ref act) = op.activity {
-        upsert_activity_row(c, &op.resource_id, &op.subject, act)?;
+    if let Some(act) = op.activity.as_ref().filter(|_| !skip_provider_write) {
+        let digest = provider_write_digest(op);
+        upsert_activity_row(
+            c,
+            &op.resource_id,
+            &op.subject,
+            act,
+            op.observation_revision,
+            &digest,
+        )?;
     }
     sql_query(
         "INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?) ON CONFLICT(deployment_id,person_subject_id,activity_id) DO UPDATE SET account_id=excluded.account_id,access_generation=excluded.access_generation"
@@ -1571,6 +1613,14 @@ fn current_state_write_decision(
     } else {
         Ok(CurrentStateWriteDecision::Superseded)
     }
+}
+
+#[derive(QueryableByName)]
+struct OptionalRevision {
+    #[diesel(sql_type = Nullable<BigInt>)]
+    revision: Option<i64>,
+    #[diesel(sql_type = Nullable<Text>)]
+    digest: Option<String>,
 }
 
 #[derive(QueryableByName)]
@@ -1798,6 +1848,7 @@ impl BridgePolicyStore {
         let result: std::result::Result<DisclosureReceipt, BridgePolicyError> = self.writer.exec(move |c| {
             let inner: std::result::Result<DisclosureReceipt, BridgePolicyError> = c.transaction::<_, crate::StorageError, _>(|c| {
                 let payload_digest = disclosure_payload_digest(&op);
+                let provider_digest = provider_write_digest(&op);
                 // Resolve exact durable replays before checking the current generation. A
                 // completed lifecycle removes the pending source row, and a later revoke may
                 // advance the deployment generation without invalidating its durable receipt.
@@ -1830,6 +1881,10 @@ impl BridgePolicyStore {
                 // historical payload shape.
                 if let Err(error) = validate_current_state_operation(&op) {
                     return Ok(Err(error));
+                }
+                // Finance Sync transmits this ordinal as an exact JSON number.
+                if op.observation_revision.is_some_and(|revision| revision <= 0 || revision > 9_007_199_254_740_991) {
+                    return Ok(Err(BridgePolicyError::InvalidActivity("observation revision must be a positive safe integer".into())));
                 }
                 if let Some(activity) = op.activity.as_ref() {
                     if let Err(error) = validate_activity_payload(activity) {
@@ -2145,12 +2200,33 @@ impl BridgePolicyStore {
                     }
                 }
 
+                // Ordinary provider revisions are ordered only after all
+                // authenticated identity, lifecycle, and supersession checks.
+                let mut skip_provider_write = false;
+                if op.kind == DisclosureKind::ActivityUpsert && op.lifecycle_successor_id.is_none() {
+                    let prior = sql_query("SELECT json_extract(metadata,'$.providerOwned.observationRevision') AS revision, json_extract(metadata,'$.providerOwned.observationPayloadDigest') AS digest FROM activities WHERE id=? AND account_id=?")
+                        .bind::<Text, _>(&op.resource_id).bind::<Text, _>(&account.account_id)
+                        .get_result::<OptionalRevision>(c).optional()?
+                        .and_then(|row| row.revision.map(|revision| (revision, row.digest)));
+                    if let Some((prior, digest)) = prior {
+                        let Some(incoming) = op.observation_revision else {
+                            return Ok(Err(BridgePolicyError::IdempotencyConflict));
+                        };
+                        if prior == incoming && digest.as_deref() != Some(provider_digest.as_str()) {
+                            return Ok(Err(BridgePolicyError::IdempotencyConflict));
+                        }
+                        skip_provider_write = prior >= incoming;
+                    }
+                }
+
                 // 4. Handle provider identity supersession atomically. The new
                 // resource is materialized first, then user overlays and child
                 // rows move from every still-present legacy identity.
                 if !op.superseded_resource_ids.is_empty() {
                     let activity = op.activity.as_ref().expect("validated activity supersession");
-                    upsert_activity_row(c, &op.resource_id, &op.subject, activity)?;
+                    if !skip_provider_write {
+                        upsert_activity_row(c, &op.resource_id, &op.subject, activity, op.observation_revision, &provider_digest)?;
+                    }
                     for loser in &op.superseded_resource_ids {
                         supersede_activity_identity(c, loser, &op.resource_id, &account.account_id, &d, &op.subject)?;
                     }
@@ -2243,8 +2319,34 @@ impl BridgePolicyStore {
                     // A posted observation may be the first sighting of the successor.
                     // Create/update its provider-owned row inside this same transaction,
                     // then migrate the pending row's user-owned overlays onto it.
-                    if let Some(ref activity) = op.activity {
-                        upsert_activity_row(c, n, &op.subject, activity)?;
+                    // Lifecycle migration must still run after a newer ordinary
+                    // successor revision was accepted, but that stale lifecycle
+                    // payload must never overwrite its provider metadata.  Keep
+                    // the pending-overlay/terminal-receipt work below atomic.
+                    let successor_revision = sql_query(
+                        "SELECT json_extract(metadata,'$.providerOwned.observationRevision') AS revision, json_extract(metadata,'$.providerOwned.observationPayloadDigest') AS digest FROM activities WHERE id=? AND account_id=?",
+                    )
+                    .bind::<Text, _>(n)
+                    .bind::<Text, _>(&account.account_id)
+                    .get_result::<OptionalRevision>(c)
+                    .optional()?
+                    .and_then(|row| row.revision.map(|revision| (revision, row.digest)));
+                    let skip_stale_successor_write = if let Some((prior, digest)) = successor_revision {
+                        match op.observation_revision {
+                            Some(incoming) if incoming > prior => false,
+                            Some(incoming) if incoming == prior && digest.as_deref() == Some(provider_digest.as_str()) => true,
+                            Some(incoming) if incoming == prior => {
+                                return Ok(Err(BridgePolicyError::IdempotencyConflict));
+                            }
+                            _ => true,
+                        }
+                    } else {
+                        false
+                    };
+                    if !skip_stale_successor_write {
+                        if let Some(ref activity) = op.activity {
+                            upsert_activity_row(c, n, &op.subject, activity, op.observation_revision, &provider_digest)?;
+                        }
                     }
                     let posted = sql_query("SELECT account_id,status FROM activities WHERE id=?")
                         .bind::<Text,_>(n)
@@ -2388,7 +2490,7 @@ impl BridgePolicyStore {
                 match op.kind {
                     DisclosureKind::ActivityUpsert if op.lifecycle_successor_id.is_some() => {}
                     DisclosureKind::ActivityUpsert => {
-                        do_upsert_activity(c, &op, actual, &account.account_id, &d)?;
+                        do_upsert_activity(c, &op, actual, &account.account_id, &d, skip_provider_write || !op.superseded_resource_ids.is_empty())?;
                     }
                     DisclosureKind::ActivityDelete => {
                         do_delete_activity(c, &op, &d)?;

@@ -1,0 +1,78 @@
+{
+  "deploymentId": "terminal-recovery-17015-1789384618087",
+  "lifecycle": {
+    "idempotency_key": "44e93c0f457f5abe5b62c739092d853b18b7c41b",
+    "subject": "urn:wealthfolio:test#recovery-owner",
+    "access_generation": 1,
+    "kind": "ActivityUpsert",
+    "resource_id": "terminal-recovery-17015-1789384618087:001b540d-732a-40c9-b69c-452585cde3dd:pending-legacy-no-revision",
+    "activity": {
+      "account_id": "a1",
+      "activity_type": "DEPOSIT",
+      "status": "POSTED",
+      "activity_date": "2026-09-14",
+      "activity_date_precision": "DATE",
+      "amount": "1",
+      "currency": "USD",
+      "settlement_date": "2026-09-14",
+      "source_type": "CARD",
+      "subtype": "CARD_PURCHASE",
+      "source_record_id": "posted-legacy-no-revision",
+      "metadata": {
+        "providerOwned": {
+          "investec": {
+            "actionDate": "2026-09-16"
+          },
+          "investecCorrelation": {
+            "confidence": "provider-explicit",
+            "originalCurrency": null,
+            "cardTransactionId": "pending-legacy-no-revision",
+            "settlementCurrency": null,
+            "settlementTransactionId": "posted-legacy-no-revision",
+            "sameCurrencyRoundingMatch": true
+          }
+        }
+      },
+      "notes": "Synthetic merchant"
+    },
+    "lifecycle_successor_id": "terminal-recovery-17015-1789384618087:001b540d-732a-40c9-b69c-452585cde3dd:posted-legacy-no-revision",
+    "observation_revision": 542
+  },
+  "ordinary": {
+    "idempotency_key": "a4777f3accbdf4e4451e280ddd51390927ab0aa6a3809e775029e704e4ed36e7",
+    "subject": "urn:wealthfolio:test#recovery-owner",
+    "access_generation": 1,
+    "kind": "ActivityUpsert",
+    "resource_id": "terminal-recovery-17015-1789384618087:001b540d-732a-40c9-b69c-452585cde3dd:posted-legacy-no-revision",
+    "activity": {
+      "account_id": "a1",
+      "activity_type": "DEPOSIT",
+      "status": "POSTED",
+      "activity_date": "2026-09-14",
+      "activity_date_precision": "DATE",
+      "amount": "1",
+      "currency": "USD",
+      "settlement_date": "2026-09-14",
+      "source_type": "CARD",
+      "subtype": "CARD_PURCHASE",
+      "source_record_id": "posted-legacy-no-revision",
+      "metadata": {
+        "providerOwned": {
+          "investec": {
+            "actionDate": "2026-09-16"
+          },
+          "investecCorrelation": {
+            "confidence": "provider-explicit",
+            "originalCurrency": null,
+            "cardTransactionId": "pending-legacy-no-revision",
+            "settlementCurrency": null,
+            "settlementTransactionId": "posted-legacy-no-revision",
+            "sameCurrencyRoundingMatch": true
+          }
+        }
+      },
+      "notes": "Synthetic merchant"
+    },
+    "observation_revision": 542
+  }
+}
