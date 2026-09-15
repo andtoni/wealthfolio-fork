@@ -2351,7 +2351,11 @@ impl BridgePolicyStore {
                     let posted = sql_query("SELECT account_id,status FROM activities WHERE id=?")
                         .bind::<Text,_>(n)
                         .get_result::<ActivityIdentity>(c)?;
-                    if pending.status != "PENDING"
+                    // A retired authorization (VOID) is still a valid lifecycle
+                    // predecessor: an authorization that the provider stopped
+                    // holding is retired, and a settlement that arrives later must
+                    // still supersede it rather than dead-letter.
+                    if !matches!(pending.status.as_str(), "PENDING" | "VOID")
                         || posted.status != "POSTED"
                         || pending.account_id != posted.account_id
                         || pending.account_id != account.account_id

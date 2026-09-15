@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use diesel::prelude::*;
 use diesel::r2d2::{self, Pool};
+use diesel::sql_query;
+use diesel::sql_types::Text;
 use diesel::sqlite::SqliteConnection;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -199,12 +201,45 @@ impl AccountRepositoryTrait for AccountRepository {
         Ok(settings)
     }
 
-    /// Deletes an account by its ID and returns the number of deleted records
+    /// Deletes an account by its ID and returns the number of deleted records.
+    ///
+    /// Household ownership and disclosure rows reference
+    /// `native_account_deployments(deployment_id, account_id)` without a cascade,
+    /// so they must be cleared before the account row. Without this a connected
+    /// account cannot be deleted at all (the transaction fails on a foreign key).
     async fn delete(&self, account_id_param: &str) -> Result<usize> {
         let id_to_delete_owned = account_id_param.to_string();
         let event_subject_id = id_to_delete_owned.clone();
         self.writer
             .exec_tx(move |tx| {
+                let account_id = id_to_delete_owned.clone();
+                sql_query(
+                    "DELETE FROM account_ownership_participants WHERE (deployment_id, arrangement_id) IN (SELECT deployment_id, id FROM account_ownership_arrangements WHERE account_id=?1)",
+                )
+                .bind::<Text, _>(&account_id)
+                .execute(tx.conn())
+                .map_err(StorageError::from)?;
+                sql_query(
+                    "DELETE FROM account_ownership_arrangements WHERE account_id=?1",
+                )
+                .bind::<Text, _>(&account_id)
+                .execute(tx.conn())
+                .map_err(StorageError::from)?;
+                sql_query("DELETE FROM account_access_epochs WHERE account_id=?1")
+                    .bind::<Text, _>(&account_id)
+                    .execute(tx.conn())
+                    .map_err(StorageError::from)?;
+                sql_query(
+                    "DELETE FROM activity_disclosure_projections WHERE account_id=?1",
+                )
+                .bind::<Text, _>(&account_id)
+                .execute(tx.conn())
+                .map_err(StorageError::from)?;
+                sql_query("DELETE FROM native_account_deployments WHERE account_id=?1")
+                    .bind::<Text, _>(&account_id)
+                    .execute(tx.conn())
+                    .map_err(StorageError::from)?;
+
                 let affected_rows = diesel::delete(accounts.find(id_to_delete_owned))
                     .execute(tx.conn())
                     .map_err(StorageError::from)?;
@@ -278,6 +313,84 @@ mod tests {
         ))
         .execute(&mut conn)
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn delete_clears_household_and_disclosure_rows_before_the_account() {
+        let (repo, pool, _dir) = setup().await;
+        let account_id = "acc-connected-delete";
+        insert_account_without_settings(&pool, account_id);
+        {
+            let mut conn = get_connection(&pool).unwrap();
+            // A connected account carries provider mappings plus household
+            // ownership/access and disclosure rows that reference
+            // native_account_deployments without a cascade.
+            diesel::sql_query(format!(
+                "INSERT INTO policy_deployments (id, access_generation) VALUES ('d1', 1)",
+            ))
+            .execute(&mut conn)
+            .unwrap();
+            diesel::sql_query(format!(
+                "INSERT INTO native_account_deployments (account_id, deployment_id) VALUES ('{account_id}', 'd1')",
+            ))
+            .execute(&mut conn)
+            .unwrap();
+            diesel::sql_query(format!(
+                "INSERT INTO person_subjects (deployment_id, id) VALUES ('d1', 'urn:test#owner')",
+            ))
+            .execute(&mut conn)
+            .unwrap();
+            diesel::sql_query(format!(
+                "INSERT INTO households (deployment_id, id) VALUES ('d1', 'h1')",
+            ))
+            .execute(&mut conn)
+            .unwrap();
+            diesel::sql_query(format!(
+                "INSERT INTO account_access_epochs (deployment_id, household_id, account_id, person_subject_id, start_generation) VALUES ('d1', 'h1', '{account_id}', 'urn:test#owner', 1)",
+            ))
+            .execute(&mut conn)
+            .unwrap();
+            diesel::sql_query(format!(
+                "INSERT INTO account_ownership_arrangements (deployment_id, id, household_id, account_id, kind, start_epoch) VALUES ('d1', 'a1', 'h1', '{account_id}', 'sole', 1)",
+            ))
+            .execute(&mut conn)
+            .unwrap();
+            diesel::sql_query(format!(
+                "INSERT INTO account_ownership_participants (deployment_id, arrangement_id, person_subject_id, share_basis_points) VALUES ('d1', 'a1', 'urn:test#owner', 10000)",
+            ))
+            .execute(&mut conn)
+            .unwrap();
+        }
+
+        let deleted = repo.delete(account_id).await.unwrap();
+        assert_eq!(deleted, 1);
+
+        let mut conn = get_connection(&pool).unwrap();
+        for (table, expected) in [
+            ("accounts", 0_i64),
+            ("native_account_deployments", 0),
+            ("account_access_epochs", 0),
+            ("account_ownership_arrangements", 0),
+            ("account_ownership_participants", 0),
+        ] {
+            #[derive(diesel::QueryableByName)]
+            struct Count {
+                #[diesel(sql_type = diesel::sql_types::BigInt)]
+                count: i64,
+            }
+            let column = if table == "accounts" {
+                "id"
+            } else {
+                "account_id"
+            };
+            let sql = if table == "account_ownership_participants" {
+                "SELECT count(*) AS count FROM account_ownership_participants WHERE arrangement_id='a1'".to_string()
+            } else {
+                format!("SELECT count(*) AS count FROM {table} WHERE {column}='{account_id}'")
+            };
+            let count: Count = diesel::sql_query(sql).get_result(&mut conn).unwrap();
+            assert_eq!(count.count, expected, "{table} should be cleared");
+        }
     }
 
     #[tokio::test]

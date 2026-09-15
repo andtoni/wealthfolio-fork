@@ -1023,6 +1023,64 @@ async fn canonical_snapshot_detects_non_count_child_corruption() {
 }
 
 #[tokio::test]
+async fn commit_lifecycle_migrates_a_retired_authorization_to_its_late_settlement() {
+    // A provider can stop holding an authorization (the row is retired as VOID)
+    // and only post the settlement afterwards. That late settlement must still
+    // supersede the retired predecessor instead of failing closed.
+    let (_dir, path, lifecycle_store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    lifecycle_store
+        .seed_migration_fixture("retired-authorization", "late-settlement")
+        .await
+        .unwrap();
+    let generation = lifecycle_store.grant("alice", "a1").await.unwrap();
+    let c = Connection::open(&path).unwrap();
+    c.execute(
+        "UPDATE activities SET status='VOID' WHERE id='retired-authorization'",
+        [],
+    )
+    .unwrap();
+    c.execute("INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?)", params![D1, "alice", "retired-authorization", "a1", generation]).unwrap();
+
+    lifecycle_store
+        .commit(
+            DisclosureOperation::new(
+                "late-lifecycle",
+                "alice",
+                generation,
+                DisclosureKind::ActivityUpsert,
+                "retired-authorization",
+            )
+            .with_lifecycle("late-settlement"),
+        )
+        .await
+        .unwrap();
+
+    let retired: i64 = c
+        .query_row(
+            "SELECT count(*) FROM activities WHERE id='retired-authorization'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let posted: i64 = c
+        .query_row(
+            "SELECT count(*) FROM activities WHERE id='late-settlement' AND status='POSTED'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let projection: i64 = c
+        .query_row(
+            "SELECT count(*) FROM activity_disclosure_projections WHERE activity_id='late-settlement'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!((retired, posted, projection), (0, 1, 1));
+}
+
+#[tokio::test]
 async fn commit_lifecycle_path_migrates_only_projected_candidate() {
     let (_dir, path, lifecycle_store) = store(D1).await;
     let (_oracle_dir, oracle_path, _oracle_store) = store(D1).await;
