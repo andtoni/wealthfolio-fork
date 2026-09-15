@@ -56,6 +56,8 @@ fn require_own_subject(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
 
     #[test]
     fn activity_bridge_commits_invalidate_live_queries() {
@@ -66,6 +68,24 @@ mod tests {
             DisclosureKind::CurrentStateUpsert
         ));
         assert!(!changes_activity_queries(DisclosureKind::ProjectionFence));
+    }
+
+    #[test]
+    fn bridge_storage_failures_ask_the_producer_to_retry() {
+        use wealthfolio_storage_sqlite::bridge_policy::BridgePolicyError;
+        let unavailable = bridge_error(
+            BridgePolicyError::Storage("The transaction manager is broken".into()),
+            "commit",
+        );
+        assert!(matches!(unavailable, ApiError::ServiceUnavailable(_)));
+        assert_eq!(
+            unavailable.into_response().status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+
+        let policy = bridge_error(BridgePolicyError::AccessDenied, "commit");
+        assert!(matches!(policy, ApiError::BadRequest(_)));
+        assert_eq!(policy.into_response().status(), StatusCode::BAD_REQUEST);
     }
 
     #[test]
@@ -155,6 +175,28 @@ pub struct ReceiptResponse {
     binding_version: i64,
     receipt_binding: String,
     semantic_hash: Option<String>,
+}
+
+/// Maps a bridge-policy failure to an HTTP status.
+///
+/// Policy failures are the caller's problem and stay 4xx. A storage failure
+/// means this instance could not write (an unwritable or wedged database), which
+/// is transient: answer 503 so the producer retries the same operation instead of
+/// recording it as a terminal rejection.
+fn bridge_error(
+    error: wealthfolio_storage_sqlite::bridge_policy::BridgePolicyError,
+    action: &str,
+) -> ApiError {
+    use wealthfolio_storage_sqlite::bridge_policy::BridgePolicyError;
+    match error {
+        BridgePolicyError::Storage(reason) => {
+            tracing::warn!(%reason, action, "bridge storage failure; asking the producer to retry");
+            ApiError::ServiceUnavailable(format!(
+                "{action} failed: service temporarily unavailable"
+            ))
+        }
+        other => ApiError::BadRequest(format!("{action} failed: {other}")),
+    }
 }
 
 fn receipt(r: wealthfolio_storage_sqlite::bridge_policy::DisclosureReceipt) -> ReceiptResponse {
@@ -261,7 +303,7 @@ pub async fn handle_commit(
             }
             Ok(Json(receipt(r)))
         }
-        Err(e) => Err(ApiError::BadRequest(format!("commit failed: {e}"))),
+        Err(e) => Err(bridge_error(e, "commit")),
     }
 }
 
@@ -274,6 +316,6 @@ pub async fn handle_revoke(
     let store = get_bridge(&state)?;
     match store.revoke(&subject, &account, &key).await {
         Ok(r) => Ok(Json(receipt(r))),
-        Err(e) => Err(ApiError::BadRequest(format!("revoke failed: {e}"))),
+        Err(e) => Err(bridge_error(e, "revoke")),
     }
 }

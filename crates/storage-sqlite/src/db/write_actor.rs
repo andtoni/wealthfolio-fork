@@ -2,8 +2,11 @@ use super::DbPool;
 use crate::errors::StorageError;
 use crate::sync::app_sync::ProjectedChange;
 use crate::sync::{flush_projected_outbox, OutboxWriteRequest, SyncOutboxModel};
+use diesel::connection::{TransactionManager, TransactionManagerStatus};
+use diesel::RunQueryDsl;
 use diesel::SqliteConnection;
 use std::any::Any;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
@@ -31,9 +34,19 @@ pub struct WriteHandle {
     // The Box<dyn Any + Send> is used for type erasure of the job's return type.
     #[allow(clippy::type_complexity)]
     tx: mpsc::Sender<(Job, oneshot::Sender<Result<Box<dyn Any + Send + 'static>>>)>,
+    /// Times the writer connection's transaction manager was poisoned and rebuilt.
+    recoveries: Arc<AtomicU64>,
 }
 
 impl WriteHandle {
+    /// Number of times a poisoned writer transaction manager has been recovered.
+    ///
+    /// A non-zero value means the writer hit an infrastructure failure (for
+    /// example a full disk) and repaired itself instead of staying unusable.
+    pub fn transaction_manager_recoveries(&self) -> u64 {
+        self.recoveries.load(Ordering::Relaxed)
+    }
+
     /// Executes a database job on the writer actor's dedicated connection.
     ///
     /// # Arguments
@@ -231,6 +244,30 @@ pub fn spawn_writer_with_outbox_observer(
     spawn_writer_inner(pool, Some(outbox_observer))
 }
 
+/// True when the connection's diesel transaction manager is in its error
+/// state, in which case every later transaction on it fails until it is reset.
+fn writer_transaction_manager_status_mut(
+    conn: &mut SqliteConnection,
+) -> &mut TransactionManagerStatus {
+    <SqliteConnection as diesel::Connection>::TransactionManager::transaction_manager_status_mut(
+        conn,
+    )
+}
+
+fn writer_transaction_manager_is_broken(conn: &mut super::DbConnection) -> bool {
+    matches!(
+        writer_transaction_manager_status_mut(&mut *conn),
+        TransactionManagerStatus::InError
+    )
+}
+
+/// Closes any transaction left behind by the failure and resets the manager so
+/// the connection can run transactions again.
+fn reset_writer_transaction_manager(conn: &mut super::DbConnection) {
+    let _ = diesel::sql_query("ROLLBACK").execute(&mut *conn);
+    *writer_transaction_manager_status_mut(&mut *conn) = TransactionManagerStatus::default();
+}
+
 fn spawn_writer_inner(
     pool: DbPool,
     outbox_observer: Option<OutboxObserver>,
@@ -268,12 +305,14 @@ fn spawn_writer_inner(
     }
 
     let mut conn = acquire_writer_connection(&pool)?;
+    let recoveries = Arc::new(AtomicU64::new(0));
 
     // Create an MPSC channel for sending jobs to the actor.
     // The channel is bounded; 1024 is an arbitrary size.
     let (tx, mut rx) =
         mpsc::channel::<(Job, oneshot::Sender<Result<Box<dyn Any + Send + 'static>>>)>(1024);
 
+    let actor_recoveries = Arc::clone(&recoveries);
     tokio::spawn(async move {
         // Loop to receive and process jobs.
         while let Some((job, reply_tx)) = rx.recv().await {
@@ -296,6 +335,28 @@ fn spawn_writer_inner(
                 job_result.value
             });
 
+            // Diesel marks the transaction manager broken when a transaction
+            // cannot be rolled back — which is what an out-of-disk write does.
+            // Every later transaction on that connection then fails with
+            // BrokenTransactionManager, so the writer used to stay wedged until
+            // the process restarted. Clear any stray transaction, reset the
+            // manager, and replace the connection if it is still unusable.
+            if writer_transaction_manager_is_broken(&mut conn) {
+                let recoveries = actor_recoveries.fetch_add(1, Ordering::Relaxed) + 1;
+                log::warn!(
+                    "Writer transaction manager was in error; recovering the connection (recovery {recoveries})"
+                );
+                reset_writer_transaction_manager(&mut conn);
+                if diesel::sql_query("SELECT 1").execute(&mut conn).is_err() {
+                    match acquire_writer_connection(&pool) {
+                        Ok(fresh) => conn = fresh,
+                        Err(error) => log::error!(
+                            "Writer connection could not be replaced after a broken transaction manager: {error}"
+                        ),
+                    }
+                }
+            }
+
             // Send the result back to the requester.
             // Ignore error if the receiver has dropped (e.g., request timed out or was cancelled).
             let _ = reply_tx.send(result);
@@ -304,7 +365,7 @@ fn spawn_writer_inner(
         // so the actor can terminate.
     });
 
-    Ok(WriteHandle { tx })
+    Ok(WriteHandle { tx, recoveries })
 }
 
 // Note: DbConnection (PooledConnection) derefs to SqliteConnection.
@@ -330,6 +391,42 @@ mod tests {
         let db_path = init(&app_data).expect("init db");
         run_migrations(&db_path).expect("migrate db");
         create_pool(&db_path).expect("create pool").as_ref().clone()
+    }
+
+    #[tokio::test]
+    async fn recovers_a_poisoned_transaction_manager_and_keeps_writing() {
+        use diesel::connection::TransactionManagerStatus;
+
+        let pool = setup_pool();
+        let handle = spawn_writer(pool).expect("spawn writer");
+        assert_eq!(handle.transaction_manager_recoveries(), 0);
+
+        // Simulate what a failed rollback does after an out-of-disk write: the
+        // connection's transaction manager is left in error. Every later
+        // transaction on that connection fails until it is recovered.
+        // The poisoning job cannot even commit once the manager is in error;
+        // the actor recovers the connection while returning that failure.
+        let poisoned = handle
+            .exec(|conn| {
+                *writer_transaction_manager_status_mut(conn) = TransactionManagerStatus::InError;
+                Ok(())
+            })
+            .await;
+        assert!(
+            poisoned.is_err(),
+            "a broken manager fails the job that broke it"
+        );
+
+        assert_eq!(handle.transaction_manager_recoveries(), 1);
+        handle
+            .exec(|conn| {
+                diesel::sql_query("SELECT 1")
+                    .execute(conn)
+                    .map_err(StorageError::from)?;
+                Ok(())
+            })
+            .await
+            .expect("writes work again after the connection was recovered");
     }
 
     #[tokio::test]

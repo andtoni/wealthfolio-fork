@@ -20,11 +20,16 @@ pub enum ApiError {
     #[error("{0}")]
     BadRequest(String),
     #[error("{0}")]
+    Conflict(String),
+    #[error("{0}")]
     Unauthorized(String),
     #[error("{0}")]
     Forbidden(String),
     #[error("{0}")]
     Internal(String),
+    /// The service cannot serve the request right now, but a retry can succeed.
+    #[error("{0}")]
+    ServiceUnavailable(String),
     // Surface the underlying error message to help debugging during development
     #[error("{0}")]
     Anyhow(#[from] anyhow::Error),
@@ -47,9 +52,13 @@ impl IntoResponse for ApiError {
             ApiError::NotFound => (StatusCode::NOT_FOUND, self.to_string()),
             ApiError::NotImplemented(reason) => (StatusCode::NOT_IMPLEMENTED, reason.clone()),
             ApiError::BadRequest(reason) => (StatusCode::BAD_REQUEST, reason.clone()),
+            ApiError::Conflict(reason) => (StatusCode::CONFLICT, reason.clone()),
             ApiError::Unauthorized(reason) => (StatusCode::UNAUTHORIZED, reason.clone()),
             ApiError::Forbidden(reason) => (StatusCode::FORBIDDEN, reason.clone()),
             ApiError::Internal(reason) => (StatusCode::INTERNAL_SERVER_ERROR, reason.clone()),
+            ApiError::ServiceUnavailable(reason) => {
+                (StatusCode::SERVICE_UNAVAILABLE, reason.clone())
+            }
             ApiError::Anyhow(e) => {
                 // Downcast to known typed errors so user-facing validation
                 // failures return 4xx instead of 500. SpendingError variants
