@@ -52,10 +52,28 @@ export function LoginPage() {
             <div className="space-y-6">
               {requiresPassword ? (
                 <form className="space-y-8" onSubmit={handleSubmit}>
+                  {/*
+                   * Password-only login needs a username anchor: without one,
+                   * password managers cannot match this form to the stored
+                   * credential and offer to save a "new" password on every
+                   * launch instead of filling the existing one.
+                   */}
+                  <input
+                    type="text"
+                    name="username"
+                    id="username"
+                    value="wealthfolio"
+                    readOnly
+                    hidden
+                    autoComplete="username"
+                    aria-hidden="true"
+                    tabIndex={-1}
+                  />
                   <div className="space-y-2">
                     <Input
                       data-testid="login-password-input"
                       id="password"
+                      name="password"
                       type="password"
                       value={password}
                       autoComplete="current-password"

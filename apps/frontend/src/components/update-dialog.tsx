@@ -71,10 +71,18 @@ export function UpdateDialog() {
   const screenshots = updateInfo?.screenshots ?? [];
 
   useEffect(() => {
+    // On web and PWA the app is served from the deployment: a "new version" is
+    // picked up by reloading, there is nothing to install, and the server's
+    // release feed does not describe this fork. Keep the updater dialog to the
+    // desktop app, where the update is actually actionable.
+    if (!isDesktopEnv) {
+      setIsOpen(false);
+      return;
+    }
     if (updateInfo && !isDismissed(dismissedUpdate, updateInfo.latestVersion)) {
       setIsOpen(true);
     }
-  }, [updateInfo, dismissedUpdate]);
+  }, [updateInfo, dismissedUpdate, isDesktopEnv]);
 
   // Any dismissal should suppress the same update for three days. Persist before
   // clearing the query so a late startup response cannot reopen the dialog.

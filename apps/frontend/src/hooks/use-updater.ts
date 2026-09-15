@@ -53,6 +53,9 @@ export function useCheckUpdateOnStartup() {
 
   return useQuery({
     queryKey: UPDATE_QUERY_KEY,
+    // Only the desktop app can install an update; on web/PWA a deployment
+    // revision is picked up by reloading, so do not query the release feed.
+    enabled: isDesktop,
     queryFn: async () => {
       const enabled = await isAutoUpdateCheckEnabled();
       if (!enabled) return null;
