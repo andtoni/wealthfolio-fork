@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "upstream": {
+    "url": "https://github.com/wealthfolio/wealthfolio.git",
+    "comparison_ref": "refs/remotes/upstream/main",
+    "release_ref_pattern": "refs/tags/v*"
+  },
+  "fork_base": {
+    "tag": "v3.6.1",
+    "commit": "b488c933a4715b8ab8bb8afd4d777af79165ed4b"
+  },
+  "audit": {
+    "cadence": "weekly",
+    "workflow": ".github/workflows/upstream-audit.yml",
+    "report": "upstream-audit/proposal.md"
+  },
+  "integration": {
+    "mode": "reviewed-proposal",
+    "decision_owner": "andtoni",
+    "rule": "Upstream is integrated only through a reviewed selective-backport pull request per plan.md section 9.2; the audit and its automation never merge, rebase, reset, cherry-pick, force-push, or deploy."
+  }
+}

@@ -1,0 +1,86 @@
+name: Upstream audit
+
+# Weekly read-only audit of upstream Wealthfolio against the fork base pinned in
+# upstream.json. The audit produces exactly one reviewable proposal artifact and
+# publishes it as this run's summary; it never merges, rebases, cherry-picks,
+# force-pushes, or deploys, and it holds no write credential (contents: read).
+#
+# The pull-request job validates the audit logic and the paired recovery
+# interface against local fixtures. It runs no upstream network traffic and
+# writes no artifact, so proposed code cannot reach the comparison it is meant
+# to control.
+#
+# Making the proposal visible is deliberate: a green run with a summary is the
+# cadence, and the merge decision stays with the repository owner per
+# docs/upstream-integration.md.
+
+on:
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - "compose.yml"
+      - "crates/storage-sqlite/migrations/**"
+      - "upstream.json"
+      - "docs/upstream-integration.md"
+      - "docs/release.md"
+      - "scripts/upstream-audit.mjs"
+      - "scripts/upstream-audit.test.mjs"
+      - "scripts/recovery-interface.test.mjs"
+      - ".github/workflows/upstream-audit.yml"
+  schedule:
+    - cron: "41 6 * * 6"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-audit-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    name: Validate audit and recovery interfaces
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          # The pin test verifies the recorded fork base exists, and the audit
+          # resolves it from history; a shallow checkout cannot see it.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Test the audit logic and recovery interface
+        run: node --test "scripts/*.test.mjs"
+
+  audit:
+    name: Produce upstream proposal
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch upstream comparison and release refs
+        env:
+          PIN: upstream.json
+        run: |
+          set -euo pipefail
+          upstream_url=$(node -p "JSON.parse(require('node:fs').readFileSync(process.env.PIN, 'utf8')).upstream.url")
+          comparison_ref=$(node -p "JSON.parse(require('node:fs').readFileSync(process.env.PIN, 'utf8')).upstream.comparison_ref")
+          release_refs=$(node -p "JSON.parse(require('node:fs').readFileSync(process.env.PIN, 'utf8')).upstream.release_ref_pattern")
+          git fetch --no-tags "$upstream_url" "+refs/heads/main:$comparison_ref"
+          git fetch "$upstream_url" "$release_refs:$release_refs"
+
+      - name: Produce the proposal
+        run: node scripts/upstream-audit.mjs --date "$(date -u +%F)" --check-remote
+
+      - name: Publish the proposal as the run summary
+        run: cat upstream-audit/proposal.md >>"$GITHUB_STEP_SUMMARY"

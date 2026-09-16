@@ -48,6 +48,9 @@ coverage
 *.tsbuildinfo
 tsconfig.node.tsbuildinfo
 
+# Upstream audit proposals (generated; published as the audit run summary)
+/upstream-audit/
+
 # Cache and temp files
 .cache
 .temp
