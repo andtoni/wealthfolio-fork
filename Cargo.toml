@@ -54,7 +54,7 @@ async-trait = "=0.1.89"
 futures = "=0.3.32"
 
 # MCP (Model Context Protocol)
-rmcp = { version = "=1.8.0", default-features = false, features = ["server", "transport-streamable-http-server"] }
+rmcp = { version = "=2.1.0", default-features = false, features = ["server", "transport-streamable-http-server"] }
 
 # Logging
 log = "=0.4.32"
