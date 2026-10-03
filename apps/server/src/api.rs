@@ -117,6 +117,19 @@ pub async fn security_headers(request: Request<Body>, next: Next) -> Response {
         HeaderName::from_static("referrer-policy"),
         HeaderValue::from_static("no-referrer"),
     );
+    // The app page names the hashed asset files of one release. Without a
+    // cache directive browsers and installed PWAs keep showing the previous
+    // release, so make them revalidate it on every load.
+    let is_html = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("text/html"));
+    if is_html {
+        headers.insert(
+            axum::http::header::CACHE_CONTROL,
+            HeaderValue::from_static("no-cache"),
+        );
+    }
     response
 }
 
