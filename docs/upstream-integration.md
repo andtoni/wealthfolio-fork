@@ -100,6 +100,25 @@ Fail-closed behaviour, each covered by a behavioural test:
   or the index;
 - identical inputs (including `--date`) produce a byte-identical report.
 
+## Backport ledger
+
+The pinned fork base is unchanged (`v3.6.1`). Selective backports taken since:
+
+| Fork commit | Upstream commit | Change |
+| ----------- | --------------- | ------ |
+| #146 | `3605a5f73` | Incremental valuation refreshes the latest saved day |
+| #146 | `6c2e3c573` (server hunk) | Portfolio job continues after a market sync error |
+| #146 | `8297ed5fb` | Bulk activity creates validate per row account |
+| #146 | `ba1aa61b1`, `fc2b1e498` | Tax on cash activities is booked to cash |
+| #146 | `a7f51dc26` | Non-ASCII symbols in Yahoo suffix parsing |
+
+Reviewed on 2026-10-03 against `upstream/main` `0deea7f31` and not yet taken:
+`9c3b05e47` (OIDC JWKS refresh), `213cf4a95` + `76f559ccb` (static caching and
+CSP hash), `c703f71b1` + `e15c92cc4` (day-first import dates), `5586c483c` +
+`f979f606e` + `688065ff3` (spending drawer totals), and `487d23ffb`,
+`c88328d4b`, `0830d14a5` (manual FX visibility, negative cash category, legacy
+metadata cleanup).
+
 ## Updating the pin
 
 Advance `fork_base` only after a reviewed integration lands, in the same commit
