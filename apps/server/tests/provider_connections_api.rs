@@ -100,6 +100,9 @@ async fn start_control_server(root: &TempDir) -> tokio::task::JoinHandle<()> {
         )
     }
     async fn complete(headers: HeaderMap, Json(body): Json<Value>) -> impl IntoResponse {
+        if valid_control_headers(&headers) && body["publicToken"] == "conflicting-public-token" {
+            return (StatusCode::CONFLICT, Json(json!({"error":"conflict"})));
+        }
         if !valid_control_headers(&headers)
             || body
                 != json!({"publicToken":"public-token","continuationToken":"continuation-token-1234567890123456"})
@@ -480,6 +483,29 @@ async fn plaid_start_and_completion_proxy_only_short_lived_browser_values() {
         serde_json::from_slice(&to_bytes(complete.into_body(), 64 * 1024).await.unwrap()).unwrap();
     assert_eq!(payload["status"], "configured");
     assert!(payload.get("accessToken").is_none());
+    control.abort();
+}
+
+#[tokio::test]
+async fn control_conflict_is_reported_as_conflict_not_as_retryable() {
+    let _guard = TEST_DB_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let root = tempdir().unwrap();
+    let control = start_control_server(&root).await;
+    let (app, token) = authenticated_app(&root).await;
+
+    let complete = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/provider-connections/plaid/complete")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from("{\"publicToken\":\"conflicting-public-token\",\"continuationToken\":\"continuation-token-1234567890123456\"}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(complete.status(), StatusCode::CONFLICT);
     control.abort();
 }
 

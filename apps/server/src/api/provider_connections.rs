@@ -564,10 +564,10 @@ fn subject(subject: Option<Extension<AuthenticatedSubject>>) -> ApiResult<Authen
 
 async fn decode_response<T: DeserializeOwned>(response: reqwest::Response) -> ApiResult<T> {
     if response.status().is_redirection() || !response.status().is_success() {
-        return Err(if response.status() == StatusCode::BAD_REQUEST {
-            ApiError::BadRequest("Provider connection request was rejected.".to_string())
-        } else {
-            service_unavailable()
+        return Err(match response.status() {
+            StatusCode::BAD_REQUEST => ApiError::BadRequest("Provider connection request was rejected.".to_string()),
+            StatusCode::CONFLICT => ApiError::Conflict("A provider connection operation is already in progress or conflicts with current state.".to_string()),
+            _ => service_unavailable(),
         });
     }
     if response
