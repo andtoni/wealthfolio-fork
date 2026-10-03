@@ -76,7 +76,7 @@
     "react-router-dom": "7.17.0",
     "recharts": "3.7.0",
     "remark-gfm": "4.0.1",
-    "sonner": "2.0.7",
+    "sonner": "2.0.8",
     "tailwind-merge": "3.5.0",
     "tauri-plugin-mobile-share": "0.1.2",
     "tauri-plugin-web-auth-api": "1.0.0",
