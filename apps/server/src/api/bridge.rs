@@ -183,6 +183,10 @@ pub struct ReceiptResponse {
 /// means this instance could not write (an unwritable or wedged database), which
 /// is transient: answer 503 so the producer retries the same operation instead of
 /// recording it as a terminal rejection.
+///
+/// A policy rejection is logged with its reason: the producer dead-letters the
+/// row and fences later activity behind it, so the reason must be recoverable
+/// from this side. Policy reasons are fixed strings and carry no financial data.
 fn bridge_error(
     error: wealthfolio_storage_sqlite::bridge_policy::BridgePolicyError,
     action: &str,
@@ -195,7 +199,10 @@ fn bridge_error(
                 "{action} failed: service temporarily unavailable"
             ))
         }
-        other => ApiError::BadRequest(format!("{action} failed: {other}")),
+        other => {
+            tracing::warn!(reason = %other, action, "bridge policy rejected the operation");
+            ApiError::BadRequest(format!("{action} failed: {other}"))
+        }
     }
 }
 
