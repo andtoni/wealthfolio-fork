@@ -25,6 +25,9 @@ use crate::activity_allocations::{
     allocations_for_taxonomy, group_assignments, group_splits, SplitsByActivity,
 };
 use crate::activity_assignments::ActivityTaxonomyAssignmentRepositoryTrait;
+use crate::activity_budget_periods::{
+    apply_budget_period_overrides, chosen_period, ActivityBudgetPeriodRepositoryTrait,
+};
 use crate::activity_classification::{activity_abs_amount, classify_activity, decimal_to_f64};
 use crate::activity_splits::ActivitySplitRepositoryTrait;
 use crate::aggregate_eligibility::{
@@ -50,6 +53,7 @@ pub struct BudgetService {
     account_repo: Arc<dyn AccountRepositoryTrait>,
     assignment_repo: Arc<dyn ActivityTaxonomyAssignmentRepositoryTrait>,
     split_repo: Arc<dyn ActivitySplitRepositoryTrait>,
+    budget_period_repo: Arc<dyn ActivityBudgetPeriodRepositoryTrait>,
     spending_settings: Arc<SpendingSettingsService>,
     taxonomy_service: Arc<dyn TaxonomyServiceTrait>,
     fx_service: Arc<dyn wealthfolio_core::fx::FxServiceTrait>,
@@ -64,6 +68,7 @@ impl BudgetService {
         account_repo: Arc<dyn AccountRepositoryTrait>,
         assignment_repo: Arc<dyn ActivityTaxonomyAssignmentRepositoryTrait>,
         split_repo: Arc<dyn ActivitySplitRepositoryTrait>,
+        budget_period_repo: Arc<dyn ActivityBudgetPeriodRepositoryTrait>,
         spending_settings: Arc<SpendingSettingsService>,
         taxonomy_service: Arc<dyn TaxonomyServiceTrait>,
         fx_service: Arc<dyn wealthfolio_core::fx::FxServiceTrait>,
@@ -75,6 +80,7 @@ impl BudgetService {
             account_repo,
             assignment_repo,
             split_repo,
+            budget_period_repo,
             spending_settings,
             taxonomy_service,
             fx_service,
@@ -789,18 +795,36 @@ impl BudgetService {
             return Ok(HashMap::new());
         }
         let (start, _) = local_period_bounds_utc(start_period, timezone, cycle)?;
-        let activities = self
+        let mut activities = self
             .activity_repo
             .get_activities_by_account_ids_in_date_range(&eligible_accounts.ids, start, end)
             .map_err(|e| anyhow!(e.to_string()))?
             .into_iter()
             .collect::<Vec<_>>();
-        let activities = filter_eligible_activity_rows(
+        // Transactions dated outside the window but counted toward one of its
+        // periods are loaded too; the overlay below moves them into it.
+        let budget_periods = self.budget_period_repo.list_all().await?;
+        let loaded: HashSet<&str> = activities.iter().map(|a| a.id.as_str()).collect();
+        let assigned_into_window = budget_periods
+            .iter()
+            .filter(|(id, _)| !loaded.contains(id.as_str()))
+            .filter(|(_, period_start)| {
+                chosen_period(period_start, cycle).is_some_and(|period| {
+                    period.key.as_str() >= start_period && period.key.as_str() <= end_period
+                })
+            })
+            .filter_map(|(id, _)| self.activity_repo.get_activity(id).ok())
+            .filter(|a| eligible_accounts.ids.contains(&a.account_id))
+            .collect::<Vec<_>>();
+        activities.extend(assigned_into_window);
+        let mut activities = filter_eligible_activity_rows(
             self.aggregate_eligibility_service.as_ref(),
             activities.clone(),
             &activities,
         )
         .await?;
+        apply_budget_period_overrides(&mut activities, &budget_periods, timezone, cycle);
+        activities.retain(|a| a.activity_date >= start && a.activity_date <= end);
         let account_types = eligible_accounts.account_types;
         let activity_ids = activities.iter().map(|a| a.id.clone()).collect::<Vec<_>>();
         let assignments = self
@@ -1266,6 +1290,7 @@ mod tests {
     use super::super::model::BudgetGroupAssignment;
     use super::*;
     use crate::activity_assignments::{ActivityTaxonomyAssignment, NewActivityTaxonomyAssignment};
+    use crate::activity_budget_periods::StaticBudgetPeriods;
     use crate::activity_splits::{ActivitySplit, NewActivitySplit};
     use crate::settings::{
         BudgetCadence, SpendingSettingsRepositoryTrait, SETTING_KEY_ACCOUNT_IDS,
@@ -1605,8 +1630,12 @@ mod tests {
 
     #[async_trait]
     impl ActivityRepositoryTrait for MockActivityRepo {
-        fn get_activity(&self, _: &str) -> CoreResult<Activity> {
-            unimplemented!()
+        fn get_activity(&self, id: &str) -> CoreResult<Activity> {
+            self.activities
+                .iter()
+                .find(|activity| activity.id == id)
+                .cloned()
+                .ok_or_else(|| wealthfolio_core::Error::Asset(format!("activity {id} not found")))
         }
 
         fn find_transfer_counterpart(&self, _: &str, _: &str) -> CoreResult<Option<Activity>> {
@@ -2259,6 +2288,7 @@ mod tests {
         activity_repo: Arc<MockActivityRepo>,
         assignment_repo: Arc<MockAssignmentRepo>,
         split_repo: Arc<MockSplitRepo>,
+        budget_period_repo: Arc<StaticBudgetPeriods>,
     }
 
     fn budget_fixture(
@@ -2291,6 +2321,7 @@ mod tests {
             calls: Mutex::new(Vec::new()),
         });
         let split_repo = Arc::new(MockSplitRepo::default());
+        let budget_period_repo = Arc::new(StaticBudgetPeriods::default());
         let live = || ProvenanceInput {
             role: ProvenanceRole::LiveCanonical,
             coverage_start: None,
@@ -2335,6 +2366,7 @@ mod tests {
             }),
             assignment_repo.clone(),
             split_repo.clone(),
+            budget_period_repo.clone(),
             Arc::new(SpendingSettingsService::new(Arc::new(MockSettingsRepo {
                 enabled: true,
                 account_ids: vec!["eligible-card".to_string(), "denied-card".to_string()],
@@ -2350,6 +2382,7 @@ mod tests {
             activity_repo,
             assignment_repo,
             split_repo,
+            budget_period_repo,
         }
     }
 
@@ -2628,6 +2661,66 @@ mod tests {
             .unwrap();
 
         let key = (SPENDING_TAXONOMY.to_string(), "cat_groceries".to_string());
+        assert_eq!(actuals["2026-03-25"][&key], Decimal::new(10, 0));
+        assert_eq!(actuals["2026-04-25"][&key], Decimal::new(20, 0));
+    }
+
+    #[tokio::test]
+    async fn budget_actuals_count_a_transaction_in_its_chosen_period() {
+        let row_ids = ["early-groceries", "late-dinner", "plain"];
+        let mut activities = row_ids
+            .iter()
+            .map(|id| activity(id, "eligible-card", "WITHDRAWAL", 10))
+            .collect::<Vec<_>>();
+        activities[0].activity_date = Utc.with_ymd_and_hms(2026, 4, 23, 16, 0, 0).unwrap();
+        activities[1].activity_date = Utc.with_ymd_and_hms(2026, 4, 26, 23, 0, 0).unwrap();
+        activities[2].activity_date = Utc.with_ymd_and_hms(2026, 4, 26, 16, 0, 0).unwrap();
+        let fixture = budget_fixture(
+            activities,
+            row_ids
+                .iter()
+                .map(|id| assignment(id, "cat_groceries"))
+                .collect(),
+            Vec::new(),
+            &["eligible-card"],
+            &row_ids,
+        );
+        fixture
+            .budget_period_repo
+            .set_many(
+                &["early-groceries".to_string()],
+                Some("2026-04-25".to_string()),
+            )
+            .await
+            .unwrap();
+        fixture
+            .budget_period_repo
+            .set_many(&["late-dinner".to_string()], Some("2026-03-25".to_string()))
+            .await
+            .unwrap();
+        let spending_meta = category_meta(&[category(SPENDING_TAXONOMY, "cat_groceries", None)]);
+        let key = (SPENDING_TAXONOMY.to_string(), "cat_groceries".to_string());
+
+        let mut actuals = HashMap::new();
+        for period in ["2026-03-25", "2026-04-25"] {
+            actuals.extend(
+                fixture
+                    .service
+                    .actuals_by_period(
+                        period,
+                        period,
+                        &spending_meta,
+                        &HashMap::new(),
+                        "USD",
+                        "America/Toronto",
+                        &BudgetCycleSettings::default(),
+                    )
+                    .await
+                    .unwrap(),
+            );
+        }
+
+        assert_eq!(actuals.len(), 2);
         assert_eq!(actuals["2026-03-25"][&key], Decimal::new(10, 0));
         assert_eq!(actuals["2026-04-25"][&key], Decimal::new(20, 0));
     }

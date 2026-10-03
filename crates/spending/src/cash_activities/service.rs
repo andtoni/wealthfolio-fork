@@ -27,6 +27,7 @@ use crate::activity_allocations::{
 use crate::activity_assignments::{
     ActivityTaxonomyAssignment, ActivityTaxonomyAssignmentService, BulkCategoryAssignment,
 };
+use crate::activity_budget_periods::{chosen_period, ActivityBudgetPeriodRepositoryTrait};
 use crate::activity_classification::{
     activity_abs_amount, classify_activity, classify_activity_for_aggregation,
     is_provider_pocket_conversion, within_spending_transfer_groups, SpendingClassification,
@@ -35,6 +36,7 @@ use crate::activity_splits::{ActivitySplit, ActivitySplitRepositoryTrait, NewAct
 use crate::aggregate_eligibility::{
     filter_eligible_activity_rows, resolve_eligible_spending_accounts,
 };
+use crate::budget::period::period_for_key;
 use crate::error::SpendingError;
 use crate::events::EventsService;
 use crate::settings::SpendingSettingsService;
@@ -53,6 +55,7 @@ pub struct CashActivityService {
     splits: Arc<dyn ActivitySplitRepositoryTrait>,
     activity_events: Arc<dyn crate::activity_events::ActivityEventsRepositoryTrait>,
     events: Arc<EventsService>,
+    budget_periods: Arc<dyn ActivityBudgetPeriodRepositoryTrait>,
 }
 
 impl CashActivityService {
@@ -66,6 +69,7 @@ impl CashActivityService {
         splits: Arc<dyn ActivitySplitRepositoryTrait>,
         activity_events: Arc<dyn crate::activity_events::ActivityEventsRepositoryTrait>,
         events: Arc<EventsService>,
+        budget_periods: Arc<dyn ActivityBudgetPeriodRepositoryTrait>,
         aggregate_eligibility: Arc<dyn AggregateEligibilityServiceTrait>,
     ) -> Self {
         Self {
@@ -77,6 +81,7 @@ impl CashActivityService {
             splits,
             activity_events,
             events,
+            budget_periods,
         }
     }
 
@@ -147,12 +152,14 @@ impl CashActivityService {
         let splits = self.splits.list_for_activities(&ids).await?;
         let mut splits_by_activity = group_splits_owned(splits);
         let mut tag_map = self.activity_events.list_for_activities(&ids).await?;
+        let mut budget_periods = self.budget_periods_for(&ids).await?;
         let items: Vec<CashActivity> = activities
             .into_iter()
             .map(|a| {
                 let assignments = by_activity.remove(&a.id).unwrap_or_default();
                 let splits = splits_by_activity.remove(&a.id).unwrap_or_default();
                 let event_id = tag_map.remove(&a.id);
+                let budget_period_start = budget_periods.remove(&a.id);
                 let cash_flow_bucket = cash_flow_bucket_for(&a, &account_types, &transfer_groups);
                 let transfer_link_status = transfer_link_status_for(&a, &transfer_link_resolution);
                 CashActivity {
@@ -161,6 +168,7 @@ impl CashActivityService {
                     assignments,
                     splits,
                     event_id,
+                    budget_period_start,
                     transfer_link_status,
                 }
             })
@@ -412,6 +420,7 @@ impl CashActivityService {
         let splits = self.splits.list_for_activities(&page_ids).await?;
         let mut splits_by_activity = group_splits_owned(splits);
         let mut tag_map = self.activity_events.list_for_activities(&page_ids).await?;
+        let mut budget_periods = self.budget_periods_for(&page_ids).await?;
 
         let items: Vec<CashActivity> = page
             .into_iter()
@@ -419,6 +428,7 @@ impl CashActivityService {
                 let assignments = by_activity.remove(&a.id).unwrap_or_default();
                 let splits = splits_by_activity.remove(&a.id).unwrap_or_default();
                 let event_id = tag_map.remove(&a.id);
+                let budget_period_start = budget_periods.remove(&a.id);
                 let cash_flow_bucket = cash_flow_bucket_for(&a, &account_types, &transfer_groups);
                 let transfer_link_status = transfer_link_status_for(&a, &transfer_link_resolution);
                 CashActivity {
@@ -427,6 +437,7 @@ impl CashActivityService {
                     assignments,
                     splits,
                     event_id,
+                    budget_period_start,
                     transfer_link_status,
                 }
             })
@@ -474,12 +485,14 @@ impl CashActivityService {
         let splits = self.splits.list_for_activities(&ids).await?;
         let mut splits_by_activity = group_splits_owned(splits);
         let mut tag_map = self.activity_events.list_for_activities(&ids).await?;
+        let mut budget_periods = self.budget_periods_for(&ids).await?;
         Ok(activities
             .into_iter()
             .map(|activity| {
                 let assignments = by_activity.remove(&activity.id).unwrap_or_default();
                 let splits = splits_by_activity.remove(&activity.id).unwrap_or_default();
                 let event_id = tag_map.remove(&activity.id);
+                let budget_period_start = budget_periods.remove(&activity.id);
                 let cash_flow_bucket =
                     cash_flow_bucket_for(&activity, &account_types, &transfer_groups);
                 let transfer_link_status =
@@ -490,6 +503,7 @@ impl CashActivityService {
                     assignments,
                     splits,
                     event_id,
+                    budget_period_start,
                     transfer_link_status,
                 }
             })
@@ -561,12 +575,14 @@ impl CashActivityService {
         let splits = self.splits.list_for_activities(&ids).await?;
         let mut splits_by_activity = group_splits_owned(splits);
         let mut tag_map = self.activity_events.list_for_activities(&ids).await?;
+        let mut budget_periods = self.budget_periods_for(&ids).await?;
         Ok(activities
             .into_iter()
             .map(|activity| {
                 let assignments = by_activity.remove(&activity.id).unwrap_or_default();
                 let splits = splits_by_activity.remove(&activity.id).unwrap_or_default();
                 let event_id = tag_map.remove(&activity.id);
+                let budget_period_start = budget_periods.remove(&activity.id);
                 let cash_flow_bucket = cash_flow_bucket_for(
                     &activity,
                     &eligible_accounts.account_types,
@@ -580,6 +596,7 @@ impl CashActivityService {
                     assignments,
                     splits,
                     event_id,
+                    budget_period_start,
                     transfer_link_status,
                 }
             })
@@ -733,6 +750,41 @@ impl CashActivityService {
             .set_activity_event_tag(activity_id, event_id)
             .await?;
         Ok(activity)
+    }
+
+    /// Count the given activities in the budget period starting on
+    /// `period_start`, or back in the period of their own date when `None`.
+    /// The activities themselves, including their dates, are not changed.
+    pub async fn set_budget_period(
+        &self,
+        activity_ids: &[String],
+        period_start: Option<String>,
+    ) -> Result<()> {
+        if let Some(period_start) = period_start.as_deref() {
+            let cycle = self.settings.get().await?.budget_cycle;
+            period_for_key(period_start, &cycle)?;
+        }
+        for activity_id in activity_ids {
+            self.ensure_activity_in_spending_scope(activity_id).await?;
+        }
+        self.budget_periods
+            .set_many(activity_ids, period_start)
+            .await
+    }
+
+    /// activity_id → chosen budget period key under the current cycle.
+    async fn budget_periods_for(&self, ids: &[String]) -> Result<HashMap<String, String>> {
+        let chosen = self.budget_periods.list_for_activities(ids).await?;
+        if chosen.is_empty() {
+            return Ok(chosen);
+        }
+        let cycle = self.settings.get().await?.budget_cycle;
+        Ok(chosen
+            .into_iter()
+            .filter_map(|(id, period_start)| {
+                chosen_period(&period_start, &cycle).map(|period| (id, period.key))
+            })
+            .collect())
     }
 
     fn resolve_target_accounts(
@@ -1894,6 +1946,7 @@ mod tests {
             split_repo.clone(),
             activity_events,
             events,
+            Arc::new(crate::activity_budget_periods::StaticBudgetPeriods::default()),
             aggregate_eligibility.clone(),
         );
         (service, assignment_repo, split_repo, aggregate_eligibility)

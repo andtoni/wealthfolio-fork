@@ -122,7 +122,13 @@
     "splitTransaction": "Dividir transacción",
     "duplicate": "Duplicar",
     "unlinkTransfer": "Desvincular transferencia",
-    "linkTransfer": "Vincular transferencia..."
+    "linkTransfer": "Vincular transferencia...",
+    "budgetPeriod": "Periodo de presupuesto",
+    "countInBudget": "Contar en el presupuesto",
+    "currentBudgetPeriod": "{{period}} (actual)",
+    "useTransactionDate": "Usar la fecha de la transacción",
+    "budgetPeriodBadge": "Presupuesto: {{period}}",
+    "budgetPeriodHint": "Cuenta para el presupuesto {{period}}. La fecha de la transacción no cambia."
   },
   "cashFlow": {
     "income": "Ingresos",
@@ -775,7 +781,11 @@
     "selectAllVisible": "Seleccionar todas las transacciones visibles",
     "nameNotes": "Nombre / Notas",
     "loading": "Cargando…",
-    "loadMore": "Cargar más ({{count}} restantes)"
+    "loadMore": "Cargar más ({{count}} restantes)",
+    "budgetPeriodSetCount_one": "{{count}} transacción movida a ese periodo de presupuesto.",
+    "budgetPeriodSetCount_other": "{{count}} transacciones movidas a ese periodo de presupuesto.",
+    "budgetPeriodClearedCount_one": "{{count}} transacción vuelve a contarse por su fecha.",
+    "budgetPeriodClearedCount_other": "{{count}} transacciones vuelven a contarse por su fecha."
   },
   "tabContent": {
     "stageWhereLabel": "Dónde estoy",

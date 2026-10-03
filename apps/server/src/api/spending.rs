@@ -187,6 +187,24 @@ async fn set_activity_event(
     Ok(Json(activity))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetBudgetPeriodBody {
+    activity_ids: Vec<String>,
+    period_start: Option<String>,
+}
+
+async fn set_activity_budget_period(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<SetBudgetPeriodBody>,
+) -> ApiResult<()> {
+    state
+        .cash_activity_service
+        .set_budget_period(&body.activity_ids, body.period_start)
+        .await?;
+    Ok(())
+}
+
 async fn get_activity_assignments(
     State(state): State<Arc<AppState>>,
     Path(activity_id): Path<String>,
@@ -734,6 +752,10 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(
             "/spending/cash-activities/{activity_id}/event",
             put(set_activity_event),
+        )
+        .route(
+            "/spending/cash-activities/budget-period",
+            put(set_activity_budget_period),
         )
         .route(
             "/spending/activities/{activity_id}/assignments",

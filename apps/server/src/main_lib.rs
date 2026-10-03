@@ -619,6 +619,16 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         activity_events_repo.clone(),
     ));
 
+    // Activity → chosen budget period overlay (see spending/activity_budget_periods).
+    let activity_budget_periods_repo: Arc<
+        dyn wealthfolio_spending::activity_budget_periods::ActivityBudgetPeriodRepositoryTrait,
+    > = Arc::new(
+        wealthfolio_storage_sqlite::spending::activity_budget_periods::ActivityBudgetPeriodRepository::new(
+            pool.clone(),
+            writer.clone(),
+        ),
+    );
+
     // Spending: cash_activity_service depends on activity_repository + spending settings
     //          + the assignments service (so search() can batch-fetch assignments and apply
     //          status/category filters server-side).
@@ -631,6 +641,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
             activity_splits_repo.clone(),
             activity_events_repo.clone(),
             events_service.clone(),
+            activity_budget_periods_repo.clone(),
             aggregate_eligibility_service.clone(),
         ),
     );
@@ -676,6 +687,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         account_repo.clone(),
         activity_assignments_repo.clone(),
         activity_splits_repo.clone(),
+        activity_budget_periods_repo.clone(),
         spending_settings_service.clone(),
         taxonomy_service.clone(),
         fx_service.clone(),
@@ -719,6 +731,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         account_repo.clone(),
         analytics_assignment_repo,
         activity_splits_repo,
+        activity_budget_periods_repo,
         spending_settings_service.clone(),
         taxonomy_service.clone(),
         fx_service.clone(),

@@ -174,6 +174,11 @@ pub struct CashActivity {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event_id: Option<String>,
+    /// Start date (`YYYY-MM-DD`) of the budget period the user chose to count
+    /// this activity in. `None` when it counts in the period of its own date.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub budget_period_start: Option<String>,
     /// Transfer link state for TRANSFER_IN / TRANSFER_OUT rows. Distinguishes
     /// valid pairs from orphaned or malformed source groups.
     #[serde(default)]

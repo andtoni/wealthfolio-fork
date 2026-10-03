@@ -664,6 +664,7 @@ mod tests {
                         assignments: Vec::new(),
                         splits: Vec::new(),
                         event_id: None,
+                        budget_period_start: None,
                         transfer_link_status: None,
                     }
                 })

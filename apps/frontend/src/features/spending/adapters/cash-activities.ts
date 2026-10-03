@@ -132,3 +132,16 @@ export const setActivityEvent = async (
     throw error;
   }
 };
+
+/** Count the activities in the given budget period; `null` reverts to their own dates. */
+export const setActivityBudgetPeriod = async (
+  activityIds: string[],
+  periodStart: string | null,
+): Promise<void> => {
+  try {
+    await invoke<void>("set_activity_budget_period", { activityIds, periodStart });
+  } catch (error) {
+    logger.error("Error setting activity budget period.");
+    throw error;
+  }
+};

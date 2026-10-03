@@ -12,6 +12,7 @@ import {
   listCashActivities,
   replaceActivitySplits,
   searchCashActivities,
+  setActivityBudgetPeriod,
   setActivityEvent,
   unassignActivityCategory,
   type BulkCategoryAssignment,
@@ -162,5 +163,21 @@ export function useSetActivityEvent() {
       invalidateSpendingCaches(queryClient);
     },
     onError: () => toast.error("Failed to set event."),
+  });
+}
+
+export function useSetActivityBudgetPeriod() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      activityIds,
+      periodStart,
+    }: {
+      activityIds: string[];
+      periodStart: string | null;
+    }) => setActivityBudgetPeriod(activityIds, periodStart),
+    onSuccess: () => {
+      invalidateSpendingCaches(queryClient);
+    },
   });
 }

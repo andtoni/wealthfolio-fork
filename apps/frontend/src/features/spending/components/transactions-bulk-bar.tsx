@@ -1,15 +1,34 @@
 import { useTranslation } from "react-i18next";
 
-import { Button, Icons } from "@wealthfolio/ui";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  Icons,
+} from "@wealthfolio/ui";
 
 import { QuickCategorizePopover, type QuickCategorizeScope } from "./quick-categorize-popover";
 import { QuickEventPopover } from "./quick-event-popover";
 
+export interface BudgetPeriodOption {
+  /** Period start date (`YYYY-MM-DD`). */
+  key: string;
+  label: string;
+  isCurrent: boolean;
+}
+
 interface TransactionsBulkBarProps {
   selectedCount: number;
   categoryScope: QuickCategorizeScope | null;
+  budgetPeriods: BudgetPeriodOption[];
   onCategorize: (taxonomyId: string, categoryId: string) => void;
   onTagEvent: (eventId: string | null) => void;
+  /** `null` counts the transactions in the period of their own date again. */
+  onSetBudgetPeriod: (periodStart: string | null) => void;
   onDelete: () => void;
   onClearSelection: () => void;
 }
@@ -17,8 +36,10 @@ interface TransactionsBulkBarProps {
 export function TransactionsBulkBar({
   selectedCount,
   categoryScope,
+  budgetPeriods,
   onCategorize,
   onTagEvent,
+  onSetBudgetPeriod,
   onDelete,
   onClearSelection,
 }: TransactionsBulkBarProps) {
@@ -70,6 +91,28 @@ export function TransactionsBulkBar({
             </Button>
           }
         />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" variant="outline">
+              <Icons.PieChart className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+              {t("spending:transactions.budgetPeriod")}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel>{t("spending:transactions.countInBudget")}</DropdownMenuLabel>
+            {budgetPeriods.map((period) => (
+              <DropdownMenuItem key={period.key} onSelect={() => onSetBudgetPeriod(period.key)}>
+                {period.isCurrent
+                  ? t("spending:transactions.currentBudgetPeriod", { period: period.label })
+                  : period.label}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => onSetBudgetPeriod(null)}>
+              {t("spending:transactions.useTransactionDate")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button
           size="sm"
           variant="outline"

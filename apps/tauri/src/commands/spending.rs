@@ -177,6 +177,19 @@ pub async fn set_activity_event(
 }
 
 #[tauri::command]
+pub async fn set_activity_budget_period(
+    activity_ids: Vec<String>,
+    period_start: Option<String>,
+    state: State<'_, Arc<ServiceContext>>,
+) -> Result<(), String> {
+    state
+        .cash_activity_service()
+        .set_budget_period(&activity_ids, period_start)
+        .await
+        .map_err(|e| format!("Failed to set activity budget period: {}", e))
+}
+
+#[tauri::command]
 pub async fn get_activity_assignments(
     activity_id: String,
     state: State<'_, Arc<ServiceContext>>,

@@ -505,6 +505,7 @@ pub fn run() {
             commands::spending::list_cash_activities,
             commands::spending::search_cash_activities,
             commands::spending::set_activity_event,
+            commands::spending::set_activity_budget_period,
             commands::spending::get_activity_assignments,
             commands::spending::assign_activity_category,
             commands::spending::unassign_activity_category,

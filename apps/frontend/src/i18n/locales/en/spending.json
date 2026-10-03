@@ -124,7 +124,13 @@
     "unlinkTransfer": "Unlink transfer",
     "linkTransfer": "Link transfer...",
     "original_amount": "Original: {{value}}",
-    "provisional": "Provisional"
+    "provisional": "Provisional",
+    "budgetPeriod": "Budget period",
+    "countInBudget": "Count in budget",
+    "currentBudgetPeriod": "{{period}} (current)",
+    "useTransactionDate": "Use transaction date",
+    "budgetPeriodBadge": "Budget: {{period}}",
+    "budgetPeriodHint": "Counts toward the {{period}} budget. The transaction date is unchanged."
   },
   "cashFlow": {
     "income": "Income",
@@ -781,7 +787,11 @@
     "selectAllVisible": "Select all visible transactions",
     "nameNotes": "Name / Notes",
     "loading": "Loading…",
-    "loadMore": "Load more ({{count}} remaining)"
+    "loadMore": "Load more ({{count}} remaining)",
+    "budgetPeriodSetCount_one": "Moved {{count}} transaction to that budget period.",
+    "budgetPeriodSetCount_other": "Moved {{count}} transactions to that budget period.",
+    "budgetPeriodClearedCount_one": "{{count}} transaction counts by its own date again.",
+    "budgetPeriodClearedCount_other": "{{count}} transactions count by their own dates again."
   },
   "tabContent": {
     "stageWhereLabel": "Where I am",

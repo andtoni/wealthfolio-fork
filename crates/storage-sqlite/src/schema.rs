@@ -585,6 +585,15 @@ diesel::table! {
 }
 
 diesel::table! {
+    spending_activity_budget_periods (activity_id) {
+        activity_id -> Text,
+        period_start -> Text,
+        created_at -> Text,
+        updated_at -> Text,
+    }
+}
+
+diesel::table! {
     spending_activity_events (activity_id) {
         activity_id -> Text,
         event_id -> Text,
@@ -901,6 +910,7 @@ diesel::joinable!(taxonomy_categories -> taxonomies (taxonomy_id));
 diesel::joinable!(activity_taxonomy_assignments -> activities (activity_id));
 diesel::joinable!(activity_taxonomy_assignments -> taxonomies (taxonomy_id));
 diesel::joinable!(verified_receipts -> accounts (account_id));
+diesel::joinable!(spending_activity_budget_periods -> activities (activity_id));
 diesel::joinable!(spending_activity_events -> activities (activity_id));
 diesel::joinable!(spending_activity_events -> spending_events (event_id));
 diesel::joinable!(spending_activity_splits -> activities (activity_id));
@@ -957,6 +967,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     taxonomies,
     taxonomy_categories,
     activity_taxonomy_assignments,
+    spending_activity_budget_periods,
     spending_activity_events,
     spending_activity_splits,
     spending_event_types,

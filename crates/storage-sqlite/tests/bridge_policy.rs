@@ -2209,6 +2209,40 @@ async fn lifecycle_commit_preserves_complete_overlay_state_exactly() {
 }
 
 #[tokio::test]
+async fn lifecycle_commit_carries_the_chosen_budget_period_to_the_posted_activity() {
+    let (_dir, path, store) = store(D1).await;
+    seed(&path, &[D1], &["alice"]);
+    store
+        .seed_migration_fixture("p-budget", "n-budget")
+        .await
+        .unwrap();
+    let generation = store.grant("alice", "a1").await.unwrap();
+    let c = Connection::open(&path).unwrap();
+    c.execute("INSERT INTO activity_disclosure_projections(deployment_id,person_subject_id,activity_id,account_id,access_generation) VALUES(?,?,?,?,?)", params![D1, "alice", "p-budget", "a1", generation]).unwrap();
+    c.execute("INSERT INTO spending_activity_budget_periods(activity_id,period_start) VALUES('p-budget','2026-01-25')", []).unwrap();
+    let op = DisclosureOperation::new(
+        "budget",
+        "alice",
+        generation,
+        DisclosureKind::ActivityUpsert,
+        "p-budget",
+    )
+    .with_lifecycle("n-budget");
+    store.commit(op).await.unwrap();
+    let rows: Vec<(String, String)> = c
+        .prepare("SELECT activity_id,period_start FROM spending_activity_budget_periods")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<std::result::Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        rows,
+        vec![("n-budget".to_string(), "2026-01-25".to_string())]
+    );
+}
+
+#[tokio::test]
 async fn grant_requires_current_owner_membership_and_account_participation() {
     let (_dir, path, store) = store(D1).await;
     seed(&path, &[D1], &["alice"]);

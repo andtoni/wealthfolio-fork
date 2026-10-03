@@ -71,12 +71,18 @@ import {
   toRowVM,
   type TransactionRowVM,
 } from "../lib/transactions-helpers";
+import {
+  budgetPeriodLabel,
+  currentBudgetPeriodKey,
+  shiftBudgetPeriodKey,
+} from "../lib/month-period";
 import { useCashActivitySearch } from "../hooks/use-cash-activity-search";
 import {
   useAssignActivityCategory,
   useBulkAssignCategories,
   useClearActivitySplits,
   useReplaceActivitySplits,
+  useSetActivityBudgetPeriod,
   useSetActivityEvent,
   useUnassignActivityCategory,
 } from "../hooks/use-cash-activities";
@@ -203,7 +209,7 @@ export const SpendingTransactionsTab = forwardRef<
   { onLinkInvestecCardLifecycle }: SpendingTransactionsTabProps,
   ref,
 ) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const urlCategoryId = searchParams.get("category");
   const urlSubcategoryId = searchParams.get("subcategory");
@@ -368,7 +374,7 @@ export const SpendingTransactionsTab = forwardRef<
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
 
   const { accounts = [] } = useAccounts({ filterActive: false });
-  const { accountIds: spendingAccountIds } = useSpendingSettings();
+  const { accountIds: spendingAccountIds, budgetCycle } = useSpendingSettings();
   const spendingAccounts = useMemo(() => {
     const includedIds = new Set(spendingAccountIds);
     return accounts.filter(
@@ -420,6 +426,7 @@ export const SpendingTransactionsTab = forwardRef<
   const replaceSplitsMutation = useReplaceActivitySplits();
   const clearSplitsMutation = useClearActivitySplits();
   const setEventMutation = useSetActivityEvent();
+  const setBudgetPeriodMutation = useSetActivityBudgetPeriod();
 
   const allCategories = useMemo(() => {
     const map = new Map<string, TaxonomyCategory>();
@@ -672,6 +679,37 @@ export const SpendingTransactionsTab = forwardRef<
       setSelectedRowIds(new Set());
     },
     [selectedRowIds, setEventMutation, t],
+  );
+
+  // The budget period before the current one, the current one, and the next.
+  const budgetPeriodOptions = useMemo(() => {
+    const current = currentBudgetPeriodKey(appTimezone, budgetCycle);
+    return [-1, 0, 1].map((offset) => {
+      const key = shiftBudgetPeriodKey(current, offset, budgetCycle);
+      return {
+        key,
+        label: budgetPeriodLabel(key, "short", i18n.language, budgetCycle),
+        isCurrent: offset === 0,
+      };
+    });
+  }, [appTimezone, budgetCycle, i18n.language]);
+
+  const handleBulkSetBudgetPeriod = useCallback(
+    async (periodStart: string | null) => {
+      const activityIds = Array.from(selectedRowIds);
+      try {
+        await setBudgetPeriodMutation.mutateAsync({ activityIds, periodStart });
+        toast.success(
+          periodStart
+            ? t("spending:txTab.budgetPeriodSetCount", { count: activityIds.length })
+            : t("spending:txTab.budgetPeriodClearedCount", { count: activityIds.length }),
+        );
+        setSelectedRowIds(new Set());
+      } catch {
+        toast.error(t("spending:txTab.failedOnCount", { count: activityIds.length }));
+      }
+    },
+    [selectedRowIds, setBudgetPeriodMutation, t],
   );
 
   const clearSelection = useCallback(() => setSelectedRowIds(new Set()), []);
@@ -986,7 +1024,9 @@ export const SpendingTransactionsTab = forwardRef<
           selectedCount={selectedRowIds.size}
           categoryScope={bulkCategoryScope}
           onCategorize={handleBulkCategorize}
+          budgetPeriods={budgetPeriodOptions}
           onTagEvent={handleBulkSetEvent}
+          onSetBudgetPeriod={handleBulkSetBudgetPeriod}
           onDelete={handleBulkDelete}
           onClearSelection={clearSelection}
         />

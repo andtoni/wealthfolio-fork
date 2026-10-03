@@ -1225,6 +1225,14 @@ fn move_activity_children(
         .bind::<Text, _>(canonical)
         .bind::<Text, _>(loser)
         .execute(c)?;
+    // A chosen budget period never blocks a merge: the canonical row keeps its
+    // own choice, otherwise it inherits the loser's.
+    sql_query(
+        "UPDATE OR IGNORE spending_activity_budget_periods SET activity_id=? WHERE activity_id=?",
+    )
+    .bind::<Text, _>(canonical)
+    .bind::<Text, _>(loser)
+    .execute(c)?;
     sql_query("UPDATE activity_attribution_overlays SET activity_id=? WHERE deployment_id=? AND activity_id=?")
         .bind::<Text, _>(canonical)
         .bind::<Text, _>(deployment_id)
@@ -2430,7 +2438,11 @@ impl BridgePolicyStore {
                         .bind::<Text,_>(n)
                         .bind::<Text,_>(p)
                         .execute(c)?;
-                    for table in &["activity_taxonomy_assignments", "spending_activity_splits", "spending_activity_events"] {
+                    sql_query("DELETE FROM spending_activity_budget_periods WHERE activity_id=? AND EXISTS (SELECT 1 FROM spending_activity_budget_periods WHERE activity_id=?)")
+                        .bind::<Text,_>(n)
+                        .bind::<Text,_>(p)
+                        .execute(c)?;
+                    for table in &["activity_taxonomy_assignments", "spending_activity_splits", "spending_activity_events", "spending_activity_budget_periods"] {
                         sql_query(format!("UPDATE {table} SET activity_id=? WHERE activity_id=?"))
                             .bind::<Text,_>(n)
                             .bind::<Text,_>(p)
@@ -2698,7 +2710,7 @@ impl BridgePolicyStore {
     }
     pub async fn migrate_pending_to_posted(&self, p: &str, n: &str) -> Result<()> {
         let (p, n, d) = (p.to_owned(), n.to_owned(), self.deployment_id.clone());
-        self.writer.exec(move|c|Ok(c.transaction::<_,crate::StorageError,_>(|c|{let pending: i64=sql_query("SELECT count(*) AS count FROM activities WHERE id=? AND status='PENDING'").bind::<Text,_>(&p).get_result::<Count>(c)?.count;let posted: i64=sql_query("SELECT count(*) AS count FROM activities WHERE id=? AND status='POSTED'").bind::<Text,_>(&n).get_result::<Count>(c)?.count;if pending!=1||posted!=1{return Err(diesel::result::Error::NotFound.into());}for table in ["activity_taxonomy_assignments","spending_activity_splits","spending_activity_events"]{sql_query(format!("UPDATE {table} SET activity_id=? WHERE activity_id=?")).bind::<Text,_>(&n).bind::<Text,_>(&p).execute(c)?;}sql_query("UPDATE activities SET notes=coalesce((SELECT notes FROM activities WHERE id=?),notes),activity_type_override=coalesce((SELECT activity_type_override FROM activities WHERE id=?),activity_type_override),is_user_modified=max(is_user_modified,coalesce((SELECT is_user_modified FROM activities WHERE id=?),0)),needs_review=max(needs_review,coalesce((SELECT needs_review FROM activities WHERE id=?),0)) WHERE id=?").bind::<Text,_>(&p).bind::<Text,_>(&p).bind::<Text,_>(&p).bind::<Text,_>(&p).bind::<Text,_>(&n).execute(c)?;sql_query("UPDATE activity_attribution_overlays SET activity_id=?,account_id=(SELECT account_id FROM activities WHERE id=?) WHERE deployment_id=? AND activity_id=?").bind::<Text,_>(&n).bind::<Text,_>(&n).bind::<Text,_>(&d).bind::<Text,_>(&p).execute(c)?;sql_query("DELETE FROM activities WHERE id=?").bind::<Text,_>(&p).execute(c)?;Ok(())})?)).await.map_err(err)
+        self.writer.exec(move|c|Ok(c.transaction::<_,crate::StorageError,_>(|c|{let pending: i64=sql_query("SELECT count(*) AS count FROM activities WHERE id=? AND status='PENDING'").bind::<Text,_>(&p).get_result::<Count>(c)?.count;let posted: i64=sql_query("SELECT count(*) AS count FROM activities WHERE id=? AND status='POSTED'").bind::<Text,_>(&n).get_result::<Count>(c)?.count;if pending!=1||posted!=1{return Err(diesel::result::Error::NotFound.into());}for table in ["activity_taxonomy_assignments","spending_activity_splits","spending_activity_events","spending_activity_budget_periods"]{sql_query(format!("UPDATE {table} SET activity_id=? WHERE activity_id=?")).bind::<Text,_>(&n).bind::<Text,_>(&p).execute(c)?;}sql_query("UPDATE activities SET notes=coalesce((SELECT notes FROM activities WHERE id=?),notes),activity_type_override=coalesce((SELECT activity_type_override FROM activities WHERE id=?),activity_type_override),is_user_modified=max(is_user_modified,coalesce((SELECT is_user_modified FROM activities WHERE id=?),0)),needs_review=max(needs_review,coalesce((SELECT needs_review FROM activities WHERE id=?),0)) WHERE id=?").bind::<Text,_>(&p).bind::<Text,_>(&p).bind::<Text,_>(&p).bind::<Text,_>(&p).bind::<Text,_>(&n).execute(c)?;sql_query("UPDATE activity_attribution_overlays SET activity_id=?,account_id=(SELECT account_id FROM activities WHERE id=?) WHERE deployment_id=? AND activity_id=?").bind::<Text,_>(&n).bind::<Text,_>(&n).bind::<Text,_>(&d).bind::<Text,_>(&p).execute(c)?;sql_query("DELETE FROM activities WHERE id=?").bind::<Text,_>(&p).execute(c)?;Ok(())})?)).await.map_err(err)
     }
     pub async fn migration_state(&self, p: &str, n: &str) -> Result<MigrationState> {
         let mut c = self

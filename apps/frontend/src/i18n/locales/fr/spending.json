@@ -122,7 +122,13 @@
     "splitTransaction": "Ventiler la transaction",
     "duplicate": "Dupliquer",
     "unlinkTransfer": "Dissocier le virement",
-    "linkTransfer": "Associer un virement..."
+    "linkTransfer": "Associer un virement...",
+    "budgetPeriod": "Période budgétaire",
+    "countInBudget": "Compter dans le budget",
+    "currentBudgetPeriod": "{{period}} (en cours)",
+    "useTransactionDate": "Utiliser la date de la transaction",
+    "budgetPeriodBadge": "Budget : {{period}}",
+    "budgetPeriodHint": "Compte dans le budget {{period}}. La date de la transaction ne change pas."
   },
   "cashFlow": {
     "income": "Revenus",
@@ -775,7 +781,11 @@
     "selectAllVisible": "Sélectionner toutes les transactions visibles",
     "nameNotes": "Nom / Notes",
     "loading": "Chargement…",
-    "loadMore": "Charger plus ({{count}} restantes)"
+    "loadMore": "Charger plus ({{count}} restantes)",
+    "budgetPeriodSetCount_one": "{{count}} transaction déplacée vers cette période budgétaire.",
+    "budgetPeriodSetCount_other": "{{count}} transactions déplacées vers cette période budgétaire.",
+    "budgetPeriodClearedCount_one": "{{count}} transaction est de nouveau comptée à sa date.",
+    "budgetPeriodClearedCount_other": "{{count}} transactions sont de nouveau comptées à leur date."
   },
   "tabContent": {
     "stageWhereLabel": "Où j'en suis",

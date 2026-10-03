@@ -19,6 +19,9 @@ use crate::activity_allocations::{
     AssignmentsByActivity, SplitsByActivity,
 };
 use crate::activity_assignments::ActivityTaxonomyAssignmentRepositoryTrait;
+use crate::activity_budget_periods::{
+    apply_budget_period_overrides, ActivityBudgetPeriodRepositoryTrait,
+};
 use crate::activity_classification::{
     activity_abs_amount, classify_activity, classify_activity_for_aggregation, decimal_to_f64,
     within_spending_transfer_groups,
@@ -55,6 +58,7 @@ pub struct InsightService {
     account_repo: Arc<dyn AccountRepositoryTrait>,
     assignment_repo: Arc<dyn ActivityTaxonomyAssignmentRepositoryTrait>,
     split_repo: Arc<dyn ActivitySplitRepositoryTrait>,
+    budget_period_repo: Arc<dyn ActivityBudgetPeriodRepositoryTrait>,
     settings: Arc<SpendingSettingsService>,
     taxonomy_service: Arc<dyn TaxonomyServiceTrait>,
     fx_service: Arc<dyn FxServiceTrait>,
@@ -69,6 +73,7 @@ impl InsightService {
         account_repo: Arc<dyn AccountRepositoryTrait>,
         assignment_repo: Arc<dyn ActivityTaxonomyAssignmentRepositoryTrait>,
         split_repo: Arc<dyn ActivitySplitRepositoryTrait>,
+        budget_period_repo: Arc<dyn ActivityBudgetPeriodRepositoryTrait>,
         settings: Arc<SpendingSettingsService>,
         taxonomy_service: Arc<dyn TaxonomyServiceTrait>,
         fx_service: Arc<dyn FxServiceTrait>,
@@ -80,6 +85,7 @@ impl InsightService {
             account_repo,
             assignment_repo,
             split_repo,
+            budget_period_repo,
             settings,
             taxonomy_service,
             fx_service,
@@ -189,12 +195,19 @@ impl InsightService {
             .activity_repo
             .get_activities_by_account_ids(&eligible_accounts.ids)
             .map_err(|e| anyhow!(e.to_string()))?;
-        let eligible_activities = filter_eligible_activity_rows(
+        let mut eligible_activities = filter_eligible_activity_rows(
             self.aggregate_eligibility_service.as_ref(),
             activities.clone(),
             &activities,
         )
         .await?;
+        // Count each transaction in the budget period the user chose for it.
+        apply_budget_period_overrides(
+            &mut eligible_activities,
+            &self.budget_period_repo.list_all().await?,
+            timezone,
+            &budget_cycle,
+        );
         let transfer_context_acts: Vec<&Activity> = eligible_activities.iter().collect();
         let transfer_groups = within_spending_transfer_groups(&transfer_context_acts);
         let in_window = |a: &Activity, lo: DateTime<Utc>, hi: DateTime<Utc>| {
@@ -1573,6 +1586,7 @@ mod tests {
     };
 
     use crate::activity_assignments::{ActivityTaxonomyAssignment, NewActivityTaxonomyAssignment};
+    use crate::activity_budget_periods::StaticBudgetPeriods;
     use crate::activity_splits::{ActivitySplit, NewActivitySplit};
     use crate::budget::{
         BudgetGroup, BudgetGroupAssignment, BudgetRolloverSetting, BudgetTarget, NewBudgetGroup,
@@ -2370,6 +2384,7 @@ mod tests {
         eligibility: Arc<MockEligibility>,
         assignments: Arc<MockAssignmentRepo>,
         splits: Arc<MockSplitRepo>,
+        budget_periods: Arc<StaticBudgetPeriods>,
     }
 
     fn make_insight_service(
@@ -2382,6 +2397,7 @@ mod tests {
         let activity_repo = Arc::new(MockActivityRepo { activities });
         let assignments = Arc::new(MockAssignmentRepo::default());
         let splits = Arc::new(MockSplitRepo::default());
+        let budget_periods = Arc::new(StaticBudgetPeriods::default());
         let settings = Arc::new(SpendingSettingsService::new(Arc::new(MockSettingsRepo {
             account_ids: settings_account_ids,
         })));
@@ -2397,6 +2413,7 @@ mod tests {
                 Arc::new(MockAccountRepo { accounts }),
                 assignments.clone(),
                 splits.clone(),
+                budget_periods.clone(),
                 settings,
                 Arc::new(MockTaxonomyService),
                 Arc::new(fx()),
@@ -2405,6 +2422,7 @@ mod tests {
             eligibility,
             assignments,
             splits,
+            budget_periods,
         }
     }
 
@@ -2417,6 +2435,56 @@ mod tests {
             account_ids: None,
             compare: Some(CompareMode::Prior),
         }
+    }
+
+    #[tokio::test]
+    async fn insight_counts_a_transaction_in_its_chosen_budget_period() {
+        let ids = ["early-groceries", "late-dinner", "plain"];
+        let insight = make_insight_service(
+            vec![
+                insight_activity(ids[0], "cash", "WITHDRAWAL", 100, dt(2026, 6, 23)),
+                insight_activity(ids[1], "cash", "WITHDRAWAL", 50, dt(2026, 6, 26)),
+                insight_activity(ids[2], "cash", "WITHDRAWAL", 30, dt(2026, 7, 10)),
+            ],
+            vec![account("cash", account_types::CASH)],
+            vec!["cash".to_string()],
+            vec!["cash".to_string()],
+            ids.iter().map(|id| id.to_string()).collect(),
+        );
+        insight
+            .budget_periods
+            .set_many(&[ids[0].to_string()], Some("2026-06-25".to_string()))
+            .await
+            .unwrap();
+        insight
+            .budget_periods
+            .set_many(&[ids[1].to_string()], Some("2026-05-25".to_string()))
+            .await
+            .unwrap();
+
+        let report = insight
+            .service
+            .compute(
+                SpendingInsightRequest {
+                    start_date: "2026-06-25T00:00:00Z".to_string(),
+                    end_date: "2026-07-24T23:59:59Z".to_string(),
+                    compare_start_date: Some("2026-05-25T00:00:00Z".to_string()),
+                    compare_end_date: Some("2026-06-24T23:59:59Z".to_string()),
+                    account_ids: None,
+                    compare: Some(CompareMode::Prior),
+                },
+                "USD",
+                "UTC",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(report.headline.spent, 130.0);
+        assert_eq!(report.headline.prior_spent, 50.0);
+        assert_eq!(
+            report.by_day.iter().map(|bucket| bucket.spent).sum::<f64>(),
+            130.0
+        );
     }
 
     #[tokio::test]

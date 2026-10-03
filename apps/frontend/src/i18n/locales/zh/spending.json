@@ -122,7 +122,13 @@
     "splitTransaction": "拆分交易",
     "duplicate": "复制",
     "unlinkTransfer": "取消关联转账",
-    "linkTransfer": "关联转账……"
+    "linkTransfer": "关联转账……",
+    "budgetPeriod": "预算周期",
+    "countInBudget": "计入预算",
+    "currentBudgetPeriod": "{{period}}（当前）",
+    "useTransactionDate": "按交易日期",
+    "budgetPeriodBadge": "预算：{{period}}",
+    "budgetPeriodHint": "计入 {{period}} 预算。交易日期不变。"
   },
   "cashFlow": {
     "income": "收入",
@@ -775,7 +781,11 @@
     "selectAllVisible": "选择所有可见交易",
     "nameNotes": "名称 / 备注",
     "loading": "正在加载……",
-    "loadMore": "加载更多（剩余 {{count}} 项）"
+    "loadMore": "加载更多（剩余 {{count}} 项）",
+    "budgetPeriodSetCount_one": "已将 {{count}} 笔交易移入该预算周期。",
+    "budgetPeriodSetCount_other": "已将 {{count}} 笔交易移入该预算周期。",
+    "budgetPeriodClearedCount_one": "{{count}} 笔交易恢复按交易日期计入。",
+    "budgetPeriodClearedCount_other": "{{count}} 笔交易恢复按交易日期计入。"
   },
   "tabContent": {
     "stageWhereLabel": "我的现状",

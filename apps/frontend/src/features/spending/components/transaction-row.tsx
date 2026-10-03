@@ -20,6 +20,7 @@ import { useInvestecCardLifecycleLinkEnabled } from "@/lib/provider-features";
 import { cn, formatDateTime } from "@/lib/utils";
 
 import { QuickCategorizePopover } from "./quick-categorize-popover";
+import { BudgetPeriodBadge } from "./budget-period-badge";
 import { QuickEventPopover } from "./quick-event-popover";
 import {
   getCashActivityLabel,
@@ -148,6 +149,7 @@ function TransactionRowImpl({
               {t("spending:transactions.provisional")}
             </Badge>
           )}
+          <BudgetPeriodBadge periodStart={a.budgetPeriodStart} />
         </div>
         <div className="text-muted-foreground mt-0.5 truncate text-[11px] sm:hidden">
           {formattedDate.date} {formattedDate.time} · {accountName}

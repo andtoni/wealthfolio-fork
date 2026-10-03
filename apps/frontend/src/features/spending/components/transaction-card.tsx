@@ -17,6 +17,7 @@ import { getOriginalCurrencyDisplay, isProvisionalCardSpending } from "@/lib/ori
 import { useInvestecCardLifecycleLinkEnabled } from "@/lib/provider-features";
 import { cn, formatDateTime } from "@/lib/utils";
 
+import { BudgetPeriodBadge } from "./budget-period-badge";
 import { QuickCategorizePopover } from "./quick-categorize-popover";
 import { QuickEventPopover } from "./quick-event-popover";
 import {
@@ -136,6 +137,7 @@ function TransactionCardImpl({
                 {t("spending:transactions.provisional")}
               </Badge>
             )}
+            <BudgetPeriodBadge periodStart={a.budgetPeriodStart} />
           </div>
           <div className="text-muted-foreground mt-0.5 truncate text-[11px]">
             {formattedDate.date} {formattedDate.time} · {accountName} ·{" "}

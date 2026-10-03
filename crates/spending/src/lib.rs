@@ -26,6 +26,7 @@
 
 mod activity_allocations;
 pub mod activity_assignments;
+pub mod activity_budget_periods;
 mod activity_classification;
 pub mod activity_events;
 pub mod activity_splits;

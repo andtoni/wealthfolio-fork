@@ -122,7 +122,13 @@
     "splitTransaction": "Transaktion aufteilen",
     "duplicate": "Duplizieren",
     "unlinkTransfer": "Überweisung trennen",
-    "linkTransfer": "Überweisung verknüpfen..."
+    "linkTransfer": "Überweisung verknüpfen...",
+    "budgetPeriod": "Budgetzeitraum",
+    "countInBudget": "Im Budget zählen",
+    "currentBudgetPeriod": "{{period}} (aktuell)",
+    "useTransactionDate": "Transaktionsdatum verwenden",
+    "budgetPeriodBadge": "Budget: {{period}}",
+    "budgetPeriodHint": "Zählt zum Budget {{period}}. Das Transaktionsdatum bleibt unverändert."
   },
   "cashFlow": {
     "income": "Einnahmen",
@@ -775,7 +781,11 @@
     "selectAllVisible": "Alle sichtbaren Transaktionen auswählen",
     "nameNotes": "Name / Notizen",
     "loading": "Wird geladen…",
-    "loadMore": "Mehr laden ({{count}} verbleibend)"
+    "loadMore": "Mehr laden ({{count}} verbleibend)",
+    "budgetPeriodSetCount_one": "{{count}} Transaktion in diesen Budgetzeitraum verschoben.",
+    "budgetPeriodSetCount_other": "{{count}} Transaktionen in diesen Budgetzeitraum verschoben.",
+    "budgetPeriodClearedCount_one": "{{count}} Transaktion zählt wieder nach ihrem Datum.",
+    "budgetPeriodClearedCount_other": "{{count}} Transaktionen zählen wieder nach ihrem Datum."
   },
   "tabContent": {
     "stageWhereLabel": "Wo ich stehe",

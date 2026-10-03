@@ -205,6 +205,7 @@ export const COMMANDS: CommandMap = {
   list_cash_activities: { method: "GET", path: "/spending/cash-activities" },
   search_cash_activities: { method: "POST", path: "/spending/cash-activities/search" },
   set_activity_event: { method: "PUT", path: "/spending/cash-activities" },
+  set_activity_budget_period: { method: "PUT", path: "/spending/cash-activities/budget-period" },
   get_activity_assignments: { method: "GET", path: "/spending/activities" },
   assign_activity_category: { method: "PUT", path: "/spending/activities" },
   unassign_activity_category: { method: "DELETE", path: "/spending/activities" },
@@ -1426,6 +1427,14 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       };
       url += `/${encodeURIComponent(activityId)}/event`;
       body = JSON.stringify({ eventId });
+      break;
+    }
+    case "set_activity_budget_period": {
+      const { activityIds, periodStart } = payload as {
+        activityIds: string[];
+        periodStart: string | null;
+      };
+      body = JSON.stringify({ activityIds, periodStart });
       break;
     }
     case "get_activity_assignments": {

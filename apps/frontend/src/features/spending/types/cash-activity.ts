@@ -79,6 +79,11 @@ export interface CashActivity extends Activity {
   splits: ActivitySplit[];
   /** Spending event tag from the `activity_events` join. `undefined` when untagged. */
   eventId?: string | null;
+  /**
+   * Start date (`YYYY-MM-DD`) of the budget period this row was assigned to.
+   * `undefined` when it counts in the period of its own date.
+   */
+  budgetPeriodStart?: string | null;
   /** Transfer pair validity for effective TRANSFER_IN / TRANSFER_OUT rows. */
   transferLinkStatus?: TransferLinkStatus | null;
 }
