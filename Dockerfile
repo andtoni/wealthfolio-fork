@@ -32,11 +32,10 @@ RUN pnpm --filter frontend... build && mv dist /web-dist
 # Stage 2: build server with cross-compilation
 FROM --platform=$BUILDPLATFORM tonistiigi/xx:latest@sha256:c64defb9ed5a91eacb37f96ccc3d4cd72521c4bd18d5442905b95e2226b0e707 AS xx
 
-FROM --platform=$BUILDPLATFORM ${RUST_IMAGE} AS backend
+FROM --platform=$BUILDPLATFORM ${RUST_IMAGE} AS backend-base
 # Copy xx scripts to handle cross-compilation
 COPY --from=xx / /
 ARG TARGETPLATFORM
-ARG CACHE_NAMESPACE
 
 # Wealthfolio Connect configuration (baked into server binary at build time)
 ARG CONNECT_AUTH_URL=
@@ -53,36 +52,45 @@ RUN apk add --no-cache clang21=21.1.2-r2 lld21=21.1.2-r1 git=2.52.0-r0 file=5.46
 
 # Install TARGET dependencies
 # xx-apk installs into /$(xx-info triple)/...
-RUN xx-apk add --no-cache musl-dev=1.2.5-r23 gcc=15.2.0-r2 openssl-dev=3.5.7-r0 openssl-libs-static=3.5.7-r0 sqlite-dev=3.51.2-r0
+RUN xx-apk add --no-cache musl-dev=1.2.5-r23 gcc=15.2.0-r2 openssl-dev=3.5.9-r0 openssl-libs-static=3.5.9-r0 sqlite-dev=3.53.4-r0
 
 # Install rust target
 RUN rustup target add $(xx-cargo --print-target-triple)
 
-# Leverage Docker layer caching for dependencies
+# cargo-chef compiles third-party dependencies in their own layer, keyed on
+# the manifests and lockfile only. The publisher builds on a fresh BuildKit
+# builder every run, so a layer (restored from the registry cache) is the only
+# place compiled dependencies survive; a cache mount would be discarded.
+RUN cargo install cargo-chef --locked --version 0.1.78
+
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+ENV CARGO_BUILD_JOBS=4
+ENV CARGO_PROFILE_RELEASE_DEBUG=0
+ENV RUSTFLAGS="-C link-arg=-Wl,--no-keep-memory"
+ENV OPENSSL_STATIC=1
+
+# Reduce the workspace to a dependency recipe. This stage reruns on every
+# source change, but its output only changes when a manifest or the lockfile does.
+FROM backend-base AS planner
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY apps/server ./apps/server
 # Stub out apps/tauri so the workspace resolves (not built in Docker)
 COPY apps/tauri/Cargo.toml apps/tauri/Cargo.toml
 RUN mkdir -p apps/tauri/src && echo "fn main(){}" > apps/tauri/src/main.rs && echo "" > apps/tauri/src/lib.rs
-RUN mkdir -p apps/server/src && echo "fn main(){}" > apps/server/src/main.rs
-RUN --mount=type=cache,id=${CACHE_NAMESPACE}-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,id=${CACHE_NAMESPACE}-cargo-git,target=/usr/local/cargo/git,sharing=locked \
-    xx-cargo fetch --manifest-path apps/server/Cargo.toml
+RUN cargo chef prepare --recipe-path recipe.json
 
-# Now copy full sources. Persistent Cargo caches retain dependency artifacts;
-# source-only changes recompile only affected workspace crates.
+FROM backend-base AS backend
+COPY --from=planner /app/recipe.json recipe.json
+RUN xx-cargo chef cook --release --recipe-path recipe.json --package wealthfolio-server
+
+# Now copy full sources; only the workspace crates are compiled here.
+COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY apps/server ./apps/server
-ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
-ENV CARGO_BUILD_JOBS=1
-ENV CARGO_PROFILE_RELEASE_DEBUG=0
-ENV RUSTFLAGS="-C link-arg=-Wl,--no-keep-memory"
-ENV OPENSSL_STATIC=1
-RUN --mount=type=cache,id=${CACHE_NAMESPACE}-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,id=${CACHE_NAMESPACE}-cargo-git,target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,id=${CACHE_NAMESPACE}-cargo-target,target=/app/target,sharing=locked \
-    xx-cargo build --release --manifest-path apps/server/Cargo.toml && \
+COPY apps/tauri/Cargo.toml apps/tauri/Cargo.toml
+RUN mkdir -p apps/tauri/src && echo "fn main(){}" > apps/tauri/src/main.rs && echo "" > apps/tauri/src/lib.rs
+RUN xx-cargo build --release --manifest-path apps/server/Cargo.toml && \
     cp target/$(xx-cargo --print-target-triple)/release/wealthfolio-server /wealthfolio-server
 
 # Final stage
