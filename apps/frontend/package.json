@@ -41,7 +41,7 @@
     "@fontsource/merriweather": "5.2.11",
     "@hookform/resolvers": "5.2.2",
     "@internationalized/date": "3.11.0",
-    "@number-flow/react": "0.6.1",
+    "@number-flow/react": "0.6.2",
     "@phosphor-icons/react": "2.1.10",
     "@radix-ui/react-slot": "1.2.4",
     "@supabase/supabase-js": "2.98.0",
