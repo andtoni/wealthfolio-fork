@@ -119,5 +119,8 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",
     include: ["**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}"],
+    // The CI runner compiles Rust in parallel with this suite; first renders of
+    // the large forms have exceeded the 5 s default there.
+    testTimeout: 15_000,
   },
 } as unknown as import("vitest/config").UserConfigExport);
