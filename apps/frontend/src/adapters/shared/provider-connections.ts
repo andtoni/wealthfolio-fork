@@ -13,10 +13,22 @@ export type ProviderConnectionState =
   | "connected"
   | "completed";
 
+export interface ProviderConnectionSummary {
+  /** Exact selection Plaid update mode accepts for this connection. */
+  connectionId: string;
+  /** Account names and masks only. */
+  label: string;
+  needsReauth: boolean;
+  /** Fixed code for why the connection needs attention; never provider text. */
+  reason?: string;
+}
+
 export interface ProviderConnectionStatus {
   provider: ProviderKind;
   status: ProviderConnectionState;
   message: string;
+  /** Plaid only: one entry per connected bank login. */
+  connections?: ProviderConnectionSummary[];
 }
 
 export interface ProviderConnectionStartResponse extends ProviderConnectionStatus {
@@ -59,8 +71,12 @@ export async function startProviderConnection(
   return invoke<ProviderConnectionStartResponse>("start_provider_connection", { provider });
 }
 
-export async function startPlaidUpdate(): Promise<ProviderConnectionStartResponse> {
-  return invoke<ProviderConnectionStartResponse>("start_plaid_update");
+export async function startPlaidUpdate(
+  connectionId?: string,
+): Promise<ProviderConnectionStartResponse> {
+  return connectionId === undefined
+    ? invoke<ProviderConnectionStartResponse>("start_plaid_update")
+    : invoke<ProviderConnectionStartResponse>("start_plaid_update", { connectionId });
 }
 
 export async function listDiscoveredProviderAccounts(

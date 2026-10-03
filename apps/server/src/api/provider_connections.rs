@@ -4,6 +4,7 @@
 use std::{collections::HashSet, path::PathBuf, sync::Arc, time::Duration};
 
 use axum::{
+    body::Bytes,
     extract::{Path, State},
     routing::{get, post},
     Extension, Json, Router,
@@ -26,6 +27,10 @@ use crate::{
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_PUBLIC_TOKEN_BYTES: usize = 8 * 1024;
 const MAX_LINK_VALUE_BYTES: usize = 8 * 1024;
+const MAX_PLAID_CONNECTION_ID_BYTES: usize = 512;
+const MAX_PLAID_CONNECTIONS: usize = 64;
+const MAX_CONNECTION_LABEL_BYTES: usize = 1024;
+const MAX_CONNECTION_REASON_BYTES: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -96,12 +101,27 @@ pub enum ProviderStatus {
     Completed,
 }
 
+/// One connected Plaid Item. `connection_id` is the exact selection the Plaid
+/// update route accepts; the label holds account names and masks only. `reason`
+/// is a fixed code from Finance Sync's allowlist, never provider text.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProviderConnectionSummary {
+    pub connection_id: String,
+    pub label: String,
+    pub needs_reauth: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProviderConnectionStatus {
     pub provider: ProviderKind,
     pub status: ProviderStatus,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub connections: Vec<ProviderConnectionSummary>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -129,6 +149,18 @@ struct PlaidCompleteRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PlaidUpdateCompleteRequest {
     continuation_token: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PlaidUpdateRequest {
+    connection_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FinanceSyncPlaidUpdateRequest<'a> {
+    connection_id: &'a str,
 }
 
 #[derive(Debug, Serialize)]
@@ -493,19 +525,27 @@ impl FinanceSyncControl {
         subject: &str,
         body: Option<&B>,
     ) -> ApiResult<T> {
+        decode_response(self.send_post(suffix, subject, body).await?).await
+    }
+
+    async fn send_post<B: Serialize + ?Sized>(
+        &self,
+        suffix: &str,
+        subject: &str,
+        body: Option<&B>,
+    ) -> ApiResult<reqwest::Response> {
         let request = self
             .client
             .post(self.endpoint(suffix)?)
             .bearer_auth(&self.token)
             .header("X-Authenticated-Subject", subject);
-        let response = match body {
+        match body {
             Some(value) => request.json(value),
             None => request.header(header::CONTENT_LENGTH, "0"),
         }
         .send()
         .await
-        .map_err(|_| service_unavailable())?;
-        decode_response(response).await
+        .map_err(|_| service_unavailable())
     }
 
     async fn admission_status(
@@ -588,6 +628,24 @@ async fn decode_response<T: DeserializeOwned>(response: reqwest::Response) -> Ap
     serde_json::from_slice(&body).map_err(|_| service_unavailable())
 }
 
+/// The same bound Finance Sync applies to a Plaid Item selection: an opaque,
+/// non-empty provider identifier without control characters.
+fn valid_plaid_connection_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_PLAID_CONNECTION_ID_BYTES
+        && !value.chars().any(char::is_control)
+}
+
+/// A reason is a fixed upper-case code such as `ITEM_LOGIN_REQUIRED`; anything
+/// shaped like free text is rejected.
+fn valid_connection_reason(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_CONNECTION_REASON_BYTES
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
+}
+
 fn validate_list(statuses: &[ProviderConnectionStatus]) -> ApiResult<()> {
     if statuses.len() > 4 {
         return Err(service_unavailable());
@@ -599,6 +657,33 @@ fn validate_list(statuses: &[ProviderConnectionStatus]) -> ApiResult<()> {
             .any(|status| status.message.len() > MAX_LINK_VALUE_BYTES)
     {
         return Err(service_unavailable());
+    }
+    for status in statuses {
+        // Only Plaid Items can be re-authenticated in place.
+        if status.connections.len() > MAX_PLAID_CONNECTIONS
+            || (status.provider != ProviderKind::Plaid && !status.connections.is_empty())
+        {
+            return Err(service_unavailable());
+        }
+        let ids: HashSet<_> = status
+            .connections
+            .iter()
+            .map(|connection| connection.connection_id.as_str())
+            .collect();
+        if ids.len() != status.connections.len()
+            || status.connections.iter().any(|connection| {
+                !valid_plaid_connection_id(&connection.connection_id)
+                    || connection.label.is_empty()
+                    || connection.label.len() > MAX_CONNECTION_LABEL_BYTES
+                    || connection.label.chars().any(char::is_control)
+                    || connection
+                        .reason
+                        .as_deref()
+                        .is_some_and(|reason| !valid_connection_reason(reason))
+            })
+        {
+            return Err(service_unavailable());
+        }
     }
     Ok(())
 }
@@ -833,20 +918,61 @@ async fn start_provider_connection(
 async fn start_plaid_update(
     State(state): State<Arc<AppState>>,
     auth_subject: Option<Extension<AuthenticatedSubject>>,
+    body: Bytes,
 ) -> ApiResult<Json<ProviderConnectionStartResponse>> {
     if state.auth.is_none() && state.oidc.is_none() {
         return Err(ApiError::Unauthorized(
             "Authentication is required.".to_string(),
         ));
     }
+    // The body is optional: without one the request stays unqualified, which
+    // Finance Sync accepts only for an install with a single Plaid Item.
+    let invalid = || ApiError::BadRequest("Invalid Plaid update request.".to_string());
+    let connection_id = if body.is_empty() {
+        None
+    } else {
+        if body.len() > MAX_LINK_VALUE_BYTES {
+            return Err(invalid());
+        }
+        // serde would also read a positional array into the struct; only an object is a selection.
+        let request: serde_json::Value = serde_json::from_slice(&body).map_err(|_| invalid())?;
+        if !request.is_object() {
+            return Err(invalid());
+        }
+        serde_json::from_value::<PlaidUpdateRequest>(request)
+            .map_err(|_| invalid())?
+            .connection_id
+    };
+    if connection_id
+        .as_deref()
+        .is_some_and(|connection_id| !valid_plaid_connection_id(connection_id))
+    {
+        return Err(invalid());
+    }
     let subject = subject(auth_subject)?;
-    let response: ProviderConnectionStartResponse = FinanceSyncControl::from_env()?
-        .post::<_, ()>(
-            "/control/v1/provider-connections/plaid/update",
-            subject.as_str(),
-            None,
-        )
-        .await?;
+    let control = FinanceSyncControl::from_env()?;
+    let suffix = "/control/v1/provider-connections/plaid/update";
+    let response: ProviderConnectionStartResponse = match connection_id.as_deref() {
+        Some(connection_id) => {
+            let response = control
+                .send_post(
+                    suffix,
+                    subject.as_str(),
+                    Some(&FinanceSyncPlaidUpdateRequest { connection_id }),
+                )
+                .await?;
+            // The selected Item is no longer connected for this subject.
+            if response.status() == StatusCode::NOT_FOUND {
+                return Err(ApiError::NotFound);
+            }
+            decode_response(response).await?
+        }
+        None => {
+            control
+                .post::<_, ()>(suffix, subject.as_str(), None)
+                .await?
+        }
+    };
     if response.provider != ProviderKind::Plaid {
         return Err(service_unavailable());
     }
@@ -1802,13 +1928,76 @@ mod tests {
                 provider: ProviderKind::Plaid,
                 status: ProviderStatus::Configured,
                 message: "configured".to_string(),
+                connections: Vec::new(),
             },
             ProviderConnectionStatus {
                 provider: ProviderKind::Plaid,
                 status: ProviderStatus::Configured,
                 message: "configured".to_string(),
+                connections: Vec::new(),
             },
         ];
         assert!(validate_list(&statuses).is_err());
+    }
+
+    fn status_with_connections(
+        provider: ProviderKind,
+        connections: &str,
+    ) -> ProviderConnectionStatus {
+        serde_json::from_str(&format!(
+            r#"{{"provider":"{provider}","status":"configured","message":"configured","connections":{connections}}}"#
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn list_accepts_only_bounded_plaid_connection_summaries() {
+        let valid =
+            r#"[{"connectionId":"item-1","label":"Checking •••• 1234","needsReauth":true}]"#;
+        assert!(validate_list(&[status_with_connections(ProviderKind::Plaid, valid)]).is_ok());
+        assert!(validate_list(&[status_with_connections(ProviderKind::Mercury, valid)]).is_err());
+        let with_reason = r#"[{"connectionId":"item-1","label":"Checking","needsReauth":true,"reason":"ACCOUNT_NOT_RETURNED"}]"#;
+        assert!(
+            validate_list(&[status_with_connections(ProviderKind::Plaid, with_reason)]).is_ok()
+        );
+
+        for invalid in [
+            r#"[{"connectionId":"","label":"Checking","needsReauth":false}]"#.to_string(),
+            r#"[{"connectionId":"item\u0000","label":"Checking","needsReauth":false}]"#.to_string(),
+            r#"[{"connectionId":"item-1","label":"","needsReauth":false}]"#.to_string(),
+            r#"[{"connectionId":"item-1","label":"line\nbreak","needsReauth":false}]"#.to_string(),
+            format!(
+                r#"[{{"connectionId":"{}","label":"Checking","needsReauth":false}}]"#,
+                "i".repeat(MAX_PLAID_CONNECTION_ID_BYTES + 1)
+            ),
+            format!(
+                r#"[{{"connectionId":"item-1","label":"{}","needsReauth":false}}]"#,
+                "l".repeat(MAX_CONNECTION_LABEL_BYTES + 1)
+            ),
+            r#"[{"connectionId":"item-1","label":"A","needsReauth":false},{"connectionId":"item-1","label":"B","needsReauth":false}]"#.to_string(),
+            r#"[{"connectionId":"item-1","label":"A","needsReauth":true,"reason":""}]"#.to_string(),
+            r#"[{"connectionId":"item-1","label":"A","needsReauth":true,"reason":"the login at Example Bank expired"}]"#.to_string(),
+            r#"[{"connectionId":"item-1","label":"A","needsReauth":true,"reason":"item_login_required"}]"#.to_string(),
+            format!(
+                r#"[{{"connectionId":"item-1","label":"A","needsReauth":true,"reason":"{}"}}]"#,
+                "R".repeat(MAX_CONNECTION_REASON_BYTES + 1)
+            ),
+        ] {
+            assert!(
+                validate_list(&[status_with_connections(ProviderKind::Plaid, &invalid)]).is_err(),
+                "{invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn strict_list_schema_rejects_durable_or_unknown_connection_fields() {
+        for json in [
+            r#"{"provider":"plaid","status":"configured","message":"ok","connections":[{"connectionId":"item-1","label":"Checking","needsReauth":false,"accessToken":"durable"}]}"#,
+            r#"{"provider":"plaid","status":"configured","message":"ok","connections":[{"connectionId":"item-1","label":"Checking"}]}"#,
+            r#"{"provider":"plaid","status":"configured","message":"ok","accessToken":"durable"}"#,
+        ] {
+            assert!(serde_json::from_str::<ProviderConnectionStatus>(json).is_err());
+        }
     }
 }

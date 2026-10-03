@@ -497,3 +497,23 @@ describe("scope-based routing — performance filters", () => {
     });
   });
 });
+
+describe("Plaid update routing — start_plaid_update", () => {
+  it("selected connection → POST /provider-connections/plaid/update with its id", async () => {
+    const mock = stubFetch({});
+    await invoke("start_plaid_update", { connectionId: "item-2" });
+    const { url, method, body } = lastCall(mock);
+    expect(url).toBe("/api/v1/provider-connections/plaid/update");
+    expect(method).toBe("POST");
+    expect(JSON.parse(body as string)).toEqual({ connectionId: "item-2" });
+  });
+
+  it("no selection → POST /provider-connections/plaid/update without a body", async () => {
+    const mock = stubFetch({});
+    await invoke("start_plaid_update");
+    const { url, method, body } = lastCall(mock);
+    expect(url).toBe("/api/v1/provider-connections/plaid/update");
+    expect(method).toBe("POST");
+    expect(body).toBeUndefined();
+  });
+});

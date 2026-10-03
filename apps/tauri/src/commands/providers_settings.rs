@@ -110,7 +110,7 @@ pub async fn start_provider_connection(provider: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn start_plaid_update() -> Result<(), String> {
+pub async fn start_plaid_update(_connection_id: Option<String>) -> Result<(), String> {
     Err(
         "Plaid account updates are not available in this runtime. Use the authenticated Wealthfolio web application."
             .to_string(),

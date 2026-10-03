@@ -27,6 +27,8 @@ use wealthfolio_server::{
 static TEST_DB_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 const SUBJECT: &str = "urn:wealthfolio:password#bound-owner";
 const CONTROL_TOKEN: &str = "dedicated-control-token";
+/// Raw bodies the fake control received on the Plaid update route.
+static UPDATE_BODIES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 fn config(root: &TempDir, authenticated: bool) -> Config {
     Config {
@@ -80,7 +82,10 @@ async fn start_control_server(root: &TempDir) -> tokio::task::JoinHandle<()> {
             Json(json!([
                 {"provider":"investec","status":"configured","message":"Provider is configured."},
                 {"provider":"mercury","status":"configured","message":"Provider is configured."},
-                {"provider":"plaid","status":"configured","message":"Provider is configured."},
+                {"provider":"plaid","status":"configured","message":"Provider is configured.","connections":[
+                    {"connectionId":"item-1","label":"Checking •••• 1234","needsReauth":false},
+                    {"connectionId":"item-2","label":"Venture Card •••• 5678","needsReauth":true,"reason":"NO_ACCOUNTS"}
+                ]},
                 {"provider":"snaptrade","status":"configured","message":"Provider is configured."}
             ])),
         )
@@ -119,17 +124,42 @@ async fn start_control_server(root: &TempDir) -> tokio::task::JoinHandle<()> {
             ),
         )
     }
-    async fn update(headers: HeaderMap) -> impl IntoResponse {
+    async fn update(headers: HeaderMap, body: axum::body::Bytes) -> impl IntoResponse {
         if !valid_control_headers(&headers) {
             return (
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"error":"unauthorized"})),
             );
         }
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        UPDATE_BODIES.lock().unwrap().push(body.clone());
+        // Mirrors Finance Sync: no body is the single-Item request, a body selects one exact Item.
+        let link_token = match body.as_str() {
+            "" => "update-link",
+            r#"{"connectionId":"item-2"}"# => "update-link-item-2",
+            r#"{"connectionId":"item-gone"}"# => {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(json!({"error":"request_failed"})),
+                )
+            }
+            r#"{"connectionId":"item-busy"}"# => {
+                return (
+                    StatusCode::CONFLICT,
+                    Json(json!({"error":"request_failed"})),
+                )
+            }
+            _ => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"error":"request_failed"})),
+                )
+            }
+        };
         (
             StatusCode::OK,
             Json(
-                json!({"provider":"plaid","status":"link_ready","message":"Plaid Link is ready to add accounts.","linkToken":"update-link","continuationToken":"update-continuation-token-1234567890123456"}),
+                json!({"provider":"plaid","status":"link_ready","message":"Plaid Link is ready to add accounts.","linkToken":link_token,"continuationToken":"update-continuation-token-1234567890123456"}),
             ),
         )
     }
@@ -396,6 +426,118 @@ async fn list_proxies_only_typed_status_and_overrides_injected_subject() {
     assert!(providers
         .iter()
         .all(|provider| provider.get("secret").is_none() && provider.get("token").is_none()));
+    // Each Plaid Item is passed through with its exact update selection, state, and fixed reason code.
+    for provider in &providers {
+        if provider["provider"] == "plaid" {
+            assert_eq!(
+                provider["connections"],
+                json!([
+                    {"connectionId":"item-1","label":"Checking •••• 1234","needsReauth":false},
+                    {"connectionId":"item-2","label":"Venture Card •••• 5678","needsReauth":true,"reason":"NO_ACCOUNTS"}
+                ])
+            );
+        } else {
+            assert!(provider.get("connections").is_none());
+        }
+    }
+    control.abort();
+}
+
+async fn post_plaid_update(app: &Router, token: &str, body: Option<&str>) -> (StatusCode, Value) {
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/v1/provider-connections/plaid/update")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"));
+    let request = match body {
+        Some(body) => request
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_owned())),
+        None => request.body(Body::empty()),
+    }
+    .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+#[tokio::test]
+async fn plaid_update_forwards_the_selected_connection_and_keeps_the_unqualified_request() {
+    let _guard = TEST_DB_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let root = tempdir().unwrap();
+    let control = start_control_server(&root).await;
+    let (app, token) = authenticated_app(&root).await;
+    UPDATE_BODIES.lock().unwrap().clear();
+
+    let (status, payload) =
+        post_plaid_update(&app, &token, Some(r#"{"connectionId":"item-2"}"#)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(payload["linkToken"], "update-link-item-2");
+    assert!(payload.get("accessToken").is_none());
+
+    // A single-Item install needs no selection: no body and an empty object stay unqualified.
+    for body in [None, Some("{}")] {
+        let (status, payload) = post_plaid_update(&app, &token, body).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(payload["linkToken"], "update-link");
+    }
+
+    assert_eq!(
+        *UPDATE_BODIES.lock().unwrap(),
+        vec![
+            r#"{"connectionId":"item-2"}"#.to_string(),
+            String::new(),
+            String::new()
+        ]
+    );
+    control.abort();
+}
+
+#[tokio::test]
+async fn plaid_update_rejects_malformed_selections_before_proxying() {
+    let _guard = TEST_DB_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let root = tempdir().unwrap();
+    let control = start_control_server(&root).await;
+    let (app, token) = authenticated_app(&root).await;
+    UPDATE_BODIES.lock().unwrap().clear();
+
+    let oversized = format!(r#"{{"connectionId":"{}"}}"#, "i".repeat(513));
+    for body in [
+        r#"{"connectionId":""}"#,
+        r#"{"connectionId":"item\u0000"}"#,
+        r#"{"connectionId":"item\n2"}"#,
+        r#"{"connectionId":7}"#,
+        r#"{"connectionId":"item-2","accessToken":"durable"}"#,
+        r#"["item-2"]"#,
+        "not json",
+        oversized.as_str(),
+    ] {
+        let (status, _) = post_plaid_update(&app, &token, Some(body)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    }
+    assert!(UPDATE_BODIES.lock().unwrap().is_empty());
+    control.abort();
+}
+
+#[tokio::test]
+async fn plaid_update_reports_control_rejections_with_their_status() {
+    let _guard = TEST_DB_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let root = tempdir().unwrap();
+    let control = start_control_server(&root).await;
+    let (app, token) = authenticated_app(&root).await;
+
+    for (connection_id, expected) in [
+        ("item-gone", StatusCode::NOT_FOUND),
+        ("item-busy", StatusCode::CONFLICT),
+        ("item-rejected", StatusCode::BAD_REQUEST),
+    ] {
+        let body = format!(r#"{{"connectionId":"{connection_id}"}}"#);
+        let (status, _) = post_plaid_update(&app, &token, Some(&body)).await;
+        assert_eq!(status, expected, "{connection_id}");
+    }
     control.abort();
 }
 

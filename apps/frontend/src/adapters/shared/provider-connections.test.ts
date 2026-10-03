@@ -68,6 +68,20 @@ describe("provider-connections shared adapter", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("start_plaid_update");
   });
 
+  it("targets one exact Plaid Item when a connection is selected", async () => {
+    const response = {
+      provider: "plaid",
+      status: "link_ready",
+      message: "Ready to add accounts.",
+      linkToken: "link-short-lived",
+      continuationToken: "continuation-short-lived",
+    };
+    mocks.invoke.mockResolvedValue(response);
+
+    await expect(startPlaidUpdate("item-2")).resolves.toEqual(response);
+    expect(mocks.invoke).toHaveBeenCalledWith("start_plaid_update", { connectionId: "item-2" });
+  });
+
   it("sends Plaid completion tokens only to the completion command", async () => {
     const response = { provider: "plaid", status: "completed", message: "Connected." };
     mocks.invoke.mockResolvedValue(response);

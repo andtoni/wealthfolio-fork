@@ -5,6 +5,7 @@ import {
   getAccounts,
   listDiscoveredProviderAccounts,
   listProviderConnections,
+  startPlaidUpdate,
   startProviderConnection,
   type ProviderConnectionStatus,
 } from "@/adapters";
@@ -119,6 +120,28 @@ export function openPlaidUpdate(linkToken: string, continuationToken: string): P
   return openPlaid(linkToken, continuationToken, true);
 }
 
+const RECONNECT_REASONS: Record<string, string> = {
+  ITEM_LOGIN_REQUIRED: "The bank needs you to log in again.",
+  ACCESS_NOT_GRANTED:
+    "The bank is not sharing the access this connection needs. Reconnect and allow it.",
+  NO_ACCOUNTS:
+    "The bank is no longer sharing any accounts for this login. Reconnect and select them.",
+  ACCOUNT_NOT_RETURNED:
+    "The bank stopped sharing an account you added. Reconnect and select it again.",
+  ITEM_LOCKED: "The bank has locked this login. Unlock it with the bank, then reconnect.",
+  PASSWORD_RESET_REQUIRED:
+    "The bank requires a password reset. Reset it with the bank, then reconnect.",
+  USER_SETUP_REQUIRED: "The bank needs you to finish a step on its website, then reconnect.",
+  ITEM_NOT_FOUND: "This bank login no longer exists. Use Add accounts to connect it again.",
+};
+
+function reconnectReason(reason?: string): string {
+  return (
+    (reason && Object.hasOwn(RECONNECT_REASONS, reason) && RECONNECT_REASONS[reason]) ||
+    "This bank login needs to be reconnected."
+  );
+}
+
 const PROVIDER_NAMES: Record<string, string> = {
   investec: "Investec",
   mercury: "Mercury",
@@ -186,6 +209,25 @@ function ProviderCard({
     },
   });
 
+  const reauthConnections = (status.connections ?? []).filter(
+    (connection) => connection.needsReauth,
+  );
+  const reconnectMutation = useMutation({
+    mutationFn: async (connectionId: string) => {
+      // Update mode re-authenticates the same Plaid Item. Starting a new
+      // connection for a bank login that only needs refreshing duplicates it.
+      const result = await startPlaidUpdate(connectionId);
+      await openPlaidUpdate(result.linkToken ?? "", result.continuationToken ?? "");
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["provider-connections"] });
+      void queryClient.invalidateQueries({ queryKey: ["provider-accounts", status.provider] });
+    },
+    onError: (error: Error) => {
+      setErrorMsg(error.message || "Bank connection could not be reconnected.");
+    },
+  });
+
   const admitMutation = useMutation({
     mutationFn: (account: (typeof discovered)[number]) =>
       admitProviderAccount(status.provider, account),
@@ -201,11 +243,13 @@ function ProviderCard({
     status.status,
   );
   const stateLabel =
-    isConnected && connectionIsHealthy
-      ? "Connected"
-      : status.status === "configured"
-        ? "Configured"
-        : status.status.replaceAll("_", " ");
+    reauthConnections.length > 0
+      ? "Reconnect needed"
+      : isConnected && connectionIsHealthy
+        ? "Connected"
+        : status.status === "configured"
+          ? "Configured"
+          : status.status.replaceAll("_", " ");
   const connectLabel = plaidConnectionConfigured && isConnected ? "Add accounts" : "Connect";
 
   return (
@@ -240,6 +284,38 @@ function ProviderCard({
             )}
           </div>
         </div>
+        {reauthConnections.length > 0 && (
+          <div className="space-y-2 border-t pt-3">
+            <p className="text-muted-foreground text-xs font-medium">Bank logins to reconnect</p>
+            {reauthConnections.map((connection) => (
+              <div
+                key={connection.connectionId}
+                className="border-warning/30 bg-warning/10 flex items-center gap-2 rounded-md border px-3 py-2"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium">{connection.label}</p>
+                  <p className="text-muted-foreground text-[11px]">
+                    {reconnectReason(connection.reason)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={reconnectMutation.isPending}
+                  onClick={() => {
+                    setErrorMsg(null);
+                    reconnectMutation.mutate(connection.connectionId);
+                  }}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-8 items-center rounded-md px-3 text-xs font-medium disabled:opacity-50"
+                >
+                  {reconnectMutation.isPending &&
+                  reconnectMutation.variables === connection.connectionId
+                    ? "Reconnecting..."
+                    : "Reconnect"}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         {visibleConnectedAccounts.length > 0 && (
           <div className="space-y-2 border-t pt-3">
             <p className="text-muted-foreground text-xs font-medium">Connected accounts</p>

@@ -516,6 +516,8 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
     }
     case "start_plaid_update": {
       url = `${API_PREFIX}/provider-connections/plaid/update`;
+      const { connectionId } = (payload ?? {}) as { connectionId?: string };
+      if (connectionId !== undefined) body = JSON.stringify({ connectionId });
       break;
     }
     case "list_discovered_provider_accounts":
