@@ -94,7 +94,7 @@ RUN xx-cargo build --release --manifest-path apps/server/Cargo.toml && \
     cp target/$(xx-cargo --print-target-triple)/release/wealthfolio-server /wealthfolio-server
 
 # Final stage
-FROM alpine:3.21@sha256:f27cad9117495d32d067133afff942cb2dc745dfe9163e949f6bfe8a6a245339
+FROM alpine:3.21@sha256:3c81aa9a3d770b316568f4499e30461a5cd3fbd7180bd89e28e34894c7845832
 ARG SOURCE_REVISION
 LABEL org.opencontainers.image.revision="${SOURCE_REVISION}" \
       org.opencontainers.image.source="https://git.example.com/andtoni/wealthfolio"
