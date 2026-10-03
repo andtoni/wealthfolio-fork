@@ -246,11 +246,21 @@ fn clear_spending_splits_for_activity_tx(
     Ok(())
 }
 
+/// Whether a cash activity type brings money into the account (`Some(true)`)
+/// or takes it out (`Some(false)`). Other types have no fixed direction.
+fn cash_direction(activity_type: &str) -> Option<bool> {
+    match activity_type {
+        "DEPOSIT" | "TRANSFER_IN" | "CREDIT" => Some(true),
+        "WITHDRAWAL" | "TRANSFER_OUT" => Some(false),
+        _ => None,
+    }
+}
+
 fn preserve_broker_base_type(
     activity: &mut ActivityDB,
     existing_activity_type: &str,
     provider_account_id: Option<&str>,
-) {
+) -> Result<()> {
     if broker_activity_identity(
         activity.source_system.as_deref(),
         provider_account_id,
@@ -258,7 +268,20 @@ fn preserve_broker_base_type(
     )
     .is_none()
     {
-        return;
+        return Ok(());
+    }
+
+    // The provider recorded which way the money moved. An override that
+    // reverses it makes the balance history count the amount twice.
+    if let (Some(recorded), Some(requested)) = (
+        cash_direction(existing_activity_type),
+        cash_direction(&activity.activity_type),
+    ) {
+        if recorded != requested {
+            return Err(Error::from(ActivityError::InvalidData(
+                "A synced transaction cannot change between money in and money out".to_string(),
+            )));
+        }
     }
 
     let requested_activity_type = activity.activity_type.clone();
@@ -268,6 +291,7 @@ fn preserve_broker_base_type(
     } else {
         Some(requested_activity_type)
     };
+    Ok(())
 }
 
 fn set_transfer_flow_external(metadata: Option<String>, is_external: bool) -> Option<String> {
@@ -972,7 +996,7 @@ impl ActivityRepositoryTrait for ActivityRepository {
                     &mut activity_to_update,
                     &existing_activity_type,
                     provider_account_id.as_deref(),
-                );
+                )?;
                 if activity_update_owned.activity_date_precision.is_none() {
                     activity_to_update.activity_date_precision = activity_date_precision;
                 }
@@ -1390,7 +1414,7 @@ impl ActivityRepositoryTrait for ActivityRepository {
                         &mut activity_db,
                         &existing_activity_type,
                         provider_account_id.as_deref(),
-                    );
+                    )?;
                     if update_owned.activity_date_precision.is_none() {
                         activity_db.activity_date_precision = activity_date_precision;
                     }
@@ -3544,6 +3568,82 @@ mod tests {
             .first::<Option<String>>(&mut conn)
             .expect("cleared override");
         assert_eq!(cleared_override, None);
+    }
+
+    #[tokio::test]
+    async fn synced_cash_activity_type_change_keeps_the_recorded_direction() {
+        let (pool, writer) = setup_db();
+        let repo = ActivityRepository::new(pool.clone(), writer);
+
+        {
+            let mut conn = get_connection(&pool).expect("conn");
+            insert_broker_account_and_import_run(&mut conn);
+            insert_broker_activity(
+                &mut conn,
+                BrokerActivitySeed {
+                    id: "synced-withdrawal",
+                    activity_type: "WITHDRAWAL",
+                    activity_type_override: None,
+                    source_system: "FINANCE",
+                    source_record_id: "synced-withdrawal-record",
+                    amount: "50000",
+                    notes: "Payment",
+                    subtype: None,
+                },
+            );
+        }
+        let change_to = |activity_type: &str| ActivityUpdate {
+            id: "synced-withdrawal".to_string(),
+            account_id: "broker-local-account".to_string(),
+            asset: None,
+            activity_type: activity_type.to_string(),
+            subtype: None,
+            activity_date: "2026-01-01T00:00:00Z".to_string(),
+            activity_date_precision: None,
+            quantity: None,
+            unit_price: None,
+            currency: "USD".to_string(),
+            fee: None,
+            tax: None,
+            amount: None,
+            status: Some(ActivityStatus::Posted),
+            notes: Some("Payment".to_string()),
+            fx_rate: None,
+            metadata: None,
+        };
+        let stored_type = || {
+            let mut conn = get_connection(&pool).expect("conn");
+            activities::table
+                .find("synced-withdrawal")
+                .select((
+                    activities::activity_type,
+                    activities::activity_type_override,
+                ))
+                .first::<(String, Option<String>)>(&mut conn)
+                .expect("activity type row")
+        };
+
+        // Money out stays money out: a withdrawal can become a transfer out.
+        repo.update_activity(change_to("TRANSFER_OUT"))
+            .await
+            .expect("same-direction type change");
+        assert_eq!(
+            stored_type(),
+            ("WITHDRAWAL".to_string(), Some("TRANSFER_OUT".to_string()))
+        );
+
+        // It cannot become money in, in one activity or in a bulk change.
+        for inflow in ["TRANSFER_IN", "DEPOSIT", "CREDIT"] {
+            let error = repo
+                .update_activity(change_to(inflow))
+                .await
+                .expect_err("direction-reversing type change");
+            assert!(error.to_string().contains("money in and money out"));
+        }
+        assert_eq!(
+            stored_type(),
+            ("WITHDRAWAL".to_string(), Some("TRANSFER_OUT".to_string()))
+        );
     }
 
     #[tokio::test]
