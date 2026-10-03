@@ -56,7 +56,9 @@ export function LoginPage() {
                    * Password-only login needs a username anchor: without one,
                    * password managers cannot match this form to the stored
                    * credential and offer to save a "new" password on every
-                   * launch instead of filling the existing one.
+                   * launch instead of filling the existing one. Browsers skip
+                   * fields that are not rendered (`hidden`, `display: none`), so
+                   * the anchor is rendered off-screen instead.
                    */}
                   <input
                     type="text"
@@ -64,7 +66,7 @@ export function LoginPage() {
                     id="username"
                     value="wealthfolio"
                     readOnly
-                    hidden
+                    className="sr-only"
                     autoComplete="username"
                     aria-hidden="true"
                     tabIndex={-1}
