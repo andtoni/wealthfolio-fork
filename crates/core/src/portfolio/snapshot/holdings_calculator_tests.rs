@@ -1747,6 +1747,260 @@ mod tests {
     }
 
     #[test]
+    fn test_credit_activity_with_tax_deducts_cash() {
+        let mock_fx_service = MockFxService::new();
+        let target_date_str = "2023-01-06";
+        let target_date = NaiveDate::from_str(target_date_str).unwrap();
+        let account_currency = "USD";
+
+        let base_currency = Arc::new(RwLock::new(account_currency.to_string()));
+        let mut calculator = create_calculator(Arc::new(mock_fx_service), base_currency);
+
+        let mut previous_snapshot =
+            create_initial_snapshot("acc_credit", account_currency, "2023-01-05");
+        previous_snapshot
+            .cash_balances
+            .insert(account_currency.to_string(), dec!(1000));
+        previous_snapshot.net_contribution = dec!(500);
+        previous_snapshot.net_contribution_base = dec!(500);
+
+        let mut credit_activity = create_cash_activity(
+            "act_credit_1",
+            ActivityType::Credit,
+            dec!(100),
+            dec!(2),
+            account_currency,
+            target_date_str,
+        );
+        credit_activity.tax = Some(dec!(10));
+
+        let result =
+            calculator.calculate_next_holdings(&previous_snapshot, &[credit_activity], target_date);
+        assert!(result.is_ok(), "Calculation failed: {:?}", result.err());
+        let next_state = result.unwrap().snapshot;
+
+        // Cash: 1000 + (100 - 2 fee - 10 tax) = 1088
+        assert_eq!(
+            next_state.cash_balances.get(account_currency),
+            Some(&dec!(1088))
+        );
+        // Non-BONUS credit does not affect net_contribution
+        assert_eq!(
+            next_state.net_contribution,
+            previous_snapshot.net_contribution
+        );
+    }
+
+    #[test]
+    fn test_credit_bonus_with_tax_deducts_cash_and_adds_gross_contribution() {
+        use crate::activities::ACTIVITY_SUBTYPE_BONUS;
+
+        let mock_fx_service = MockFxService::new();
+        let target_date_str = "2023-01-06";
+        let target_date = NaiveDate::from_str(target_date_str).unwrap();
+        let account_currency = "USD";
+
+        let base_currency = Arc::new(RwLock::new(account_currency.to_string()));
+        let mut calculator = create_calculator(Arc::new(mock_fx_service), base_currency);
+
+        let mut previous_snapshot =
+            create_initial_snapshot("acc_credit_bonus", account_currency, "2023-01-05");
+        previous_snapshot
+            .cash_balances
+            .insert(account_currency.to_string(), dec!(1000));
+        previous_snapshot.net_contribution = dec!(500);
+        previous_snapshot.net_contribution_base = dec!(500);
+
+        let mut bonus_activity = create_cash_activity(
+            "act_credit_bonus_1",
+            ActivityType::Credit,
+            dec!(100),
+            dec!(2),
+            account_currency,
+            target_date_str,
+        );
+        bonus_activity.tax = Some(dec!(10));
+        bonus_activity.subtype = Some(ACTIVITY_SUBTYPE_BONUS.to_string());
+
+        let result =
+            calculator.calculate_next_holdings(&previous_snapshot, &[bonus_activity], target_date);
+        assert!(result.is_ok(), "Calculation failed: {:?}", result.err());
+        let next_state = result.unwrap().snapshot;
+
+        // Cash: 1000 + (100 - 2 fee - 10 tax) = 1088
+        assert_eq!(
+            next_state.cash_balances.get(account_currency),
+            Some(&dec!(1088))
+        );
+        // BONUS credit adds GROSS amount to net_contribution: 500 + 100 = 600
+        assert_eq!(next_state.net_contribution, dec!(600));
+        assert_eq!(next_state.net_contribution_base, dec!(600));
+    }
+
+    #[test]
+    fn test_deposit_activity_with_tax_deducts_cash() {
+        let mock_fx_service = MockFxService::new();
+        let target_date_str = "2023-01-06";
+        let target_date = NaiveDate::from_str(target_date_str).unwrap();
+        let account_currency = "USD";
+
+        let base_currency = Arc::new(RwLock::new(account_currency.to_string()));
+        let mut calculator = create_calculator(Arc::new(mock_fx_service), base_currency);
+
+        let mut previous_snapshot =
+            create_initial_snapshot("acc_dep_tax", account_currency, "2023-01-05");
+        previous_snapshot
+            .cash_balances
+            .insert(account_currency.to_string(), dec!(1000));
+        previous_snapshot.net_contribution = dec!(500);
+        previous_snapshot.net_contribution_base = dec!(500);
+
+        let mut deposit_activity = create_cash_activity(
+            "act_dep_tax_1",
+            ActivityType::Deposit,
+            dec!(100),
+            dec!(2),
+            account_currency,
+            target_date_str,
+        );
+        deposit_activity.tax = Some(dec!(10));
+
+        let result = calculator.calculate_next_holdings(
+            &previous_snapshot,
+            &[deposit_activity],
+            target_date,
+        );
+        assert!(result.is_ok(), "Calculation failed: {:?}", result.err());
+        let next_state = result.unwrap().snapshot;
+
+        // Cash: 1000 + (100 - 2 fee - 10 tax) = 1088
+        assert_eq!(
+            next_state.cash_balances.get(account_currency),
+            Some(&dec!(1088))
+        );
+        // net_contribution uses GROSS amount: 500 + 100 = 600
+        assert_eq!(next_state.net_contribution, dec!(600));
+    }
+
+    #[test]
+    fn test_withdrawal_activity_with_tax_deducts_cash() {
+        let mock_fx_service = MockFxService::new();
+        let target_date_str = "2023-01-06";
+        let target_date = NaiveDate::from_str(target_date_str).unwrap();
+        let account_currency = "USD";
+
+        let base_currency = Arc::new(RwLock::new(account_currency.to_string()));
+        let mut calculator = create_calculator(Arc::new(mock_fx_service), base_currency);
+
+        let mut previous_snapshot =
+            create_initial_snapshot("acc_wd_tax", account_currency, "2023-01-05");
+        previous_snapshot
+            .cash_balances
+            .insert(account_currency.to_string(), dec!(1000));
+        previous_snapshot.net_contribution = dec!(500);
+        previous_snapshot.net_contribution_base = dec!(500);
+
+        let mut withdrawal_activity = create_cash_activity(
+            "act_wd_tax_1",
+            ActivityType::Withdrawal,
+            dec!(100),
+            dec!(2),
+            account_currency,
+            target_date_str,
+        );
+        withdrawal_activity.tax = Some(dec!(10));
+
+        let result = calculator.calculate_next_holdings(
+            &previous_snapshot,
+            &[withdrawal_activity],
+            target_date,
+        );
+        assert!(result.is_ok(), "Calculation failed: {:?}", result.err());
+        let next_state = result.unwrap().snapshot;
+
+        // Cash: 1000 - (100 + 2 fee + 10 tax) = 888
+        assert_eq!(
+            next_state.cash_balances.get(account_currency),
+            Some(&dec!(888))
+        );
+        // net_contribution uses GROSS amount: 500 - 100 = 400
+        assert_eq!(next_state.net_contribution, dec!(400));
+    }
+
+    #[test]
+    fn test_cash_transfers_with_tax_deduct_cash() {
+        let mock_fx_service = MockFxService::new();
+        let target_date_str = "2023-01-06";
+        let target_date = NaiveDate::from_str(target_date_str).unwrap();
+        let account_currency = "USD";
+
+        let base_currency = Arc::new(RwLock::new(account_currency.to_string()));
+        let mut calculator = create_calculator(Arc::new(mock_fx_service), base_currency);
+
+        let mut previous_snapshot =
+            create_initial_snapshot("acc_tx_tax", account_currency, "2023-01-05");
+        previous_snapshot
+            .cash_balances
+            .insert(account_currency.to_string(), dec!(1000));
+        previous_snapshot.net_contribution = dec!(500);
+        previous_snapshot.net_contribution_base = dec!(500);
+
+        // Cash TransferIn with tax (asset_id is None -> cash branch)
+        let mut transfer_in_activity = create_cash_activity(
+            "act_tx_in_tax_1",
+            ActivityType::TransferIn,
+            dec!(100),
+            dec!(2),
+            account_currency,
+            target_date_str,
+        );
+        transfer_in_activity.tax = Some(dec!(10));
+
+        let result = calculator.calculate_next_holdings(
+            &previous_snapshot,
+            &[transfer_in_activity],
+            target_date,
+        );
+        assert!(result.is_ok(), "TransferIn failed: {:?}", result.err());
+        let state_after_in = result.unwrap().snapshot;
+
+        // Cash: 1000 + (100 - 2 fee - 10 tax) = 1088
+        assert_eq!(
+            state_after_in.cash_balances.get(account_currency),
+            Some(&dec!(1088))
+        );
+        // net_contribution uses GROSS amount: 500 + 100 = 600
+        assert_eq!(state_after_in.net_contribution, dec!(600));
+
+        // Cash TransferOut with tax
+        let mut transfer_out_activity = create_cash_activity(
+            "act_tx_out_tax_1",
+            ActivityType::TransferOut,
+            dec!(50),
+            dec!(2),
+            account_currency,
+            "2023-01-07",
+        );
+        transfer_out_activity.tax = Some(dec!(5));
+
+        let result = calculator.calculate_next_holdings(
+            &state_after_in,
+            &[transfer_out_activity],
+            NaiveDate::from_str("2023-01-07").unwrap(),
+        );
+        assert!(result.is_ok(), "TransferOut failed: {:?}", result.err());
+        let state_after_out = result.unwrap().snapshot;
+
+        // Cash: 1088 - (50 + 2 fee + 5 tax) = 1031
+        assert_eq!(
+            state_after_out.cash_balances.get(account_currency),
+            Some(&dec!(1031))
+        );
+        // net_contribution uses GROSS amount: 600 - 50 = 550
+        assert_eq!(state_after_out.net_contribution, dec!(550));
+    }
+
+    #[test]
     fn test_credit_card_interest_books_as_liability_charge() {
         let mock_fx_service = MockFxService::new();
         let target_date_str = "2023-01-06";

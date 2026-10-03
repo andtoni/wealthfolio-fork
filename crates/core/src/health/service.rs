@@ -1894,7 +1894,7 @@ fn health_sell_net_proceeds(activity: &Activity, asset: Option<&Asset>) -> Decim
         activity.qty() * activity.price() * contract_multiplier
     };
 
-    gross - activity.fee_amt()
+    gross - activity.fee_amt() - activity.tax_amt()
 }
 
 fn transfer_leg_detail(
@@ -3159,6 +3159,17 @@ mod tests {
         assert_eq!(
             health_sell_net_proceeds(&bond_sell, Some(&bond_asset)),
             dec!(949.75)
+        );
+
+        let mut taxed_sell = sell_activity("sell-taxed", "business", "aapl");
+        taxed_sell.quantity = Some(dec!(10));
+        taxed_sell.unit_price = Some(dec!(100));
+        taxed_sell.fee = Some(dec!(5));
+        taxed_sell.tax = Some(dec!(15));
+
+        assert_eq!(
+            health_sell_net_proceeds(&taxed_sell, Some(&health_asset("aapl"))),
+            dec!(980)
         );
     }
 

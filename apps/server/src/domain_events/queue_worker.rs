@@ -404,9 +404,14 @@ async fn run_portfolio_job(
             }
             Err(err) => {
                 let err_msg = err.to_string();
-                tracing::error!("Market data sync failed: {}", err_msg);
+                tracing::error!(
+                    "Market data sync failed: {}. Recalculating with cached quotes.",
+                    err_msg
+                );
                 event_bus.publish(ServerEvent::with_payload(MARKET_SYNC_ERROR, json!(err_msg)));
-                return;
+                // Fall through to the recalculation below. The change that
+                // queued this job still has to reach the portfolio; fetching
+                // quotes is a separate concern and must not block it.
             }
         }
     } else {
@@ -721,4 +726,329 @@ async fn perform_broker_sync(
     // Run the sync via the centralized orchestrator
     // Note: Asset enrichment is handled automatically via domain events (AssetsCreated)
     orchestrator.sync_all(&client).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::events::{MARKET_SYNC_ERROR, PORTFOLIO_UPDATE_COMPLETE, PORTFOLIO_UPDATE_START};
+    use async_trait::async_trait;
+    use chrono::NaiveDate;
+    use rust_decimal::Decimal;
+    use std::collections::{HashMap, HashSet};
+    use wealthfolio_core::assets::{Asset, InstrumentType, ProviderProfile};
+    use wealthfolio_core::portfolio::snapshot::SnapshotRecalcMode;
+    use wealthfolio_core::portfolio::valuation::ValuationRecalcMode;
+    use wealthfolio_core::quotes::{
+        FetchDividendsParams, LatestQuotePair, LatestQuoteSnapshot, MarketSyncMode, ProviderInfo,
+        Quote, QuoteImport, QuoteServiceTrait, QuoteSyncState, ResolvedQuote, SymbolSearchResult,
+        SymbolSyncPlan, SyncMode, SyncResult,
+    };
+    use wealthfolio_core::Result as CoreResult;
+
+    /// Quote service whose market sync always fails.
+    struct FailingSyncQuoteService;
+
+    #[async_trait]
+    impl QuoteServiceTrait for FailingSyncQuoteService {
+        fn get_latest_quote(&self, _symbol: &str) -> CoreResult<Quote> {
+            unimplemented!()
+        }
+
+        fn get_latest_quotes(&self, _symbols: &[String]) -> CoreResult<HashMap<String, Quote>> {
+            Ok(HashMap::new())
+        }
+
+        fn get_latest_quotes_as_of(
+            &self,
+            _symbols: &[String],
+            _as_of: NaiveDate,
+        ) -> CoreResult<HashMap<String, Quote>> {
+            Ok(HashMap::new())
+        }
+
+        fn get_latest_quotes_snapshot(
+            &self,
+            _asset_ids: &[String],
+        ) -> CoreResult<HashMap<String, LatestQuoteSnapshot>> {
+            Ok(HashMap::new())
+        }
+
+        fn get_latest_quotes_pair(
+            &self,
+            _symbols: &[String],
+        ) -> CoreResult<HashMap<String, LatestQuotePair>> {
+            Ok(HashMap::new())
+        }
+
+        fn get_historical_quotes(&self, _symbol: &str) -> CoreResult<Vec<Quote>> {
+            Ok(Vec::new())
+        }
+
+        fn get_all_historical_quotes(
+            &self,
+        ) -> CoreResult<HashMap<String, Vec<(NaiveDate, Quote)>>> {
+            Ok(HashMap::new())
+        }
+
+        fn get_quotes_in_range(
+            &self,
+            _symbols: &HashSet<String>,
+            _start: NaiveDate,
+            _end: NaiveDate,
+        ) -> CoreResult<Vec<Quote>> {
+            Ok(Vec::new())
+        }
+
+        fn get_quotes_in_range_filled(
+            &self,
+            _symbols: &HashSet<String>,
+            _start: NaiveDate,
+            _end: NaiveDate,
+        ) -> CoreResult<Vec<Quote>> {
+            Ok(Vec::new())
+        }
+
+        async fn get_daily_quotes(
+            &self,
+            _asset_ids: &HashSet<String>,
+            _start: NaiveDate,
+            _end: NaiveDate,
+        ) -> CoreResult<HashMap<NaiveDate, HashMap<String, Quote>>> {
+            Ok(HashMap::new())
+        }
+
+        async fn add_quote(&self, _quote: &Quote) -> CoreResult<Quote> {
+            unimplemented!()
+        }
+
+        async fn update_quote(&self, _quote: Quote) -> CoreResult<Quote> {
+            unimplemented!()
+        }
+
+        async fn delete_quote(&self, _quote_id: &str) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn bulk_upsert_quotes(&self, _quotes: Vec<Quote>) -> CoreResult<usize> {
+            Ok(0)
+        }
+
+        async fn search_symbol(&self, _query: &str) -> CoreResult<Vec<SymbolSearchResult>> {
+            Ok(Vec::new())
+        }
+
+        async fn search_symbol_with_currency(
+            &self,
+            _query: &str,
+            _account_currency: Option<&str>,
+        ) -> CoreResult<Vec<SymbolSearchResult>> {
+            Ok(Vec::new())
+        }
+
+        async fn resolve_symbol_quote(
+            &self,
+            _symbol: &str,
+            _exchange_mic: Option<&str>,
+            _instrument_type: Option<&InstrumentType>,
+            _quote_ccy: Option<&str>,
+            _preferred_provider: Option<&str>,
+        ) -> CoreResult<ResolvedQuote> {
+            Ok(ResolvedQuote::default())
+        }
+
+        async fn get_asset_profile(&self, _asset: &Asset) -> CoreResult<ProviderProfile> {
+            unimplemented!()
+        }
+
+        async fn fetch_quotes_from_provider(
+            &self,
+            _asset_id: &str,
+            _start: NaiveDate,
+            _end: NaiveDate,
+        ) -> CoreResult<Vec<Quote>> {
+            Ok(Vec::new())
+        }
+
+        async fn fetch_quotes_for_symbol(
+            &self,
+            _asset_id: &str,
+            _currency: &str,
+            _start: NaiveDate,
+            _end: NaiveDate,
+        ) -> CoreResult<Vec<Quote>> {
+            Ok(Vec::new())
+        }
+
+        async fn fetch_dividends(
+            &self,
+            _params: FetchDividendsParams,
+        ) -> CoreResult<Vec<wealthfolio_market_data::DividendEvent>> {
+            Ok(Vec::new())
+        }
+
+        async fn sync(
+            &self,
+            _mode: SyncMode,
+            _asset_ids: Option<Vec<String>>,
+        ) -> CoreResult<SyncResult> {
+            Err(wealthfolio_core::Error::Unexpected(
+                "quote provider unavailable".to_string(),
+            ))
+        }
+
+        async fn resync(&self, _asset_ids: Option<Vec<String>>) -> CoreResult<SyncResult> {
+            unimplemented!()
+        }
+
+        async fn refresh_sync_state(&self) -> CoreResult<()> {
+            Ok(())
+        }
+
+        fn get_sync_plan(&self) -> CoreResult<Vec<SymbolSyncPlan>> {
+            Ok(Vec::new())
+        }
+
+        async fn handle_activity_created(
+            &self,
+            _symbol: &str,
+            _activity_date: NaiveDate,
+        ) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn handle_activity_deleted(&self, _symbol: &str) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn delete_sync_state(&self, _symbol: &str) -> CoreResult<()> {
+            Ok(())
+        }
+
+        fn get_symbols_needing_sync(&self) -> CoreResult<Vec<QuoteSyncState>> {
+            Ok(Vec::new())
+        }
+
+        fn get_sync_state(&self, _symbol: &str) -> CoreResult<Option<QuoteSyncState>> {
+            Ok(None)
+        }
+
+        async fn mark_profile_enriched(&self, _symbol: &str) -> CoreResult<()> {
+            Ok(())
+        }
+
+        fn get_assets_needing_profile_enrichment(&self) -> CoreResult<Vec<QuoteSyncState>> {
+            Ok(Vec::new())
+        }
+
+        fn get_sync_states_with_errors(&self) -> CoreResult<Vec<QuoteSyncState>> {
+            Ok(Vec::new())
+        }
+
+        async fn reset_sync_errors(&self, _asset_ids: &[String]) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn reset_sync_state_for_profile_change(&self, _asset_id: &str) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn update_position_status_from_holdings(
+            &self,
+            _current_holdings: &HashMap<String, Decimal>,
+        ) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn get_providers_info(&self) -> CoreResult<Vec<ProviderInfo>> {
+            Ok(Vec::new())
+        }
+
+        async fn update_provider_settings(
+            &self,
+            _provider_id: &str,
+            _priority: i32,
+            _enabled: bool,
+        ) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn check_quotes_import(
+            &self,
+            _content: &[u8],
+            _has_header_row: bool,
+        ) -> CoreResult<Vec<QuoteImport>> {
+            Ok(Vec::new())
+        }
+
+        async fn import_quotes(
+            &self,
+            _quotes: Vec<QuoteImport>,
+            _overwrite: bool,
+        ) -> CoreResult<Vec<QuoteImport>> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[tokio::test]
+    async fn portfolio_job_recalculates_after_market_sync_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("WF_DB_PATH", tmp.path().join("test.db"));
+        std::env::set_var("WF_SECRET_KEY", "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+        std::env::set_var("WF_LISTEN_ADDR", "127.0.0.1:0");
+        let config = crate::config::Config::from_env();
+        let state = crate::build_state(&config).await.unwrap();
+        for key in ["WF_DB_PATH", "WF_SECRET_KEY", "WF_LISTEN_ADDR"] {
+            std::env::remove_var(key);
+        }
+
+        let deps = Arc::new(QueueWorkerDeps {
+            asset_service: state.asset_service.clone(),
+            connect_sync_service: state.connect_sync_service.clone(),
+            event_bus: state.event_bus.clone(),
+            broker_sync_running: state.broker_sync_running.clone(),
+            health_service: state.health_service.clone(),
+            snapshot_service: state.snapshot_service.clone(),
+            snapshot_repository: state.snapshot_repository.clone(),
+            quote_service: Arc::new(FailingSyncQuoteService),
+            valuation_service: state.valuation_service.clone(),
+            account_service: state.account_service.clone(),
+            goal_service: state.goal_service.clone(),
+            fx_service: state.fx_service.clone(),
+            base_currency: state.base_currency.clone(),
+            timezone: state.timezone.clone(),
+            secret_store: state.secret_store.clone(),
+            token_lifecycle: state.token_lifecycle.clone(),
+            spending_settings_service: state.spending_settings_service.clone(),
+            categorization_rules_service: state.categorization_rules_service.clone(),
+            aggregate_eligibility_service: state.aggregate_eligibility_service.clone(),
+        });
+        let mut events = state.event_bus.subscribe();
+
+        run_portfolio_job(
+            deps,
+            crate::api::shared::PortfolioJobConfig {
+                account_ids: None,
+                market_sync_mode: MarketSyncMode::Incremental { asset_ids: None },
+                snapshot_mode: SnapshotRecalcMode::IncrementalFromLast,
+                valuation_mode: ValuationRecalcMode::IncrementalFromLast,
+                since_date: None,
+            },
+        )
+        .await;
+
+        let mut names = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            names.push(event.name);
+        }
+        let sync_error = names
+            .iter()
+            .position(|name| *name == MARKET_SYNC_ERROR)
+            .expect("market sync error should be published");
+        assert!(
+            names[sync_error..].contains(&PORTFOLIO_UPDATE_START)
+                && names[sync_error..].contains(&PORTFOLIO_UPDATE_COMPLETE),
+            "portfolio recalculation should still run after a market sync error: {names:?}"
+        );
+    }
 }

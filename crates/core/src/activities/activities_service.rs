@@ -4372,35 +4372,93 @@ impl ActivityServiceTrait for ActivityService {
             });
         }
 
-        // Use save preparation for all creates at once
+        // Use save preparation for the creates, one account at a time.
+        //
+        // Save preparation is account-scoped: it enforces the per-account-type
+        // activity rules and resolves symbols and currencies against the
+        // account currency. A bulk request may span accounts, so preparing
+        // every create against a single account would judge rows by an account
+        // they do not belong to (e.g. rejecting a bank DEPOSIT because an
+        // unrelated credit-card row happened to be listed first).
         if !request.creates.is_empty() {
-            // Get account from first create (all creates in a bulk request typically share the same account)
-            let account_id = &request.creates[0].account_id;
-            let account = self.account_service.get_account(account_id)?;
-
             // Store temp_ids for error reporting (prepare result uses indices)
             let temp_ids: Vec<Option<String>> =
                 request.creates.iter().map(|a| a.id.clone()).collect();
 
-            let prepare_result = self
-                .prepare_activities_for_save(request.creates, &account)
-                .await?;
-
-            // Convert preparation errors to bulk mutation errors
-            for (idx, error) in prepare_result.errors {
-                errors.push(ActivityBulkMutationError {
-                    id: temp_ids.get(idx).cloned().flatten(),
-                    action: "create".to_string(),
-                    message: error,
-                });
+            // Group creates by account, keeping each row's index in the
+            // original request so errors and prepared rows can be reported
+            // back in request order.
+            let mut grouped: Vec<(String, Vec<(usize, NewActivity)>)> = Vec::new();
+            let mut group_positions: HashMap<String, usize> = HashMap::new();
+            for (idx, activity) in request.creates.into_iter().enumerate() {
+                let account_id = activity.account_id.clone();
+                let position = match group_positions.get(&account_id) {
+                    Some(position) => *position,
+                    None => {
+                        group_positions.insert(account_id.clone(), grouped.len());
+                        grouped.push((account_id, Vec::new()));
+                        grouped.len() - 1
+                    }
+                };
+                grouped[position].1.push((idx, activity));
             }
 
-            // Extract prepared activities
-            prepared_creates = prepare_result
-                .prepared
-                .into_iter()
-                .map(|p| p.activity)
-                .collect();
+            let mut create_errors: Vec<(usize, ActivityBulkMutationError)> = Vec::new();
+            let mut ordered_creates: Vec<Option<NewActivity>> = vec![None; temp_ids.len()];
+
+            for (account_id, entries) in grouped {
+                let account = self.account_service.get_account(&account_id)?;
+                let indexes: Vec<usize> = entries.iter().map(|(idx, _)| *idx).collect();
+                let account_creates: Vec<NewActivity> =
+                    entries.into_iter().map(|(_, activity)| activity).collect();
+
+                let prepare_result = self
+                    .prepare_activities_for_save(account_creates, &account)
+                    .await?;
+
+                // Convert preparation errors to bulk mutation errors. Preparation
+                // reports indices within the group it was handed, so map each one
+                // back to its position in the original request.
+                let failed_offsets: HashSet<usize> = prepare_result
+                    .errors
+                    .iter()
+                    .map(|(offset, _)| *offset)
+                    .collect();
+                for (offset, error) in prepare_result.errors {
+                    let idx = indexes.get(offset).copied().unwrap_or(offset);
+                    create_errors.push((
+                        idx,
+                        ActivityBulkMutationError {
+                            id: temp_ids.get(idx).cloned().flatten(),
+                            action: "create".to_string(),
+                            message: error,
+                        },
+                    ));
+                }
+
+                // Preparation yields one prepared row per input row that did not
+                // error, in input order, so walking the surviving offsets puts
+                // each row back at its original request position.
+                let mut prepared = prepare_result.prepared.into_iter();
+                for (offset, idx) in indexes.into_iter().enumerate() {
+                    if failed_offsets.contains(&offset) {
+                        continue;
+                    }
+                    match prepared.next() {
+                        Some(prepared_activity) => {
+                            ordered_creates[idx] = Some(prepared_activity.activity);
+                        }
+                        None => break,
+                    }
+                }
+            }
+
+            // Report errors and prepared activities in request order, so the
+            // result does not depend on how the creates grouped by account.
+            create_errors.sort_by_key(|(idx, _)| *idx);
+            errors.extend(create_errors.into_iter().map(|(_, error)| error));
+
+            prepared_creates = ordered_creates.into_iter().flatten().collect();
         }
 
         // For updates: capture OLD values before preparing the update

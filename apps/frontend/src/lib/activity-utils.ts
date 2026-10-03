@@ -368,9 +368,9 @@ export const calculateActivityValue = (activity: ActivityDetails): number => {
       }
     }
 
-    // For outgoing cash activities, subtract fee from amount
+    // For outgoing cash activities, add fee and tax to amount (total cash out)
     if (activityType === ActivityType.WITHDRAWAL || activityType === ActivityType.TRANSFER_OUT) {
-      return roundCurrency(Number(amount) + Number(fee));
+      return roundCurrency(Number(amount) + Number(fee) + Number(tax));
     }
 
     // For incoming cash activities, subtract fee and withholding tax from amount

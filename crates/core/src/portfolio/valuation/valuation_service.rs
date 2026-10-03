@@ -42,7 +42,7 @@ fn parse_decimal_lossy(value: &str) -> Decimal {
 pub enum ValuationRecalcMode {
     /// Delete all valuations and recalculate from the first snapshot.
     Full,
-    /// Resume from the latest saved valuation date, only computing new dates forward.
+    /// Refresh the latest saved valuation date and compute new dates forward.
     IncrementalFromLast,
     /// Delete valuations from `date` forward, recalculating with the previous day as an anchor.
     SinceDate(NaiveDate),
@@ -1632,8 +1632,11 @@ impl ValuationServiceTrait for ValuationService {
                     .load_latest_valuation_date(account_id)?;
 
                 if let Some(last_saved) = last_saved_date_opt {
-                    calculation_start_date = Some(last_saved);
-                    incremental_anchor_date = Some(last_saved);
+                    // Keep the anchor before the latest saved day so refreshed
+                    // prices are persisted without zeroing that day's flows.
+                    let (start_date, anchor_date) = since_date_calculation_window(last_saved);
+                    calculation_start_date = Some(start_date);
+                    incremental_anchor_date = anchor_date;
                 }
             }
         }
@@ -2676,6 +2679,7 @@ mod tests {
 
     struct TestValuationRepository {
         valuations: Vec<DailyAccountValuation>,
+        saved_valuations: std::sync::Mutex<Vec<DailyAccountValuation>>,
         historical_account_reads: std::sync::Mutex<usize>,
         historical_scope_reads: std::sync::Mutex<usize>,
     }
@@ -2684,6 +2688,7 @@ mod tests {
         fn new(valuations: Vec<DailyAccountValuation>) -> Self {
             Self {
                 valuations,
+                saved_valuations: std::sync::Mutex::new(Vec::new()),
                 historical_account_reads: std::sync::Mutex::new(0),
                 historical_scope_reads: std::sync::Mutex::new(0),
             }
@@ -2721,8 +2726,12 @@ mod tests {
     impl ValuationRepositoryTrait for TestValuationRepository {
         async fn save_valuations(
             &self,
-            _valuation_records: &[DailyAccountValuation],
+            valuation_records: &[DailyAccountValuation],
         ) -> CoreResult<()> {
+            self.saved_valuations
+                .lock()
+                .unwrap()
+                .extend_from_slice(valuation_records);
             Ok(())
         }
 
@@ -2841,6 +2850,79 @@ mod tests {
             _end_date: Option<NaiveDate>,
         ) -> CoreResult<Vec<AccountStateSnapshot>> {
             Ok(Vec::new())
+        }
+
+        fn get_latest_holdings_snapshot(
+            &self,
+            _account_id: &str,
+        ) -> CoreResult<Option<AccountStateSnapshot>> {
+            Ok(None)
+        }
+
+        async fn save_manual_snapshot(
+            &self,
+            _account_id: &str,
+            _snapshot: AccountStateSnapshot,
+        ) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn update_snapshots_source(
+            &self,
+            _account_id: &str,
+            _new_source: &str,
+        ) -> CoreResult<usize> {
+            Ok(0)
+        }
+
+        async fn ensure_holdings_history(&self, _account_id: &str) -> CoreResult<()> {
+            Ok(())
+        }
+
+        async fn delete_snapshot_for_account(
+            &self,
+            _account_id: &str,
+            _dates: &[NaiveDate],
+        ) -> CoreResult<()> {
+            Ok(())
+        }
+    }
+
+    struct FixedSnapshotService {
+        snapshots: Vec<AccountStateSnapshot>,
+    }
+
+    #[async_trait]
+    impl SnapshotServiceTrait for FixedSnapshotService {
+        async fn recalculate_holdings_snapshots(
+            &self,
+            _account_ids: Option<&[String]>,
+            _mode: crate::portfolio::snapshot::SnapshotRecalcMode,
+        ) -> CoreResult<usize> {
+            Ok(0)
+        }
+
+        fn get_holdings_keyframes(
+            &self,
+            _account_id: &str,
+            _start_date: Option<NaiveDate>,
+            _end_date: Option<NaiveDate>,
+        ) -> CoreResult<Vec<AccountStateSnapshot>> {
+            Ok(Vec::new())
+        }
+
+        fn get_daily_holdings_snapshots(
+            &self,
+            _account_id: &str,
+            start_date: Option<NaiveDate>,
+            _end_date: Option<NaiveDate>,
+        ) -> CoreResult<Vec<AccountStateSnapshot>> {
+            Ok(self
+                .snapshots
+                .iter()
+                .filter(|snapshot| start_date.is_none_or(|start| snapshot.snapshot_date >= start))
+                .cloned()
+                .collect())
         }
 
         fn get_latest_holdings_snapshot(
@@ -5354,5 +5436,69 @@ mod tests {
         assert_eq!(values[0].valuation_date.to_string(), "2026-05-02");
         assert_eq!(values[0].external_inflow_base, dec!(25));
         assert_eq!(values[0].external_outflow_base, Decimal::ZERO);
+    }
+
+    fn cash_snapshot(
+        snapshot_date: &str,
+        cash: Decimal,
+        net_contribution: Decimal,
+    ) -> AccountStateSnapshot {
+        let mut snapshot = snapshot_with_position(snapshot_date, "AAPL", Decimal::ZERO);
+        snapshot.positions.clear();
+        snapshot.cash_balances = HashMap::from([("USD".to_string(), cash)]);
+        snapshot.net_contribution = net_contribution;
+        snapshot.net_contribution_base = net_contribution;
+        snapshot
+    }
+
+    #[tokio::test]
+    async fn incremental_recalc_refreshes_latest_saved_day_and_preserves_flows() {
+        // The latest saved day already has a row. A later run on the same day
+        // must recompute and persist it, anchored on the day before so its
+        // external flow is not zeroed.
+        let repository = Arc::new(TestValuationRepository::new(vec![
+            valuation(
+                "account-1",
+                "2026-06-02",
+                dec!(100),
+                dec!(100),
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ),
+            valuation(
+                "account-1",
+                "2026-06-03",
+                dec!(125),
+                dec!(125),
+                dec!(25),
+                Decimal::ZERO,
+            ),
+        ]));
+        let service = ValuationService::new(
+            Arc::new(RwLock::new("USD".to_string())),
+            repository.clone(),
+            Arc::new(FixedSnapshotService {
+                snapshots: vec![
+                    cash_snapshot("2026-06-01", dec!(100), dec!(100)),
+                    cash_snapshot("2026-06-02", dec!(100), dec!(100)),
+                    cash_snapshot("2026-06-03", dec!(150), dec!(125)),
+                ],
+            }),
+            Arc::new(NoopQuoteService),
+            Arc::new(NoopFxService),
+            Arc::new(TestAggregateEligibilityService::new(Vec::new())),
+        );
+
+        service
+            .calculate_valuation_history("account-1", ValuationRecalcMode::IncrementalFromLast)
+            .await
+            .expect("incremental valuation should succeed");
+
+        let saved = repository.saved_valuations.lock().unwrap().clone();
+        let dates: Vec<_> = saved.iter().map(|v| v.valuation_date).collect();
+        assert_eq!(dates, vec![date("2026-06-03")]);
+        assert_eq!(saved[0].total_value_base, dec!(150));
+        assert_eq!(saved[0].external_inflow_base, dec!(25));
+        assert_eq!(saved[0].external_outflow_base, Decimal::ZERO);
     }
 }

@@ -92,8 +92,8 @@ impl HoldingsCalculator {
         let asset_id = activity.asset_id.as_deref().unwrap_or("");
 
         if asset_id.is_empty() {
-            // Cash transfer: book in ACTIVITY currency
-            let net_amount = activity_amount - activity.fee_amt();
+            // Cash transfer: book in ACTIVITY currency (amount - fee - tax)
+            let net_amount = activity_amount - activity.fee_amt() - activity.tax_amt();
             add_cash(state, activity_currency, net_amount);
 
             let activity_date = self.activity_local_date(activity);
@@ -413,8 +413,8 @@ impl HoldingsCalculator {
         let asset_id = activity.asset_id.as_deref().unwrap_or("");
 
         if asset_id.is_empty() {
-            // Cash transfer: book outflow in ACTIVITY currency (amount + fee)
-            let net_amount = activity_amount - activity.fee_amt();
+            // Cash transfer: book outflow in ACTIVITY currency (amount + fee + tax)
+            let net_amount = activity_amount - activity.fee_amt() - activity.tax_amt();
             add_cash(state, activity_currency, net_amount);
 
             let amount_acct = self.convert_to_account_currency(

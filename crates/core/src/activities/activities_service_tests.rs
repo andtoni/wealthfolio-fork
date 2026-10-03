@@ -2621,6 +2621,219 @@ mod tests {
             .contains("BUY activities are not supported for credit card accounts"));
     }
 
+    /// Cash-only create for the mixed-account bulk tests below. `currency` is
+    /// passed through verbatim so a test can leave it empty and observe which
+    /// account currency preparation falls back to.
+    fn create_test_cash_create(
+        id: &str,
+        account_id: &str,
+        activity_type: &str,
+        currency: &str,
+    ) -> NewActivity {
+        NewActivity {
+            id: Some(id.to_string()),
+            account_id: account_id.to_string(),
+            asset: None,
+            activity_type: activity_type.to_string(),
+            subtype: None,
+            activity_date: "2024-01-15".to_string(),
+            activity_date_precision: None,
+            quantity: None,
+            unit_price: None,
+            currency: currency.to_string(),
+            fee: Some(dec!(0)),
+            tax: None,
+            amount: Some(dec!(100)),
+            status: None,
+            notes: None,
+            fx_rate: None,
+            metadata: None,
+            needs_review: None,
+            source_system: None,
+            source_record_id: Some(id.to_string()),
+            source_group_id: None,
+            idempotency_key: None,
+            import_run_id: None,
+        }
+    }
+
+    fn mixed_account_service() -> Arc<MockAccountService> {
+        let account_service = Arc::new(MockAccountService::new());
+
+        let mut card = create_test_account("card-1", "USD");
+        card.account_type = "CREDIT_CARD".to_string();
+        account_service.add_account(card);
+
+        let mut bank = create_test_account("bank-1", "USD");
+        bank.account_type = "CASH".to_string();
+        account_service.add_account(bank);
+
+        account_service
+    }
+
+    /// A credit-card row must not disqualify a later row that belongs to a
+    /// different account. Regression test: preparation used to validate the
+    /// whole batch against the first create's account, so this ordering failed
+    /// with "DEPOSIT activities are not supported for credit card accounts".
+    #[tokio::test]
+    async fn bulk_create_validates_each_row_against_its_own_account() {
+        let activity_service = ActivityService::new(
+            Arc::new(MockActivityRepository::new()),
+            mixed_account_service(),
+            Arc::new(MockAssetService::new()),
+            Arc::new(MockFxService::new()),
+            Arc::new(MockQuoteService),
+        );
+
+        let result = activity_service
+            .bulk_mutate_activities(ActivityBulkMutationRequest {
+                creates: vec![
+                    create_test_cash_create("card-purchase", "card-1", "WITHDRAWAL", "USD"),
+                    create_test_cash_create("bank-deposit", "bank-1", "DEPOSIT", "USD"),
+                ],
+                updates: vec![],
+                delete_ids: vec![],
+            })
+            .await
+            .expect("mixed-account bulk create should succeed");
+
+        assert!(
+            result.errors.is_empty(),
+            "expected no errors, got {:?}",
+            result.errors
+        );
+        assert_eq!(result.created.len(), 2);
+        assert_eq!(
+            result
+                .created
+                .iter()
+                .map(|activity| activity.account_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["card-1", "bank-1"],
+            "created rows should stay in request order"
+        );
+    }
+
+    /// The same two rows in the opposite order must behave identically.
+    #[tokio::test]
+    async fn bulk_create_mixed_accounts_is_order_independent() {
+        let activity_service = ActivityService::new(
+            Arc::new(MockActivityRepository::new()),
+            mixed_account_service(),
+            Arc::new(MockAssetService::new()),
+            Arc::new(MockFxService::new()),
+            Arc::new(MockQuoteService),
+        );
+
+        let result = activity_service
+            .bulk_mutate_activities(ActivityBulkMutationRequest {
+                creates: vec![
+                    create_test_cash_create("bank-deposit", "bank-1", "DEPOSIT", "USD"),
+                    create_test_cash_create("card-purchase", "card-1", "WITHDRAWAL", "USD"),
+                ],
+                updates: vec![],
+                delete_ids: vec![],
+            })
+            .await
+            .expect("mixed-account bulk create should succeed in either order");
+
+        assert!(
+            result.errors.is_empty(),
+            "expected no errors, got {:?}",
+            result.errors
+        );
+        assert_eq!(result.created.len(), 2);
+        assert_eq!(
+            result
+                .created
+                .iter()
+                .map(|activity| activity.account_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["bank-1", "card-1"],
+            "created rows should stay in request order"
+        );
+    }
+
+    /// Per-account validation must still reject a row that its own account
+    /// disallows, and report it against that row rather than the batch.
+    #[tokio::test]
+    async fn bulk_create_still_rejects_row_invalid_for_its_own_account() {
+        let activity_service = ActivityService::new(
+            Arc::new(MockActivityRepository::new()),
+            mixed_account_service(),
+            Arc::new(MockAssetService::new()),
+            Arc::new(MockFxService::new()),
+            Arc::new(MockQuoteService),
+        );
+
+        let result = activity_service
+            .bulk_mutate_activities(ActivityBulkMutationRequest {
+                creates: vec![
+                    create_test_cash_create("bank-deposit", "bank-1", "DEPOSIT", "USD"),
+                    create_test_cash_create("card-deposit", "card-1", "DEPOSIT", "USD"),
+                ],
+                updates: vec![],
+                delete_ids: vec![],
+            })
+            .await
+            .expect("bulk mutation should return structured errors");
+
+        assert!(result.created.is_empty());
+        assert_eq!(result.errors.len(), 1);
+        assert_eq!(result.errors[0].id.as_deref(), Some("card-deposit"));
+        assert!(
+            result.errors[0]
+                .message
+                .contains("DEPOSIT activities are not supported for credit card accounts"),
+            "unexpected message: {}",
+            result.errors[0].message
+        );
+    }
+
+    /// Preparation also resolves a missing activity currency from the account,
+    /// so a mixed-currency batch must fall back per row, not per batch.
+    #[tokio::test]
+    async fn bulk_create_resolves_missing_currency_from_each_row_account() {
+        let account_service = Arc::new(MockAccountService::new());
+        account_service.add_account(create_test_account("acc-usd", "USD"));
+        account_service.add_account(create_test_account("acc-eur", "EUR"));
+
+        let activity_service = ActivityService::new(
+            Arc::new(MockActivityRepository::new()),
+            account_service,
+            Arc::new(MockAssetService::new()),
+            Arc::new(MockFxService::new()),
+            Arc::new(MockQuoteService),
+        );
+
+        let result = activity_service
+            .bulk_mutate_activities(ActivityBulkMutationRequest {
+                creates: vec![
+                    create_test_cash_create("usd-deposit", "acc-usd", "DEPOSIT", ""),
+                    create_test_cash_create("eur-deposit", "acc-eur", "DEPOSIT", ""),
+                ],
+                updates: vec![],
+                delete_ids: vec![],
+            })
+            .await
+            .expect("mixed-currency bulk create should succeed");
+
+        assert!(
+            result.errors.is_empty(),
+            "expected no errors, got {:?}",
+            result.errors
+        );
+        assert_eq!(
+            result
+                .created
+                .iter()
+                .map(|activity| (activity.account_id.as_str(), activity.currency.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("acc-usd", "USD"), ("acc-eur", "EUR")],
+            "each row should inherit its own account currency"
+        );
+    }
+
     #[tokio::test]
     async fn credit_card_accounts_reject_investment_activity_updates() {
         let account_service = Arc::new(MockAccountService::new());
