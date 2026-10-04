@@ -1,6 +1,7 @@
 import { invoke, logger } from "#platform";
 import type {
   CategorizationRule,
+  CategorySuggestion,
   ImportPresetResult,
   NewCategorizationRule,
   RemovePresetResult,
@@ -47,6 +48,15 @@ export const deleteCategorizationRule = async (id: string): Promise<void> => {
     await invoke<void>("delete_categorization_rule", { id });
   } catch (e) {
     logger.error("Error deleting activity rule.");
+    throw e;
+  }
+};
+
+export const listCategorySuggestions = async (): Promise<CategorySuggestion[]> => {
+  try {
+    return await invoke<CategorySuggestion[]>("list_category_suggestions");
+  } catch (e) {
+    logger.error("Error listing category suggestions.");
     throw e;
   }
 };

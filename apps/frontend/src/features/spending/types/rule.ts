@@ -21,6 +21,13 @@ export interface CategorizationRule {
   updatedAt: string;
 }
 
+/** A category offered for an uncategorized transaction from its merchant's history. */
+export interface CategorySuggestion {
+  activityId: string;
+  taxonomyId: string;
+  categoryId: string;
+}
+
 export interface NewCategorizationRule {
   id?: string | null;
   name: string;

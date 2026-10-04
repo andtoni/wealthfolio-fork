@@ -116,6 +116,7 @@
     "splitLines_other": "拆分 · {{count}} 行",
     "changeCategory": "更改类别（{{name}}）",
     "assignCategory": "分配类别",
+    "useSuggestedCategory": "使用建议的类别 {{name}}",
     "changeEvent": "更改事件（{{name}}）",
     "rowActions": "行操作",
     "markReimbursement": "标记为报销",

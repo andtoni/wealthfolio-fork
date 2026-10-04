@@ -116,6 +116,7 @@
     "splitLines_other": "Dividida · {{count}} líneas",
     "changeCategory": "Cambiar categoría ({{name}})",
     "assignCategory": "Asignar categoría",
+    "useSuggestedCategory": "Usar la categoría sugerida {{name}}",
     "changeEvent": "Cambiar evento ({{name}})",
     "rowActions": "Acciones de fila",
     "markReimbursement": "Marcar como reembolso",

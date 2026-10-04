@@ -9,7 +9,8 @@ use super::matcher::{
     compile_regex_pattern, compile_rules, match_compiled_where, MAX_REGEX_PATTERN_LEN,
 };
 use super::model::{
-    CategorizationRule, NewCategorizationRule, RuleMatchType, UpdateCategorizationRule,
+    CategorizationRule, CategorySuggestion, NewCategorizationRule, RuleMatchType,
+    UpdateCategorizationRule,
 };
 use super::presets::{self, ImportPresetResult, RemovePresetResult, RulePresetSummary};
 use super::traits::CategorizationRulesRepositoryTrait;
@@ -164,7 +165,9 @@ impl CategorizationRulesService {
             )
             .await?;
         let compiled = compile_rules(&rules);
-        let learned = self.learned_categories(&activities, &assignments).await?;
+        let learned = self
+            .merchant_categories(&activities, &assignments, confident)
+            .await?;
 
         let mut matched_count = 0usize;
         let mut writes: Vec<NewActivityTaxonomyAssignment> = Vec::with_capacity(activities.len());
@@ -233,13 +236,56 @@ impl CategorizationRulesService {
         Ok(matched_count)
     }
 
-    /// The category you have given each merchant, keyed by (merchant key,
-    /// taxonomy). A merchant counts once it has at least two manual labels and
-    /// four in five of them agree. Only categories that still exist are kept.
-    async fn learned_categories<'a>(
+    /// For each uncategorized activity, the category its merchant has most
+    /// often been given by hand, when one category leads. These are offered
+    /// for one-tap confirmation; `rerun_all` writes the confident ones itself.
+    pub async fn suggestions(&self, account_ids: &[String]) -> Result<Vec<CategorySuggestion>> {
+        let activities = self
+            .activity_repo
+            .get_activities_by_account_ids(account_ids)
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        let ids: Vec<String> = activities.iter().map(|a| a.id.clone()).collect();
+        let assignments = self.assignment_service.list_for_activities(&ids).await?;
+        let categorized: std::collections::HashSet<(&str, &str)> = assignments
+            .iter()
+            .map(|a| (a.activity_id.as_str(), a.taxonomy_id.as_str()))
+            .collect();
+        let buckets = self
+            .cash_activity_service
+            .get_by_activity_ids(&ids)
+            .await?
+            .into_iter()
+            .map(|row| (row.activity.id, row.cash_flow_bucket))
+            .collect::<HashMap<_, _>>();
+        let leading = self
+            .merchant_categories(&activities, &assignments, leads)
+            .await?;
+
+        Ok(activities
+            .iter()
+            .filter_map(|a| {
+                let taxonomy_id = buckets.get(&a.id)?.taxonomy_id()?;
+                if categorized.contains(&(a.id.as_str(), taxonomy_id)) {
+                    return None;
+                }
+                let category_id = leading.get(&(merchant_key(a)?, taxonomy_id))?;
+                Some(CategorySuggestion {
+                    activity_id: a.id.clone(),
+                    taxonomy_id: taxonomy_id.to_string(),
+                    category_id: category_id.clone(),
+                })
+            })
+            .collect())
+    }
+
+    /// The category you have given each merchant by hand, keyed by (merchant
+    /// key, taxonomy), where `qualifies(top, runner_up, total)` accepts the
+    /// label counts. Only categories that still exist are kept.
+    async fn merchant_categories<'a>(
         &self,
         activities: &'a [Activity],
         assignments: &'a [ActivityTaxonomyAssignment],
+        qualifies: fn(usize, usize, usize) -> bool,
     ) -> Result<HashMap<(&'a str, &'a str), String>> {
         let merchants: HashMap<&str, &str> = activities
             .iter()
@@ -258,12 +304,13 @@ impl CategorizationRulesService {
         let mut learned = HashMap::new();
         for ((merchant, taxonomy_id), counts) in labels {
             let total: usize = counts.values().sum();
-            let Some((category_id, top)) = counts.into_iter().max_by_key(|(_, count)| *count)
-            else {
-                continue;
-            };
-            if total >= 2 && top * 5 >= total * 4 {
-                learned.insert((merchant, taxonomy_id), category_id.to_string());
+            let mut ranked: Vec<(&str, usize)> = counts.into_iter().collect();
+            ranked.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+            let runner_up = ranked.get(1).map_or(0, |(_, count)| *count);
+            if let Some((category_id, top)) = ranked.first() {
+                if qualifies(*top, runner_up, total) {
+                    learned.insert((merchant, taxonomy_id), category_id.to_string());
+                }
             }
         }
         let existing = self
@@ -395,6 +442,16 @@ impl CategorizationRulesService {
             kept_modified,
         })
     }
+}
+
+/// Written automatically: at least two labels, four in five agreeing.
+fn confident(top: usize, _runner_up: usize, total: usize) -> bool {
+    total >= 2 && top * 5 >= total * 4
+}
+
+/// Offered as a suggestion: one category ahead of every other.
+fn leads(top: usize, runner_up: usize, _total: usize) -> bool {
+    top > runner_up
 }
 
 /// The stable merchant identity Finance Sync sends with each bank transaction.
@@ -1244,6 +1301,48 @@ mod tests {
         .await;
 
         assert!(writes.is_empty(), "unexpected writes: {writes:?}");
+    }
+
+    #[tokio::test]
+    async fn suggestions_offer_the_leading_category_for_uncategorized_rows_only() {
+        let assignment_repo = Arc::new(MockAssignmentRepo {
+            existing: Mutex::new(vec![
+                mk_assignment("once1", "spending_categories", "cat_a", "manual"),
+                mk_assignment("tie1", "spending_categories", "cat_a", "manual"),
+                mk_assignment("tie2", "spending_categories", "cat_b", "manual"),
+                mk_assignment("gone1", "spending_categories", "deleted_cat", "manual"),
+            ]),
+            writes: Mutex::new(vec![]),
+        });
+        let activity_repo = Arc::new(MockActivityRepo {
+            activities: vec![
+                mk_merchant_activity("once1", "seen-once"),
+                mk_merchant_activity("once2", "seen-once"),
+                mk_merchant_activity("tie1", "tied"),
+                mk_merchant_activity("tie2", "tied"),
+                mk_merchant_activity("tie3", "tied"),
+                mk_merchant_activity("gone1", "deleted"),
+                mk_merchant_activity("gone2", "deleted"),
+                mk_merchant_activity("new1", "never-seen"),
+            ],
+        });
+        let svc = CategorizationRulesService::new(
+            Arc::new(MockRulesRepo {
+                rules: Mutex::new(vec![]),
+            }) as Arc<dyn CategorizationRulesRepositoryTrait>,
+            activity_repo.clone() as Arc<dyn ActivityRepositoryTrait>,
+            Arc::new(ActivityTaxonomyAssignmentService::new(
+                assignment_repo as Arc<dyn ActivityTaxonomyAssignmentRepositoryTrait>,
+            )),
+            mock_cash_activity_service(&activity_repo),
+        );
+
+        let suggestions = svc.suggestions(&["acct1".to_string()]).await.unwrap();
+
+        assert_eq!(suggestions.len(), 1, "{suggestions:?}");
+        assert_eq!(suggestions[0].activity_id, "once2");
+        assert_eq!(suggestions[0].taxonomy_id, "spending_categories");
+        assert_eq!(suggestions[0].category_id, "cat_a");
     }
 
     #[tokio::test]

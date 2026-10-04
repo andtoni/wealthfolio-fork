@@ -116,6 +116,7 @@
     "splitLines_other": "Split · {{count}} lines",
     "changeCategory": "Change category ({{name}})",
     "assignCategory": "Assign category",
+    "useSuggestedCategory": "Use suggested category {{name}}",
     "changeEvent": "Change event ({{name}})",
     "rowActions": "Row actions",
     "markReimbursement": "Mark as reimbursement",

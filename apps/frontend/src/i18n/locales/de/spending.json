@@ -116,6 +116,7 @@
     "splitLines_other": "Aufgeteilt · {{count}} Zeilen",
     "changeCategory": "Kategorie ändern ({{name}})",
     "assignCategory": "Kategorie zuweisen",
+    "useSuggestedCategory": "Vorgeschlagene Kategorie {{name}} verwenden",
     "changeEvent": "Ereignis ändern ({{name}})",
     "rowActions": "Zeilenaktionen",
     "markReimbursement": "Als Erstattung markieren",

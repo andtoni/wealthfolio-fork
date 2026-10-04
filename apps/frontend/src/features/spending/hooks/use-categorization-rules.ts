@@ -8,6 +8,7 @@ import {
   deleteCategorizationRule,
   importRulePreset,
   listCategorizationRules,
+  listCategorySuggestions,
   listRulePresets,
   removeRulePreset,
   rerunCategorizationRules,
@@ -16,12 +17,21 @@ import {
 import { invalidateSpendingCaches } from "../lib/invalidation";
 import type {
   CategorizationRule,
+  CategorySuggestion,
   ImportPresetResult,
   NewCategorizationRule,
   RemovePresetResult,
   RulePresetSummary,
   UpdateCategorizationRule,
 } from "../types/rule";
+
+/** Refreshed with the transactions, so an accepted suggestion disappears. */
+export function useCategorySuggestions() {
+  return useQuery<CategorySuggestion[], Error>({
+    queryKey: [QueryKeys.SPENDING_TRANSACTIONS, "category-suggestions"],
+    queryFn: listCategorySuggestions,
+  });
+}
 
 export function useCategorizationRules() {
   return useQuery<CategorizationRule[], Error>({

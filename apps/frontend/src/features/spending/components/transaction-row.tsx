@@ -22,6 +22,7 @@ import { cn, formatDateTime } from "@/lib/utils";
 import { QuickCategorizePopover } from "./quick-categorize-popover";
 import { BudgetPeriodBadge } from "./budget-period-badge";
 import { QuickEventPopover } from "./quick-event-popover";
+import { SuggestedCategoryButton, type SuggestedCategory } from "./suggested-category-button";
 import {
   getCashActivityLabel,
   getEffectiveCashActivityType,
@@ -41,6 +42,7 @@ interface TransactionRowProps {
   eventTypeColor: string | null;
   appTimezone?: string;
   isSelected: boolean;
+  suggestedCategory?: SuggestedCategory | null;
   onToggleSelect: (id: string) => void;
   onAssignCategory: (activityId: string, taxonomyId: string, categoryId: string) => void;
   onClearCategory: (activityId: string, taxonomyId: string) => void;
@@ -62,6 +64,7 @@ function TransactionRowImpl({
   eventTypeColor,
   appTimezone,
   isSelected,
+  suggestedCategory,
   onToggleSelect,
   onAssignCategory,
   onClearCategory,
@@ -172,41 +175,54 @@ function TransactionRowImpl({
             </span>
           </button>
         ) : (
-          <QuickCategorizePopover
-            scope={isIncome ? "income" : isSaving ? "saving" : "expense"}
-            selectedCategoryId={row.category?.id ?? null}
-            onSelect={(taxonomyId, categoryId) => onAssignCategory(a.id, taxonomyId, categoryId)}
-            onClear={() => row.category && onClearCategory(a.id, row.category.taxonomyId)}
-            trigger={
-              <button
-                type="button"
-                aria-label={
-                  row.category
-                    ? t("spending:transactions.changeCategory", { name: row.category.name })
-                    : t("spending:transactions.assignCategory")
+          <>
+            {!row.category && suggestedCategory && (
+              <SuggestedCategoryButton
+                category={suggestedCategory}
+                className={
+                  "hover:bg-muted/60 inline-flex max-w-[180px] items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-left text-sm transition-colors"
                 }
-                className="hover:bg-muted/60 -mx-1 inline-flex max-w-[180px] items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left transition-colors"
-              >
-                {row.category ? (
-                  <>
-                    {row.category.color && (
-                      <span
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: row.category.color }}
-                        aria-hidden="true"
-                      />
-                    )}
-                    <span className="truncate text-sm">{row.category.name}</span>
-                  </>
-                ) : (
-                  <span className="text-muted-foreground inline-flex items-center gap-1 text-xs italic">
-                    <Icons.Plus className="h-3 w-3" aria-hidden="true" />
-                    {t("spending:transactions.categorize")}
-                  </span>
-                )}
-              </button>
-            }
-          />
+                onAccept={() =>
+                  onAssignCategory(a.id, suggestedCategory.taxonomyId, suggestedCategory.id)
+                }
+              />
+            )}
+            <QuickCategorizePopover
+              scope={isIncome ? "income" : isSaving ? "saving" : "expense"}
+              selectedCategoryId={row.category?.id ?? null}
+              onSelect={(taxonomyId, categoryId) => onAssignCategory(a.id, taxonomyId, categoryId)}
+              onClear={() => row.category && onClearCategory(a.id, row.category.taxonomyId)}
+              trigger={
+                <button
+                  type="button"
+                  aria-label={
+                    row.category
+                      ? t("spending:transactions.changeCategory", { name: row.category.name })
+                      : t("spending:transactions.assignCategory")
+                  }
+                  className="hover:bg-muted/60 -mx-1 inline-flex max-w-[180px] items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left transition-colors"
+                >
+                  {row.category ? (
+                    <>
+                      {row.category.color && (
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: row.category.color }}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span className="truncate text-sm">{row.category.name}</span>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground inline-flex items-center gap-1 text-xs italic">
+                      <Icons.Plus className="h-3 w-3" aria-hidden="true" />
+                      {t("spending:transactions.categorize")}
+                    </span>
+                  )}
+                </button>
+              }
+            />
+          </>
         )}
       </TableCell>
       <TableCell className="hidden text-sm lg:table-cell">

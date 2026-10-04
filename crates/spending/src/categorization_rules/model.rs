@@ -1,6 +1,15 @@
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
+/// A category offered for an uncategorized activity from its merchant's history.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategorySuggestion {
+    pub activity_id: String,
+    pub taxonomy_id: String,
+    pub category_id: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RuleMatchType {

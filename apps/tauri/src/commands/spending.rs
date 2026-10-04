@@ -19,8 +19,8 @@ use wealthfolio_spending::cash_activities::{
     CashActivity, CashActivityFilter, CashActivitySearchRequest, CashActivitySearchResponse,
 };
 use wealthfolio_spending::categorization_rules::{
-    CategorizationRule, CategorizationRulesService, ImportPresetResult, NewCategorizationRule,
-    RemovePresetResult, RulePresetSummary, UpdateCategorizationRule,
+    CategorizationRule, CategorizationRulesService, CategorySuggestion, ImportPresetResult,
+    NewCategorizationRule, RemovePresetResult, RulePresetSummary, UpdateCategorizationRule,
 };
 use wealthfolio_spending::events::{Event, EventType, NewEvent, NewEventType, UpdateEvent};
 use wealthfolio_spending::insight::{SpendingInsight, SpendingInsightRequest};
@@ -358,6 +358,25 @@ pub async fn rerun_categorization_rules(
         .rerun_all(&s.account_ids, only_uncategorized)
         .await
         .map_err(|e| format!("Failed to re-run rules: {}", e))
+}
+
+#[tauri::command]
+pub async fn list_category_suggestions(
+    state: State<'_, Arc<ServiceContext>>,
+) -> Result<Vec<CategorySuggestion>, String> {
+    let s = state
+        .spending_settings_service()
+        .get()
+        .await
+        .map_err(|e| format!("Failed to load spending settings: {}", e))?;
+    if !s.enabled {
+        return Ok(Vec::new());
+    }
+    state
+        .categorization_rules_service()
+        .suggestions(&s.account_ids)
+        .await
+        .map_err(|e| format!("Failed to list category suggestions: {}", e))
 }
 
 #[tauri::command]

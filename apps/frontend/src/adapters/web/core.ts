@@ -219,6 +219,7 @@ export const COMMANDS: CommandMap = {
   update_categorization_rule: { method: "PUT", path: "/spending/rules" },
   delete_categorization_rule: { method: "DELETE", path: "/spending/rules" },
   rerun_categorization_rules: { method: "POST", path: "/spending/rules/rerun" },
+  list_category_suggestions: { method: "GET", path: "/spending/category-suggestions" },
   list_rule_presets: { method: "GET", path: "/spending/rule-presets" },
   import_rule_preset: { method: "POST", path: "/spending/rule-presets" },
   remove_rule_preset: { method: "DELETE", path: "/spending/rule-presets" },
@@ -1488,6 +1489,7 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
     }
     // Spending categorization rules
     case "list_categorization_rules":
+    case "list_category_suggestions":
     case "list_rule_presets":
       break;
     case "create_categorization_rule": {

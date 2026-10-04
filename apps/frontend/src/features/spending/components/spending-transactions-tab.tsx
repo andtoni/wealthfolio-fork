@@ -50,6 +50,7 @@ import { getActivityRestrictionLevel } from "@/lib/activity-restrictions";
 import { ActivityType } from "@/lib/constants";
 import type { AmountRange } from "./amount-range-filter";
 import { DeleteTransactionsDialog, type DeletePreview } from "./delete-transactions-dialog";
+import type { SuggestedCategory } from "./suggested-category-button";
 import { TransactionCard } from "./transaction-card";
 import { TransactionRow } from "./transaction-row";
 import { SplitTransactionSheet } from "./split-transaction-sheet";
@@ -86,6 +87,7 @@ import {
   useSetActivityEvent,
   useUnassignActivityCategory,
 } from "../hooks/use-cash-activities";
+import { useCategorySuggestions } from "../hooks/use-categorization-rules";
 import { useEventTypes, useSpendingEvents } from "../hooks/use-spending-events";
 import { useSpendingSettings } from "../hooks/use-spending-settings";
 import { invalidateSpendingCaches } from "../lib/invalidation";
@@ -557,6 +559,22 @@ export const SpendingTransactionsTab = forwardRef<
   }, []);
 
   const requestKey = useMemo(() => JSON.stringify(searchRequest), [searchRequest]);
+  const { data: categorySuggestions = [] } = useCategorySuggestions();
+  const suggestedCategoryByActivity = useMemo(() => {
+    const map = new Map<string, SuggestedCategory>();
+    for (const s of categorySuggestions) {
+      const category = allCategories.get(s.categoryId);
+      if (category) {
+        map.set(s.activityId, {
+          taxonomyId: s.taxonomyId,
+          id: category.id,
+          name: category.name,
+          color: category.color,
+        });
+      }
+    }
+    return map;
+  }, [categorySuggestions, allCategories]);
   const [lastRequestKey, setLastRequestKey] = useState(requestKey);
   if (lastRequestKey !== requestKey) {
     setLastRequestKey(requestKey);
@@ -952,6 +970,7 @@ export const SpendingTransactionsTab = forwardRef<
           eventTypeColor={eventTypeColor}
           appTimezone={appTimezone}
           isSelected={selectedRowIds.has(r.activity.id)}
+          suggestedCategory={suggestedCategoryByActivity.get(r.activity.id)}
           onToggleSelect={handleToggleRow}
           onAssignCategory={handleAssignCategory}
           onClearCategory={handleClearCategory}

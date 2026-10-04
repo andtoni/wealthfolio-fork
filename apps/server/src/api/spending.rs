@@ -24,7 +24,8 @@ use wealthfolio_spending::cash_activities::{
     CashActivity, CashActivityFilter, CashActivitySearchRequest, CashActivitySearchResponse,
 };
 use wealthfolio_spending::categorization_rules::{
-    CategorizationRule, CategorizationRulesService, NewCategorizationRule, UpdateCategorizationRule,
+    CategorizationRule, CategorizationRulesService, CategorySuggestion, NewCategorizationRule,
+    UpdateCategorizationRule,
 };
 use wealthfolio_spending::events::{Event, EventType, NewEvent, NewEventType, UpdateEvent};
 use wealthfolio_spending::insight::{SpendingInsight, SpendingInsightRequest};
@@ -354,6 +355,21 @@ async fn rerun_categorization_rules(
         state
             .categorization_rules_service
             .rerun_all(&s.account_ids, body.only_uncategorized)
+            .await?,
+    ))
+}
+
+async fn list_category_suggestions(
+    State(state): State<Arc<AppState>>,
+) -> ApiResult<Json<Vec<CategorySuggestion>>> {
+    let s = state.spending_settings_service.get().await?;
+    if !s.enabled {
+        return Ok(Json(Vec::new()));
+    }
+    Ok(Json(
+        state
+            .categorization_rules_service
+            .suggestions(&s.account_ids)
             .await?,
     ))
 }
@@ -781,6 +797,10 @@ pub fn router() -> Router<Arc<AppState>> {
             put(update_categorization_rule).delete(delete_categorization_rule),
         )
         .route("/spending/rules/rerun", post(rerun_categorization_rules))
+        .route(
+            "/spending/category-suggestions",
+            get(list_category_suggestions),
+        )
         .route("/spending/rule-presets", get(list_rule_presets))
         .route(
             "/spending/rule-presets/{preset_id}/import",
