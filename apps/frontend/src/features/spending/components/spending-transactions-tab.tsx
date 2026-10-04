@@ -215,6 +215,8 @@ export const SpendingTransactionsTab = forwardRef<
   const urlSubcategoryId = searchParams.get("subcategory");
   const urlStartDate = searchParams.get("from");
   const urlEndDate = searchParams.get("to");
+  // Set by the budget rings: list what the budget counts in the date range.
+  const urlUseBudgetPeriod = searchParams.get("budget") === "1";
   const urlStatus = searchParams.get("status") as CashActivityStatusFilter | null;
   const urlTypes = searchParams.get("types");
   const urlAccount = searchParams.get("account");
@@ -352,6 +354,7 @@ export const SpendingTransactionsTab = forwardRef<
     setOrDelete("amountMax", amountRange.max != null ? String(amountRange.max) : null);
     setOrDelete("from", dateRange?.from ? formatDateISO(dateRange.from) : null);
     setOrDelete("to", dateRange?.to ? formatDateISO(dateRange.to) : null);
+    if (!dateRange?.from && !dateRange?.to) next.delete("budget");
     // Only call setSearchParams when the serialized form actually changed,
     // otherwise React Router still bumps history.
     if (next.toString() !== searchParams.toString()) {
@@ -468,6 +471,7 @@ export const SpendingTransactionsTab = forwardRef<
             return end.toISOString();
           })()
         : undefined,
+      useBudgetPeriod: urlUseBudgetPeriod || undefined,
       minAmount: amountRange.min ?? undefined,
       maxAmount: amountRange.max ?? undefined,
       sortBy: "date",
@@ -482,6 +486,7 @@ export const SpendingTransactionsTab = forwardRef<
     selectedEvents,
     statusFilter,
     dateRange,
+    urlUseBudgetPeriod,
     amountRange,
   ]);
 

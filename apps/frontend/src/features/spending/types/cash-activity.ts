@@ -57,6 +57,8 @@ export interface CashActivitySearchRequest {
   status?: CashActivityStatusFilter;
   startDate?: string;
   endDate?: string;
+  /** Match an activity assigned to a budget period by that period, not its date. */
+  useBudgetPeriod?: boolean;
   minAmount?: number;
   maxAmount?: number;
   sortBy?: CashActivitySortField;

@@ -746,7 +746,7 @@ function BudgetRing({
     <Link
       to={`/activities?tab=spending&category=${encodeURIComponent(ring.categoryId)}&from=${
         activityRange.from
-      }&to=${activityRange.to}`}
+      }&to=${activityRange.to}&budget=1`}
       className="hover:bg-muted/40 flex w-16 shrink-0 snap-start flex-col items-center gap-1 rounded-md px-1 py-1 transition-colors"
       title={`${ring.name}: ${ring.spent.toFixed(2)} / ${ring.target.toFixed(2)}`}
     >

@@ -72,6 +72,10 @@ pub struct CashActivitySearchRequest {
     /// Date window — RFC3339 strings, inclusive.
     pub start_date: Option<String>,
     pub end_date: Option<String>,
+    /// Apply the date window the way the budget counts: an activity assigned
+    /// to a budget period is matched by that period instead of its own date.
+    #[serde(default)]
+    pub use_budget_period: bool,
     /// Absolute amount range (operates on |amount|).
     pub min_amount: Option<f64>,
     pub max_amount: Option<f64>,

@@ -229,11 +229,22 @@ impl CashActivityService {
         activities.retain(|a| allowed_types.iter().any(|t| t == a.effective_type()));
         retain_classified_cash_activities(&mut activities, &account_types);
 
-        retain_by_date_range(
-            &mut activities,
-            req.start_date.as_deref(),
-            req.end_date.as_deref(),
-        )?;
+        if req.use_budget_period {
+            let ids: Vec<String> = activities.iter().map(|a| a.id.clone()).collect();
+            let chosen = self.budget_periods_for(&ids).await?;
+            retain_by_budget_period_range(
+                &mut activities,
+                &chosen,
+                req.start_date.as_deref(),
+                req.end_date.as_deref(),
+            )?;
+        } else {
+            retain_by_date_range(
+                &mut activities,
+                req.start_date.as_deref(),
+                req.end_date.as_deref(),
+            )?;
+        }
 
         if let Some(events) = req.event_ids.as_deref() {
             if !events.is_empty() {
@@ -1116,6 +1127,35 @@ fn retain_by_date_range(
     Ok(())
 }
 
+/// Like `retain_by_date_range`, but an activity assigned to a budget period is
+/// matched by the first day of that period, so the result is what the budget
+/// counts in the window.
+fn retain_by_budget_period_range(
+    activities: &mut Vec<Activity>,
+    chosen_periods: &HashMap<String, String>,
+    start_date: Option<&str>,
+    end_date: Option<&str>,
+) -> Result<()> {
+    let start = parse_filter_datetime(start_date)?;
+    let end = parse_filter_datetime(end_date)?;
+
+    if start.is_some() || end.is_some() {
+        activities.retain(|a| {
+            // Noon keeps the period's first day inside a window whose bounds
+            // are local midnights expressed in UTC.
+            let counted_on = chosen_periods
+                .get(&a.id)
+                .and_then(|period| chrono::NaiveDate::parse_from_str(period, "%Y-%m-%d").ok())
+                .and_then(|date| date.and_hms_opt(12, 0, 0))
+                .map(|noon| noon.and_utc())
+                .unwrap_or(a.activity_date);
+            activity_date_in_range(&counted_on, start.as_ref(), end.as_ref())
+        });
+    }
+
+    Ok(())
+}
+
 fn parse_filter_datetime(value: Option<&str>) -> Result<Option<DateTime<Utc>>> {
     value
         .map(|value| DateTime::parse_from_rfc3339(value).map(|date| date.with_timezone(&Utc)))
@@ -1973,6 +2013,50 @@ mod tests {
             Some(&same_end)
         ));
         assert!(!activity_date_in_range(&after_end, None, Some(&same_end)));
+    }
+
+    #[test]
+    fn budget_period_range_lists_what_the_budget_counts_in_the_window() {
+        let dated = |id: &str, date: &str| {
+            let mut activity = activity("WITHDRAWAL");
+            activity.id = id.to_string();
+            activity.activity_date = DateTime::parse_from_rfc3339(date)
+                .unwrap()
+                .with_timezone(&Utc);
+            activity
+        };
+        // October as a UTC+2 client sends it: local midnights expressed in UTC.
+        let (start, end) = ("2026-09-30T22:00:00.000Z", "2026-10-31T21:59:59.999Z");
+        let chosen = HashMap::from([
+            (
+                "september-counted-in-october".to_string(),
+                "2026-10-01".to_string(),
+            ),
+            (
+                "october-counted-in-november".to_string(),
+                "2026-11-01".to_string(),
+            ),
+        ]);
+        let all = || {
+            vec![
+                dated("september-counted-in-october", "2026-09-28T10:00:00Z"),
+                dated("october-counted-in-november", "2026-10-30T10:00:00Z"),
+                dated("october", "2026-10-05T10:00:00Z"),
+                dated("september", "2026-09-28T10:00:00Z"),
+            ]
+        };
+        let ids = |activities: Vec<Activity>| -> Vec<String> {
+            activities.into_iter().map(|a| a.id).collect()
+        };
+
+        let mut counted = all();
+        retain_by_budget_period_range(&mut counted, &chosen, Some(start), Some(end)).unwrap();
+        assert_eq!(ids(counted), ["september-counted-in-october", "october"]);
+
+        // The plain date window is unchanged by any assignment.
+        let mut by_date = all();
+        retain_by_date_range(&mut by_date, Some(start), Some(end)).unwrap();
+        assert_eq!(ids(by_date), ["october-counted-in-november", "october"]);
     }
 
     #[test]
