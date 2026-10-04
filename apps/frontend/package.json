@@ -84,7 +84,7 @@
     "zustand": "5.0.11",
     "i18next": "25.10.10",
     "react-i18next": "16.6.6",
-    "i18next-resources-to-backend": "1.2.1"
+    "i18next-resources-to-backend": "1.2.3"
   },
   "devDependencies": {
     "@tanstack/eslint-plugin-query": "5.91.4",
