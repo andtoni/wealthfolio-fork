@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use tokio::sync::Mutex;
-use wealthfolio_core::activities::ActivityRepositoryTrait;
+use wealthfolio_core::activities::{Activity, ActivityRepositoryTrait};
 
 use super::matcher::{
     compile_regex_pattern, compile_rules, match_compiled_where, MAX_REGEX_PATTERN_LEN,
@@ -14,7 +14,7 @@ use super::model::{
 use super::presets::{self, ImportPresetResult, RemovePresetResult, RulePresetSummary};
 use super::traits::CategorizationRulesRepositoryTrait;
 use crate::activity_assignments::{
-    ActivityTaxonomyAssignmentService, NewActivityTaxonomyAssignment,
+    ActivityTaxonomyAssignment, ActivityTaxonomyAssignmentService, NewActivityTaxonomyAssignment,
 };
 use crate::cash_activities::CashActivityServiceTrait;
 use crate::error::SpendingError;
@@ -94,9 +94,8 @@ impl CategorizationRulesService {
         self.repo.delete(id).await
     }
 
-    /// Re-run all rules against existing activities. Returns count of activities
-    /// matched by a rule (a rule that fires counts toward the total even when it
-    /// has no category target to write — matches the prior count semantics).
+    /// Re-run merchant history and all rules against existing activities.
+    /// Returns the count of activities matched by either.
     /// Filters to the provided account ids when non-empty (typically the spending accounts).
     ///
     /// `only_uncategorized=true` skips activities that already have any activity-scope
@@ -165,6 +164,7 @@ impl CategorizationRulesService {
             )
             .await?;
         let compiled = compile_rules(&rules);
+        let learned = self.learned_categories(&activities, &assignments).await?;
 
         let mut matched_count = 0usize;
         let mut writes: Vec<NewActivityTaxonomyAssignment> = Vec::with_capacity(activities.len());
@@ -172,54 +172,115 @@ impl CategorizationRulesService {
             let Some(bucket) = buckets.get(&a.id) else {
                 continue;
             };
-            let notes_raw = a.notes.as_deref().unwrap_or("");
-            let notes_upper = notes_raw.to_uppercase();
-            let Some(m) = match_compiled_where(
-                &compiled,
-                &notes_upper,
-                notes_raw,
-                a.effective_type(),
-                &a.account_id,
-                |rule| {
-                    let Some(taxonomy_id) = rule.taxonomy_id.as_deref() else {
-                        return false;
-                    };
-                    let Some(category_id) = rule.category_id.as_deref() else {
-                        return false;
-                    };
-                    bucket.accepts_taxonomy(taxonomy_id)
-                        && existing_rule_pairs
-                            .contains(&(taxonomy_id.to_string(), category_id.to_string()))
-                },
-            ) else {
-                continue;
+            // What you chose before for this merchant comes ahead of any rule.
+            let learned_category = bucket.taxonomy_id().and_then(|taxonomy_id| {
+                let category_id = learned.get(&(merchant_key(a)?, taxonomy_id))?;
+                Some((taxonomy_id.to_string(), category_id.clone()))
+            });
+            let (tax_id, cat_id, source) = if let Some((tax_id, cat_id)) = learned_category {
+                (tax_id, cat_id, "history")
+            } else {
+                let notes_raw = a.notes.as_deref().unwrap_or("");
+                let notes_upper = notes_raw.to_uppercase();
+                let Some(m) = match_compiled_where(
+                    &compiled,
+                    &notes_upper,
+                    notes_raw,
+                    a.effective_type(),
+                    &a.account_id,
+                    |rule| {
+                        let Some(taxonomy_id) = rule.taxonomy_id.as_deref() else {
+                            return false;
+                        };
+                        let Some(category_id) = rule.category_id.as_deref() else {
+                            return false;
+                        };
+                        bucket.accepts_taxonomy(taxonomy_id)
+                            && existing_rule_pairs
+                                .contains(&(taxonomy_id.to_string(), category_id.to_string()))
+                    },
+                ) else {
+                    continue;
+                };
+                let (Some(tax_id), Some(cat_id)) =
+                    (m.rule.taxonomy_id.clone(), m.rule.category_id.clone())
+                else {
+                    continue;
+                };
+                (tax_id, cat_id, "rule")
             };
             matched_count += 1;
-            if let (Some(tax_id), Some(cat_id)) =
-                (m.rule.taxonomy_id.clone(), m.rule.category_id.clone())
-            {
-                let key = (a.id.clone(), tax_id.clone());
-                if manual_keys.contains(&key) {
-                    continue;
-                }
-                if only_uncategorized && any_keys.contains(&key) {
-                    continue;
-                }
-                writes.push(NewActivityTaxonomyAssignment {
-                    id: None,
-                    activity_id: a.id.clone(),
-                    taxonomy_id: tax_id,
-                    category_id: cat_id,
-                    weight: 10_000,
-                    source: "rule".to_string(),
-                });
+            let key = (a.id.clone(), tax_id.clone());
+            if manual_keys.contains(&key) {
+                continue;
             }
+            if only_uncategorized && any_keys.contains(&key) {
+                continue;
+            }
+            writes.push(NewActivityTaxonomyAssignment {
+                id: None,
+                activity_id: a.id.clone(),
+                taxonomy_id: tax_id,
+                category_id: cat_id,
+                weight: 10_000,
+                source: source.to_string(),
+            });
         }
 
         self.assignment_service
             .bulk_apply_rule_assignments(writes, only_uncategorized)
             .await?;
         Ok(matched_count)
+    }
+
+    /// The category you have given each merchant, keyed by (merchant key,
+    /// taxonomy). A merchant counts once it has at least two manual labels and
+    /// four in five of them agree. Only categories that still exist are kept.
+    async fn learned_categories<'a>(
+        &self,
+        activities: &'a [Activity],
+        assignments: &'a [ActivityTaxonomyAssignment],
+    ) -> Result<HashMap<(&'a str, &'a str), String>> {
+        let merchants: HashMap<&str, &str> = activities
+            .iter()
+            .filter_map(|a| Some((a.id.as_str(), merchant_key(a)?)))
+            .collect();
+        let mut labels: HashMap<(&str, &str), HashMap<&str, usize>> = HashMap::new();
+        for a in assignments.iter().filter(|a| a.source == "manual") {
+            if let Some(merchant) = merchants.get(a.activity_id.as_str()) {
+                *labels
+                    .entry((merchant, a.taxonomy_id.as_str()))
+                    .or_default()
+                    .entry(a.category_id.as_str())
+                    .or_default() += 1;
+            }
+        }
+        let mut learned = HashMap::new();
+        for ((merchant, taxonomy_id), counts) in labels {
+            let total: usize = counts.values().sum();
+            let Some((category_id, top)) = counts.into_iter().max_by_key(|(_, count)| *count)
+            else {
+                continue;
+            };
+            if total >= 2 && top * 5 >= total * 4 {
+                learned.insert((merchant, taxonomy_id), category_id.to_string());
+            }
+        }
+        let existing = self
+            .assignment_service
+            .filter_existing_category_pairs(
+                &learned
+                    .iter()
+                    .map(|((_, taxonomy_id), category_id)| {
+                        (taxonomy_id.to_string(), category_id.clone())
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .await?;
+        learned.retain(|(_, taxonomy_id), category_id| {
+            existing.contains(&(taxonomy_id.to_string(), category_id.clone()))
+        });
+        Ok(learned)
     }
 
     /// List the bundled presets, marking which ones the user already has installed
@@ -334,6 +395,18 @@ impl CategorizationRulesService {
             kept_modified,
         })
     }
+}
+
+/// The stable merchant identity Finance Sync sends with each bank transaction.
+fn merchant_key(activity: &Activity) -> Option<&str> {
+    activity
+        .metadata
+        .as_ref()?
+        .get("providerOwned")?
+        .get("merchantContext")?
+        .get("merchantKey")?
+        .as_str()
+        .filter(|key| !key.is_empty())
 }
 
 fn validate_rule_pattern(match_type: &RuleMatchType, pattern: &str) -> Result<()> {
@@ -533,8 +606,8 @@ mod tests {
                 .cloned()
                 .collect())
         }
-        async fn categories_belong_to_taxonomy(&self, _: &str, _: &[String]) -> Result<bool> {
-            Ok(true)
+        async fn categories_belong_to_taxonomy(&self, _: &str, ids: &[String]) -> Result<bool> {
+            Ok(!ids.iter().any(|id| id.starts_with("deleted_")))
         }
         async fn upsert(
             &self,
@@ -1082,6 +1155,114 @@ mod tests {
         let writes = assignment_repo.writes.lock().unwrap();
         assert_eq!(writes.len(), 1);
         assert_eq!(writes[0].taxonomy_id, "income_sources");
+    }
+
+    fn mk_merchant_activity(id: &str, merchant_key: &str) -> Activity {
+        Activity {
+            metadata: Some(serde_json::json!({
+                "providerOwned": { "merchantContext": { "merchantKey": merchant_key } }
+            })),
+            ..mk_activity(id, "acct1", "CARD PURCHASE")
+        }
+    }
+
+    async fn rerun_with_history(
+        activities: Vec<Activity>,
+        labels: Vec<ActivityTaxonomyAssignment>,
+        rules: Vec<CategorizationRule>,
+    ) -> Vec<NewActivityTaxonomyAssignment> {
+        let assignment_repo = Arc::new(MockAssignmentRepo {
+            existing: Mutex::new(labels),
+            writes: Mutex::new(vec![]),
+        });
+        let activity_repo = Arc::new(MockActivityRepo { activities });
+        let svc = CategorizationRulesService::new(
+            Arc::new(MockRulesRepo {
+                rules: Mutex::new(rules),
+            }) as Arc<dyn CategorizationRulesRepositoryTrait>,
+            activity_repo.clone() as Arc<dyn ActivityRepositoryTrait>,
+            Arc::new(ActivityTaxonomyAssignmentService::new(
+                assignment_repo.clone() as Arc<dyn ActivityTaxonomyAssignmentRepositoryTrait>,
+            )),
+            mock_cash_activity_service(&activity_repo),
+        );
+        svc.rerun_all(&["acct1".to_string()], true).await.unwrap();
+        let writes = assignment_repo.writes.lock().unwrap().clone();
+        writes
+    }
+
+    #[tokio::test]
+    async fn rerun_labels_from_merchant_history_ahead_of_a_rule() {
+        let writes = rerun_with_history(
+            vec![
+                mk_merchant_activity("a1", "m1"),
+                mk_merchant_activity("a2", "m1"),
+                mk_merchant_activity("a3", "m1"),
+            ],
+            vec![
+                mk_assignment("a1", "spending_categories", "cat_groceries", "manual"),
+                mk_assignment("a2", "spending_categories", "cat_groceries", "manual"),
+            ],
+            vec![mk_rule(
+                "r1",
+                "CARD",
+                "spending_categories",
+                "cat_other",
+                10,
+            )],
+        )
+        .await;
+
+        assert_eq!(writes.len(), 1);
+        assert_eq!(writes[0].activity_id, "a3");
+        assert_eq!(writes[0].category_id, "cat_groceries");
+        assert_eq!(writes[0].source, "history");
+    }
+
+    #[tokio::test]
+    async fn rerun_ignores_merchant_history_that_is_thin_split_or_not_manual() {
+        let writes = rerun_with_history(
+            vec![
+                mk_merchant_activity("once1", "seen-once"),
+                mk_merchant_activity("once2", "seen-once"),
+                mk_merchant_activity("split1", "split"),
+                mk_merchant_activity("split2", "split"),
+                mk_merchant_activity("split3", "split"),
+                mk_merchant_activity("rule1", "rule-labelled"),
+                mk_merchant_activity("rule2", "rule-labelled"),
+                mk_merchant_activity("rule3", "rule-labelled"),
+            ],
+            vec![
+                mk_assignment("once1", "spending_categories", "cat_a", "manual"),
+                mk_assignment("split1", "spending_categories", "cat_a", "manual"),
+                mk_assignment("split2", "spending_categories", "cat_b", "manual"),
+                mk_assignment("rule1", "spending_categories", "cat_a", "rule"),
+                mk_assignment("rule2", "spending_categories", "cat_a", "rule"),
+            ],
+            vec![],
+        )
+        .await;
+
+        assert!(writes.is_empty(), "unexpected writes: {writes:?}");
+    }
+
+    #[tokio::test]
+    async fn rerun_never_applies_a_history_category_that_no_longer_exists() {
+        let writes = rerun_with_history(
+            vec![
+                mk_merchant_activity("a1", "m1"),
+                mk_merchant_activity("a2", "m1"),
+                mk_merchant_activity("a3", "m1"),
+            ],
+            vec![
+                mk_assignment("a1", "spending_categories", "deleted_cat", "manual"),
+                mk_assignment("a2", "spending_categories", "deleted_cat", "manual"),
+            ],
+            vec![],
+        )
+        .await;
+
+        assert!(writes.is_empty(), "unexpected writes: {writes:?}");
     }
 
     #[tokio::test]

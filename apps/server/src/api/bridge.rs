@@ -3,8 +3,11 @@
 //! compatibility but routes are now inlined in api.rs.
 use axum::{extract::State, Extension, Json};
 use chrono::NaiveDate;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
+use crate::api::spending::spawn_auto_categorize_for_opted_in_accounts;
 use crate::auth::AuthenticatedSubject;
 use crate::error::ApiError;
 use crate::events::{ServerEvent, PORTFOLIO_UPDATE_COMPLETE, PORTFOLIO_UPDATE_START};
@@ -277,6 +280,22 @@ fn enqueue_current_state_valuation_refresh(
     });
 }
 
+static CATEGORIZATION_SCHEDULED: AtomicBool = AtomicBool::new(false);
+const CATEGORIZATION_DELAY: Duration = Duration::from_secs(5);
+
+/// Finance Sync commits one transaction at a time, so one categorization pass
+/// shortly after the first commit covers the whole delivery.
+fn schedule_auto_categorize(state: Arc<AppState>) {
+    if CATEGORIZATION_SCHEDULED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    tokio::spawn(async move {
+        tokio::time::sleep(CATEGORIZATION_DELAY).await;
+        CATEGORIZATION_SCHEDULED.store(false, Ordering::SeqCst);
+        spawn_auto_categorize_for_opted_in_accounts(&state).await;
+    });
+}
+
 pub async fn handle_commit(
     State(state): State<Arc<AppState>>,
     auth: Option<Extension<AuthenticatedSubject>>,
@@ -299,6 +318,7 @@ pub async fn handle_commit(
                 state
                     .event_bus
                     .publish(ServerEvent::new(PORTFOLIO_UPDATE_COMPLETE));
+                schedule_auto_categorize(state.clone());
             }
             if matches!(
                 &r.outcome,

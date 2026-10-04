@@ -10,7 +10,7 @@ pub struct ActivityTaxonomyAssignment {
     pub category_id: String,
     /// Basis points: 10000 = 100%. Single-select activity-scope taxonomies use 10000.
     pub weight: i32,
-    /// "manual" | "rule" | "import"
+    /// "manual" | "rule" | "history" | "import"
     pub source: String,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,

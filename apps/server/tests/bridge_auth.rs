@@ -304,3 +304,101 @@ async fn cross_subject_revoke_is_forbidden() {
         "cross-subject revoke should be forbidden"
     );
 }
+
+#[tokio::test]
+async fn a_bridge_delivery_is_categorized_without_opening_the_app() {
+    let server = spawn_server().await;
+    let jwt = login(&server).await;
+    let subject = "urn:wealthfolio:password#local";
+    let db = Connection::open(server._tmp.path().join("test.db")).unwrap();
+    let category_id: String = db
+        .query_row(
+            "SELECT id FROM taxonomy_categories WHERE taxonomy_id='spending_categories' LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    let settings = server
+        .client
+        .put(format!("{}/api/v1/spending/settings", server.base))
+        .header(header::AUTHORIZATION, format!("Bearer {jwt}"))
+        .json(&serde_json::json!({"enabled": true, "accountIds": ["bridge-account"]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(settings.status(), 200);
+    let rule = server
+        .client
+        .post(format!("{}/api/v1/spending/rules", server.base))
+        .header(header::AUTHORIZATION, format!("Bearer {jwt}"))
+        .json(&serde_json::json!({
+            "name": "Coffee",
+            "pattern": "COFFEE",
+            "matchType": "contains",
+            "taxonomyId": "spending_categories",
+            "categoryId": category_id,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(rule.status(), 200);
+
+    let grant = server
+        .client
+        .post(format!(
+            "{}/api/v1/bridge/grant/{}/bridge-account",
+            server.base,
+            urlencoding::encode(subject)
+        ))
+        .header(header::AUTHORIZATION, format!("Bearer {jwt}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(grant.status(), 200);
+    let access_generation = grant.json::<serde_json::Value>().await.unwrap()["accessGeneration"]
+        .as_i64()
+        .unwrap();
+    let commit = server
+        .client
+        .post(format!("{}/api/v1/bridge/commit", server.base))
+        .header(header::AUTHORIZATION, format!("Bearer {BRIDGE_TOKEN}"))
+        .json(&serde_json::json!({
+            "idempotency_key": "bridge-categorized-key",
+            "subject": subject,
+            "access_generation": access_generation,
+            "kind": "ActivityUpsert",
+            "resource_id": "bridge-coffee",
+            "activity": {
+                "account_id": "bridge-account",
+                "activity_type": "WITHDRAWAL",
+                "status": "POSTED",
+                "activity_date": "2026-01-01",
+                "amount": "4",
+                "currency": "USD",
+                "notes": "COFFEE SHOP",
+                "activity_type_override": null,
+                "needs_review": false
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(commit.status(), 200);
+
+    let mut source = None;
+    for _ in 0..60 {
+        source = db
+            .query_row(
+                "SELECT source FROM activity_taxonomy_assignments WHERE category_id=?",
+                [&category_id],
+                |row| row.get::<_, String>(0),
+            )
+            .ok();
+        if source.is_some() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+    assert_eq!(source.as_deref(), Some("rule"));
+}

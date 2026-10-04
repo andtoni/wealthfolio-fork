@@ -90,7 +90,7 @@ fn spawn_auto_categorize(rules_service: Arc<CategorizationRulesService>, account
     });
 }
 
-async fn spawn_auto_categorize_for_opted_in_accounts(state: &Arc<AppState>) {
+pub(crate) async fn spawn_auto_categorize_for_opted_in_accounts(state: &Arc<AppState>) {
     let settings = match state.spending_settings_service.get().await {
         Ok(s) => s,
         Err(e) => {
