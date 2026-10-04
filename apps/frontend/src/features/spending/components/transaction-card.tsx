@@ -137,7 +137,6 @@ function TransactionCardImpl({
                 {t("spending:transactions.provisional")}
               </Badge>
             )}
-            <BudgetPeriodBadge periodStart={a.budgetPeriodStart} />
           </div>
           <div className="text-muted-foreground mt-0.5 truncate text-[11px]">
             {formattedDate.date} {formattedDate.time} · {accountName} ·{" "}
@@ -149,6 +148,12 @@ function TransactionCardImpl({
               a.activityTypeOverride,
             )}
           </div>
+          {a.budgetPeriodStart && (
+            // On its own line: beside the name it leaves no room for the name on a phone.
+            <div className="mt-1">
+              <BudgetPeriodBadge periodStart={a.budgetPeriodStart} />
+            </div>
+          )}
         </div>
         <div
           className={cn(
