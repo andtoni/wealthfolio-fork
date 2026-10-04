@@ -9,8 +9,8 @@ use wealthfolio_core::accounts::{
     AggregateEligibilityServiceTrait,
 };
 use wealthfolio_core::activities::{
-    Activity, ActivityRepositoryTrait, TransferPairResolution, ACTIVITY_TYPE_TRANSFER_IN,
-    ACTIVITY_TYPE_TRANSFER_OUT,
+    Activity, ActivityRepositoryTrait, ActivityStatus, TransferPairResolution,
+    ACTIVITY_TYPE_TRANSFER_IN, ACTIVITY_TYPE_TRANSFER_OUT,
 };
 
 use super::{
@@ -222,6 +222,8 @@ impl CashActivityService {
         let transfer_context_acts: Vec<&Activity> = activities.iter().collect();
         let transfer_groups = within_spending_transfer_groups(&transfer_context_acts);
         activities.retain(|a| target_accounts.contains(&a.account_id));
+        // A retired card hold has been replaced by its posted charge.
+        activities.retain(|a| a.status != ActivityStatus::Void);
 
         let allowed_types: Vec<String> = req
             .activity_types
@@ -1990,6 +1992,32 @@ mod tests {
             aggregate_eligibility.clone(),
         );
         (service, assignment_repo, split_repo, aggregate_eligibility)
+    }
+
+    #[tokio::test]
+    async fn search_hides_a_retired_card_hold_beside_its_posted_charge() {
+        let posted = Activity {
+            id: "posted".to_string(),
+            ..activity("WITHDRAWAL")
+        };
+        let retired_hold = Activity {
+            id: "retired-hold".to_string(),
+            status: ActivityStatus::Void,
+            ..activity("WITHDRAWAL")
+        };
+        let (service, _, _, _) = make_service_with_activities(vec![posted, retired_hold]);
+
+        let found = service
+            .search(CashActivitySearchRequest {
+                limit: 50,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        let ids: Vec<&str> = found.items.iter().map(|r| r.activity.id.as_str()).collect();
+        assert_eq!(ids, ["posted"]);
+        assert_eq!(found.total_count, 1);
     }
 
     #[test]

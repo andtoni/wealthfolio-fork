@@ -3,7 +3,7 @@
 //! compatibility but routes are now inlined in api.rs.
 use axum::{extract::State, Extension, Json};
 use chrono::NaiveDate;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -280,18 +280,19 @@ fn enqueue_current_state_valuation_refresh(
     });
 }
 
-static CATEGORIZATION_SCHEDULED: AtomicBool = AtomicBool::new(false);
 const CATEGORIZATION_DELAY: Duration = Duration::from_secs(5);
 
 /// Finance Sync commits one transaction at a time, so one categorization pass
 /// shortly after the first commit covers the whole delivery.
 fn schedule_auto_categorize(state: Arc<AppState>) {
-    if CATEGORIZATION_SCHEDULED.swap(true, Ordering::SeqCst) {
+    if state.categorization_scheduled.swap(true, Ordering::SeqCst) {
         return;
     }
     tokio::spawn(async move {
         tokio::time::sleep(CATEGORIZATION_DELAY).await;
-        CATEGORIZATION_SCHEDULED.store(false, Ordering::SeqCst);
+        state
+            .categorization_scheduled
+            .store(false, Ordering::SeqCst);
         spawn_auto_categorize_for_opted_in_accounts(&state).await;
     });
 }

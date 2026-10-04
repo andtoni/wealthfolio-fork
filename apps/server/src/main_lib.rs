@@ -150,6 +150,8 @@ pub struct AppState {
     pub mcp_audit_enabled: bool,
     /// Bridge policy store for household commit/grant/revoke (None when household disabled).
     pub bridge_store: Option<wealthfolio_storage_sqlite::bridge_policy::BridgePolicyStore>,
+    /// Set while a categorization pass is waiting to run after a bridge delivery.
+    pub categorization_scheduled: std::sync::atomic::AtomicBool,
     pub aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
     pub historical_import_repository: Arc<HistoricalImportRepository>,
     /// Onboarding service for household credential-bound account onboarding (None when household disabled).
@@ -1003,6 +1005,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         mcp_enabled: config.mcp_enabled,
         mcp_audit_enabled: config.mcp_audit_enabled,
         bridge_store,
+        categorization_scheduled: std::sync::atomic::AtomicBool::new(false),
         onboarding_state,
         aggregate_eligibility_service,
         historical_import_repository,
