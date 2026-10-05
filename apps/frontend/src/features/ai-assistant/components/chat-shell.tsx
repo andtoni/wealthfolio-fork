@@ -77,7 +77,7 @@ function Sidebar({ collapsed }: { collapsed?: boolean }) {
   return (
     <aside
       className={cn(
-        "bg-muted/30 flex h-full flex-col border-r transition-all duration-200",
+        "flex h-full flex-col transition-all duration-200",
         collapsed ? "w-0 overflow-hidden opacity-0" : "w-[260px] opacity-100",
       )}
     >
@@ -108,8 +108,8 @@ function MobileSidebar() {
         <SheetHeader className="sr-only">
           <SheetTitle>{t("ai:shell.conversations")}</SheetTitle>
         </SheetHeader>
-        <div className="flex h-14 items-center border-b px-4">
-          <span className="font-semibold">{t("ai:shell.conversations")}</span>
+        <div className="flex h-14 items-center px-4">
+          <span className="font-medium">{t("ai:shell.conversations")}</span>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           <ThreadList />
@@ -131,7 +131,7 @@ function Header({
 }) {
   const { t } = useTranslation();
   return (
-    <header className="pt-safe flex shrink-0 items-center gap-2 border-b px-4">
+    <header className="pt-safe flex shrink-0 items-center gap-2 px-4">
       <MobileSidebar />
       <ButtonWithTooltip
         variant="ghost"

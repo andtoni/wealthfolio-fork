@@ -61,7 +61,7 @@ export function MappingHeaderCell({
   return (
     <div>
       <div className="flex items-center gap-2 pb-0 pt-2">
-        <span className="font-bold">
+        <span className="font-medium">
           {field}
           {isRequired && !isMapped && (
             <span className="ml-1 text-amber-600 dark:text-amber-400">*</span>

@@ -240,14 +240,14 @@ export function PatCreateDialog({
                 </div>
 
                 <div className="space-y-2">
-                  <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                  <p className="text-muted-foreground text-xs font-medium">
                     {t("settings:agentAccess.dialog_read_access")}
                   </p>
                   <div className="grid gap-2 sm:grid-cols-2">{READ_GROUP.map(renderScope)}</div>
                 </div>
 
                 <div className="space-y-2">
-                  <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                  <p className="text-muted-foreground text-xs font-medium">
                     {t("settings:agentAccess.dialog_write_access")}
                   </p>
                   <div className="grid gap-2 sm:grid-cols-2">{WRITE_GROUP.map(renderScope)}</div>
@@ -258,7 +258,7 @@ export function PatCreateDialog({
             {/* Right: live capability summary + action */}
             <aside className="bg-muted/30 flex flex-col border-t md:max-h-[85vh] md:border-l md:border-t-0">
               <div className="flex-1 space-y-3 overflow-y-auto px-5 py-6">
-                <p className="text-muted-foreground text-[11px] font-medium uppercase tracking-wider">
+                <p className="text-muted-foreground text-[11px] font-medium">
                   {t("settings:agentAccess.dialog_capabilities_title")}
                 </p>
                 {selectedScopes.length === 0 ? (
@@ -316,7 +316,7 @@ export function PatCreateDialog({
             <div className="space-y-1.5">
               <Label>{t("settings:agentAccess.dialog_access_token")}</Label>
               <div className="flex items-center gap-2">
-                <p className="bg-muted min-w-0 flex-1 select-all truncate rounded-md px-3 py-2 font-mono text-xs">
+                <p className="bg-muted min-w-0 flex-1 select-all truncate rounded-md px-3 py-2 text-xs">
                   {newToken}
                 </p>
                 <Button
@@ -340,7 +340,7 @@ export function PatCreateDialog({
                   {t("settings:agentAccess.dialog_client_config_desc")}
                 </p>
                 <div className="flex items-start gap-2">
-                  <pre className="bg-muted text-muted-foreground max-h-64 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-all rounded-md px-3 py-2 font-mono text-xs leading-relaxed">
+                  <pre className="bg-muted text-muted-foreground max-h-64 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-all rounded-md px-3 py-2 text-xs leading-relaxed">
                     {configJson}
                   </pre>
                   <Button

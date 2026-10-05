@@ -29,7 +29,6 @@ import { ActivityDeleteModal } from "./components/activity-delete-modal";
 import { ActivityForm } from "./components/activity-form";
 import { ActivityMobileControls } from "./components/activity-mobile-controls";
 import { ActivityPagination } from "./components/activity-pagination";
-import ActivityTable from "./components/activity-table/activity-table";
 import ActivityTableMobile from "./components/activity-table/activity-table-mobile";
 import { InvestecCardLifecycleLinkSheet } from "./components/investec-card-lifecycle-link-sheet";
 import { ActivityViewControls, type ActivityViewMode } from "./components/activity-view-controls";
@@ -740,21 +739,7 @@ const ActivityPage = () => {
         />
       )}
 
-      {isCompactTableViewport ? (
-        <ActivityTableMobile
-          activities={tableActivities}
-          isCompactView={isCompactView}
-          handleEdit={handleEdit}
-          handleDelete={handleDelete}
-          onDuplicate={handleDuplicate}
-          onLinkTransfer={handleLinkTransfer}
-          onUnlinkTransfer={handleUnlinkTransfer}
-          onLinkInvestecCardLifecycle={handleLinkInvestecCardLifecycle}
-          filtersActive={investmentsFiltersActive}
-          onAdd={() => handleEdit(undefined)}
-          onClearFilters={clearInvestmentsFilters}
-        />
-      ) : shouldUseDatagridView ? (
+      {shouldUseDatagridView ? (
         <ActivityDataGrid
           accounts={investmentAccounts}
           transferMatchAccounts={accounts}
@@ -773,13 +758,12 @@ const ActivityPage = () => {
           onPageSizeChange={setPageSize}
         />
       ) : (
-        <ActivityTable
+        <ActivityTableMobile
           activities={tableActivities}
-          isLoading={infiniteSearch.isLoading}
-          sorting={sorting}
-          onSortingChange={setSorting}
+          isCompactView={!isMobileViewport || isCompactView}
           handleEdit={handleEdit}
           handleDelete={handleDelete}
+          onDuplicate={handleDuplicate}
           onLinkTransfer={handleLinkTransfer}
           onUnlinkTransfer={handleUnlinkTransfer}
           onLinkInvestecCardLifecycle={handleLinkInvestecCardLifecycle}

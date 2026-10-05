@@ -51,20 +51,20 @@
   "edit_limit": "Editar límite",
   "delete_limit": "Eliminar límite",
   "card": {
-    "complete": "COMPLETADO",
+    "complete": "Completado",
     "saved_of": "ahorrado de",
     "remaining": "restante",
     "target_met": "objetivo alcanzado",
-    "no_deadline": "SIN FECHA LÍMITE",
-    "due": "VENCE",
-    "achieved": "LOGRADO",
-    "off_track": "FUERA DE CAMINO",
-    "at_risk": "EN RIESGO",
-    "months_left_one": "QUEDA {{count}} MES",
-    "months_left_other": "QUEDAN {{count}} MESES",
-    "years_left_one": "QUEDA {{count}} AÑO",
-    "years_left_other": "QUEDAN {{count}} AÑOS",
-    "years_months_left": "QUEDAN {{years}}A {{months}}M",
+    "no_deadline": "Sin fecha límite",
+    "due": "Vence",
+    "achieved": "Logrado",
+    "off_track": "Fuera de camino",
+    "at_risk": "En riesgo",
+    "months_left_one": "QUEDA {{count}} mes",
+    "months_left_other": "QUEDAN {{count}} meses",
+    "years_left_one": "QUEDA {{count}} año",
+    "years_left_other": "QUEDAN {{count}} años",
+    "years_months_left": "QUEDAN {{years}}a {{months}}m",
     "quote_car": "para el camino por delante",
     "quote_home": "un lugar al que volver",
     "quote_education": "para el aprendizaje que viene",
@@ -80,10 +80,10 @@
     "create_first_goal": "Crea tu primer objetivo",
     "archived_count_one": "Archivado ({{count}})",
     "archived_count_other": "Archivados ({{count}})",
-    "stat_saved": "AHORRADO",
-    "stat_target": "OBJETIVO",
-    "stat_overall": "GLOBAL",
-    "stat_on_track": "EN CAMINO",
+    "stat_saved": "Ahorrado",
+    "stat_target": "Objetivo",
+    "stat_overall": "Global",
+    "stat_on_track": "En camino",
     "pending": {
       "failed_to_load": "Error al cargar la proyección de jubilación.",
       "calculating": "Calculando la proyección de jubilación",
@@ -157,7 +157,7 @@
       "funded_pct": "{{pct}}% financiado"
     },
     "chart": {
-      "projection_age_range": "Proyección · edad {{start}} → {{end}}",
+      "projection_age_range": "Proyección, edad {{start}}–{{end}}",
       "portfolio_trajectory": "Trayectoria de la cartera",
       "portfolio_trajectory_aria": "Más información sobre la trayectoria de la cartera",
       "trajectory_tip_traditional": "El marcador de jubilación indica cuándo comienzan las retiradas. \"Lo que necesitarás\" es el saldo mínimo necesario a cada edad para seguir financiando el gasto de jubilación planificado hasta la esperanza de vida.",
@@ -182,7 +182,7 @@
       "fat_hint": "150% del gasto planificado",
       "fat_tip": "Jubílate con ~50% más de gasto del planificado: margen para viajes, regalos, volatilidad y mejoras en el estilo de vida.",
       "more_info_about": "Más información sobre {{label}}",
-      "done": "HECHO"
+      "done": "Hecho"
     },
     "coverage": {
       "kicker": "Cobertura",
@@ -296,7 +296,7 @@
       "title": "Ingresos de jubilación",
       "default_label": "Ingreso {{n}}",
       "stream_fallback": "Flujo",
-      "read_meta": "{{type}} · Edad {{start}} → {{end}}",
+      "read_meta": "{{type}}, Edad {{start}}–{{end}}",
       "pension_fund": "Fondo de pensiones",
       "income": "Ingreso",
       "none_configured": "No hay ingresos de jubilación configurados",
@@ -305,7 +305,7 @@
       "growth_meta": "{{pct}}% de crecimiento",
       "inflation_indexed": "Indexado a la inflación",
       "fixed_nominal": "Nominal fijo",
-      "age_range": "Edad {{start}} → {{end}}",
+      "age_range": "Edad {{start}}–{{end}}",
       "remove": "Eliminar {{label}}",
       "item_fallback": "ingreso de jubilación",
       "name_placeholder": "Nombre del ingreso",
@@ -540,7 +540,7 @@
     "open_retirement_guide": "Abrir la guía de jubilación",
     "achieved": "Logrado",
     "header": "objetivo de {{type}}",
-    "header_with_description": "objetivo de {{type}} · {{description}}",
+    "header_with_description": "objetivo de {{type}}, {{description}}",
     "delete_confirm": "¿Seguro que quieres eliminar \"{{title}}\"? Esta acción no se puede deshacer.",
     "deleting": "Eliminando...",
     "no_plan_yet": "Este objetivo aún no tiene un plan detallado."
@@ -586,7 +586,7 @@
     "showing": "Mostrando {{label}}"
   },
   "coverage_chart": {
-    "age_value": "Edad {{age}} · {{valueLabel}}",
+    "age_value": "Edad {{age}}, {{valueLabel}}",
     "planned_spending_yr": "Gasto planificado/año:",
     "retirement_income_used_yr": "Ingresos de jubilación usados/año:",
     "portfolio_withdrawal_used_yr": "Retirada de la cartera usada/año:",
@@ -597,7 +597,7 @@
   "portfolio_chart": {
     "phase_retirement": "Jubilación",
     "phase_accumulation": "Acumulación",
-    "tooltip_header": "Edad {{age}} · {{phase}} · {{valueLabel}}",
+    "tooltip_header": "Edad {{age}}, {{phase}}, {{valueLabel}}",
     "start_portfolio": "Cartera inicial:",
     "end_portfolio": "Cartera final:",
     "what_youll_need": "Lo que necesitarás:",
@@ -607,7 +607,7 @@
     "net_portfolio_change": "Variación neta de la cartera:",
     "event_goal": "Objetivo",
     "event_retirement": "Jubilación",
-    "fi_reference": "IF · {{age}}",
+    "fi_reference": "IF, {{age}}",
     "series_required": "Requerido",
     "series_projected": "Proyectado"
   },
@@ -789,7 +789,7 @@
       "money_lasts_prompt_fire": "Ejecuta 10k trayectorias para ver con qué frecuencia el plan alcanza la IF y se mantiene financiado hasta la edad {{horizonAge}}."
     },
     "stress": {
-      "eyebrow_with_count": "¿Qué podría romper este plan? · {{count}} escenarios",
+      "eyebrow_with_count": "¿Qué podría romper este plan?, {{count}} escenarios",
       "heading": "¿Qué podría romper este plan?",
       "loading_short": "Las pruebas de estrés se están cargando.",
       "running": "Ejecutando 6 escenarios de estrés sobre tu plan…",

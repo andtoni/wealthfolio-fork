@@ -366,7 +366,7 @@ export default function AddonSettingsPage() {
                                 <Icons.PauseCircle className="text-muted-foreground/60 h-5 w-5 flex-shrink-0" />
                               )}
                               <h4
-                                className={`truncate text-sm font-semibold md:text-lg ${
+                                className={`truncate text-sm font-medium md:text-lg ${
                                   addon.metadata.enabled ? "" : "text-muted-foreground"
                                 }`}
                               >

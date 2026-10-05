@@ -42,7 +42,7 @@ function StepHeader({ title, description }: { title?: string; description?: stri
   if (!title) return null;
   return (
     <div className="mb-5 text-center">
-      <p className="text-foreground text-base font-semibold leading-6">{title}</p>
+      <p className="text-foreground text-base font-medium leading-6">{title}</p>
       {description && (
         <p className="text-muted-foreground mt-1.5 text-sm leading-5">{description}</p>
       )}
@@ -339,7 +339,7 @@ function PairingOverwriteConsent({
         <Icons.AlertTriangle className="h-6 w-6 text-amber-500" />
       </div>
       <div className="space-y-2">
-        <h2 className="text-xl font-semibold">{t("sync:overwrite.replaceDataTitle")}</h2>
+        <h2 className="text-xl font-medium">{t("sync:overwrite.replaceDataTitle")}</h2>
         <p className="text-muted-foreground text-sm">
           {t("sync:overwrite.replaceDataDescription")}
         </p>

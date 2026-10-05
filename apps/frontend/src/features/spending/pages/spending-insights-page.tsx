@@ -451,7 +451,7 @@ export default function SpendingInsightsPage() {
         }}
         actions={periodToggle}
       />
-      <PageContent className="space-y-5">
+      <PageContent className="space-y-8">
         <StageNav stage={stage} onStageChange={setStageAndUrl} />
 
         {insight?.foreignCurrencies && insight.foreignCurrencies.length > 0 && (
@@ -468,7 +468,7 @@ export default function SpendingInsightsPage() {
           (stage === "when" && heatmapInsightErrored)) && (
           <div className="flex items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-300">
             <span>
-              <span className="font-semibold">{t("spending:insightsPage.loadError")}</span>{" "}
+              <span className="font-medium">{t("spending:insightsPage.loadError")}</span>{" "}
               {t("spending:insightsPage.showingZeros")}
             </span>
             <button

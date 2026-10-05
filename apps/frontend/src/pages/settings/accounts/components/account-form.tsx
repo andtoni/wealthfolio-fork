@@ -97,8 +97,7 @@ const accountTypeIcons = {
 
 const formCardClassName =
   "rounded-xl border border-border bg-background p-4 sm:p-5 dark:border-border/70 dark:bg-muted/20";
-const formSectionLabelClassName =
-  "text-muted-foreground text-xs font-semibold uppercase tracking-[0.18em]";
+const formSectionLabelClassName = "text-muted-foreground text-xs font-medium ";
 const trackingOptionClassName =
   "hover:bg-accent/50 relative flex cursor-pointer gap-3 rounded-xl border bg-card p-4 transition-colors dark:bg-muted/20 dark:hover:bg-muted/30";
 const cashClassificationItemClassName =
@@ -559,7 +558,7 @@ export function AccountForm({ defaultValues, onSuccess = () => undefined }: Acco
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-100/30 dark:bg-orange-100/20">
                   <Icons.ArrowRightLeft className="h-4 w-4 text-orange-500 dark:text-orange-300" />
                 </div>
-                <AlertDialogTitle className="text-base font-semibold">
+                <AlertDialogTitle className="text-base font-medium">
                   {t("settings:accounts.mode_switch_title")}
                 </AlertDialogTitle>
               </div>

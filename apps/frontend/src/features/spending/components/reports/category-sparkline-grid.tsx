@@ -106,7 +106,7 @@ function SparklineCard({ row, currency }: { row: CategorySparklineRow; currency:
   return (
     <Link
       to={`/activities?tab=spending&category=${encodeURIComponent(row.id)}`}
-      className="border-border/60 bg-card/40 hover:bg-card/60 group flex flex-col gap-1 rounded-lg border px-3 py-2.5 transition-colors"
+      className="group flex flex-col gap-1 py-2.5 transition-colors"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5">
@@ -121,7 +121,7 @@ function SparklineCard({ row, currency }: { row: CategorySparklineRow; currency:
         {row.deltaPct != null && Math.abs(row.deltaPct) >= 1 && (
           <span
             className={cn(
-              "shrink-0 text-[10px] font-semibold tabular-nums",
+              "shrink-0 text-[10px] font-medium tabular-nums",
               row.deltaPct >= 0 ? "text-destructive" : "text-success",
             )}
           >
@@ -129,7 +129,7 @@ function SparklineCard({ row, currency }: { row: CategorySparklineRow; currency:
           </span>
         )}
       </div>
-      <div className="text-foreground text-sm font-semibold tabular-nums">
+      <div className="text-foreground text-sm font-medium tabular-nums">
         {isBalanceHidden ? "••••" : formatCompactAmount(row.total, currency)}
       </div>
       <div className="-mx-1 h-10">

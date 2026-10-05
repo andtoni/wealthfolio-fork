@@ -134,12 +134,12 @@ export function PageHeader({
     <div data-tauri-drag-region={dragRegion ? "true" : undefined} className="flex min-w-0 items-center gap-3">
       {headingPrefix && (
         <>
-          <h1 className="text-muted-foreground truncate text-lg font-semibold md:text-xl">{headingPrefix}</h1>
+          <h1 className="text-muted-foreground truncate text-2xl font-medium tracking-tight">{headingPrefix}</h1>
           <div className="bg-border h-5 w-px md:h-6" />
         </>
       )}
       <div className="flex min-w-0 flex-col">
-        <h1 className="truncate text-lg font-semibold md:text-xl">{heading}</h1>
+        <h1 className="truncate text-2xl font-medium tracking-tight">{heading}</h1>
         {text && <p className="text-muted-foreground truncate text-sm md:text-base">{text}</p>}
       </div>
     </div>
@@ -214,7 +214,7 @@ export function PageContent({
       data-ptr-content
       data-page-content="true"
       className={cn(
-        withPadding && "px-2 py-2 md:px-4 md:py-2",
+        withPadding && "px-4 py-2",
         // In containerMode, the scroll container handles bottom padding for mobile nav
         // In standalone mode, add extra bottom padding on desktop
         !containerMode && "pb-safe md:pb-6 lg:pb-8",

@@ -157,7 +157,7 @@
       "funded_pct": "已达标 {{pct}}%"
     },
     "chart": {
-      "projection_age_range": "预测 · {{start}} → {{end}} 岁",
+      "projection_age_range": "预测, {{start}}–{{end}} 岁",
       "portfolio_trajectory": "投资组合轨迹",
       "portfolio_trajectory_aria": "关于投资组合轨迹的更多信息",
       "trajectory_tip_traditional": "退休标记显示提取开始的时间。“所需金额”是每个年龄段维持计划退休支出至预期寿命所需的最低余额。",
@@ -296,7 +296,7 @@
       "title": "退休收入",
       "default_label": "收入 {{n}}",
       "stream_fallback": "收入流",
-      "read_meta": "{{type}} · {{start}} → {{end}} 岁",
+      "read_meta": "{{type}}, {{start}}–{{end}} 岁",
       "pension_fund": "养老基金",
       "income": "收入",
       "none_configured": "未配置退休收入",
@@ -305,7 +305,7 @@
       "growth_meta": "{{pct}}% 增长",
       "inflation_indexed": "通胀挂钩",
       "fixed_nominal": "固定名义值",
-      "age_range": "{{start}} → {{end}} 岁",
+      "age_range": "{{start}}–{{end}} 岁",
       "remove": "移除 {{label}}",
       "item_fallback": "退休收入",
       "name_placeholder": "收入名称",
@@ -351,7 +351,7 @@
       "taxable_account_rate_edit_tip": "从应税或非注册账户提取时适用的有效税率。",
       "tax_deferred_account_rate": "递延税账户税率",
       "tax_deferred_account_rate_tip": "适用于 RRSP、IRA、养老金或类似递延税提取的有效税率。规划器会对提取额进行税前还原，以确保税后支出得到支撑。",
-      "tax_deferred_account_rate_edit_tip": "适用于 RRSP、IRA、养老金或类似提取的有效税率。",
+      "tax_deferred_account_rate_edit_tip": "适用于 rrsp、ira、养老金或类似提取的有效税率。",
       "tax_free_account_rate": "免税账户税率",
       "tax_free_account_rate_tip": "适用于 TFSA、Roth 或类似免税提取的有效税率。通常为 0%。",
       "tax_free_account_rate_edit_tip": "适用于 TFSA、Roth 或类似提取的有效税率。通常为 0%。",
@@ -370,7 +370,7 @@
       "taxable_bucket": "应税类别",
       "taxable_bucket_tip": "退休投资组合中分配给应税或非注册账户的部分。",
       "tax_deferred_bucket": "递延税类别",
-      "tax_deferred_bucket_tip": "分配给递延税账户（如 RRSP、IRA 或类养老金账户）的部分。",
+      "tax_deferred_bucket_tip": "分配给递延税账户（如 rrsp、ira 或类养老金账户）的部分。",
       "tax_free_bucket": "免税类别",
       "tax_free_bucket_tip": "分配给免税账户（如 TFSA 或 Roth 类账户）的部分。",
       "zero_rates_note": "已应用账户类别标签，但 0% 的提取税率意味着未对税收拖累建模。"
@@ -502,7 +502,7 @@
       "target_calc_desc": "规划器计算从退休到您规划期限的完整支出计划表的现值——考虑每个支出类别的通胀率、在不同年龄开始的收入流，以及提取的税收拖累。当您的投资组合达到此金额时，基础计划就有足够的资本支撑您所输入的计划表。这比简单的支出倍数更准确，因为它处理了变化的支出、递延的养老金和有限的期限。",
       "inflation_title": "通胀率",
       "inflation_desc": "所有预测均按此利率逐年增长支出和与通胀挂钩的收入。默认的 2% 与欧洲央行的目标一致。",
-      "inflation_it_note": "如需更保守的意大利 CPI 假设，请使用 2.5–3%。",
+      "inflation_it_note": "如需更保守的意大利 cpi 假设，请使用 2.5–3%。",
       "returns_title": "收益率、费用和波动率",
       "returns_desc": "退休前收益率驱动积累。退休期收益率驱动提取阶段和所需资本。年度投资费用从两者中扣除。波动率仅用于市场路径检查——数值越高，产生的结果分布越宽。",
       "horizon_title": "规划期限年龄",
@@ -540,7 +540,7 @@
     "open_retirement_guide": "打开退休指南",
     "achieved": "已达成",
     "header": "{{type}}目标",
-    "header_with_description": "{{type}}目标 · {{description}}",
+    "header_with_description": "{{type}}目标, {{description}}",
     "delete_confirm": "确定要删除“{{title}}”吗？此操作无法撤销。",
     "deleting": "正在删除……",
     "no_plan_yet": "此目标尚无详细计划。"
@@ -586,7 +586,7 @@
     "showing": "显示{{label}}"
   },
   "coverage_chart": {
-    "age_value": "{{age}} 岁 · {{valueLabel}}",
+    "age_value": "{{age}} 岁, {{valueLabel}}",
     "planned_spending_yr": "计划支出/年：",
     "retirement_income_used_yr": "已用退休收入/年：",
     "portfolio_withdrawal_used_yr": "已用投资组合提取/年：",
@@ -597,7 +597,7 @@
   "portfolio_chart": {
     "phase_retirement": "退休",
     "phase_accumulation": "积累",
-    "tooltip_header": "{{age}} 岁 · {{phase}} · {{valueLabel}}",
+    "tooltip_header": "{{age}} 岁, {{phase}}, {{valueLabel}}",
     "start_portfolio": "期初投资组合：",
     "end_portfolio": "期末投资组合：",
     "what_youll_need": "所需金额：",
@@ -607,7 +607,7 @@
     "net_portfolio_change": "投资组合净变动：",
     "event_goal": "目标",
     "event_retirement": "退休",
-    "fi_reference": "FI · {{age}}",
+    "fi_reference": "FI, {{age}}",
     "series_required": "所需",
     "series_projected": "预计"
   },
@@ -789,7 +789,7 @@
       "money_lasts_prompt_fire": "运行 1 万条路径，查看计划实现财务独立并在 {{horizonAge}} 岁前保持资金充足的频率。"
     },
     "stress": {
-      "eyebrow_with_count": "什么可能破坏此计划？ · {{count}} 个情景",
+      "eyebrow_with_count": "什么可能破坏此计划？, {{count}} 个情景",
       "heading": "什么可能破坏此计划？",
       "loading_short": "压力测试正在加载。",
       "running": "正在针对您的计划运行 6 个压力情景……",

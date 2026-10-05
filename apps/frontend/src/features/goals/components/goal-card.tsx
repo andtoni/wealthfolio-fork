@@ -44,19 +44,17 @@ function formatTargetDate(targetDate?: string): string | null {
   if (!targetDate) return null;
   const d = new Date(targetDate);
   if (!Number.isFinite(d.getTime())) return null;
-  return d
-    .toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-    .toUpperCase();
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function ProgressBar({ progress, fillClass }: { progress: number; fillClass: string }) {
   const pct = Math.max(0, Math.min(1, progress));
   return (
-    <div className="bg-muted/60 relative h-[5px] w-full overflow-hidden">
-      <div className={cn("h-full", fillClass)} style={{ width: `${pct * 100}%` }} />
+    <div className="bg-foreground/10 relative h-2.5 w-full overflow-hidden rounded-[4px]">
+      <div className={cn("h-full rounded-[4px]", fillClass)} style={{ width: `${pct * 100}%` }} />
       <div className="pointer-events-none absolute inset-0 flex">
         {Array.from({ length: 20 }).map((_, i) => (
-          <div key={i} className="border-card flex-1 border-r last:border-r-0" />
+          <div key={i} className="flex-1" />
         ))}
       </div>
     </div>
@@ -82,9 +80,9 @@ export function GoalCard({ goal }: { goal: Goal }) {
   const isAchieved = goal.statusLifecycle === "achieved";
 
   // Three health states drive the accent color:
-  //   positive  → success (green)
-  //   negative  → destructive (red)
-  //   unknown   → neutral (muted) — e.g. "not_applicable" from the backend
+  //   positive –success (green)
+  //   negative –destructive (red)
+  //   unknown  –neutral (muted) — e.g. "not_applicable" from the backend
   //               (no target set, no projection yet, brand-new goal)
   const isPositive = isOnTrack || isAchieved;
   const isNegative = isOffTrack || isAtRisk;
@@ -141,9 +139,9 @@ export function GoalCard({ goal }: { goal: Goal }) {
 
   return (
     <Link to={`/goals/${goal.id}`} className="group block">
-      <Card className="overflow-hidden p-0 transition-shadow hover:shadow-md">
+      <Card className="p-0">
         {/* Top cover image panel */}
-        <div className="bg-secondary/50 relative h-[156px] overflow-hidden">
+        <div className="bg-secondary/50 relative h-[156px] overflow-hidden rounded-2xl">
           <img
             src={coverImage}
             alt=""
@@ -164,7 +162,7 @@ export function GoalCard({ goal }: { goal: Goal }) {
           {pill && (
             <div
               className={cn(
-                "absolute left-3 top-3 inline-flex h-5 items-center px-2 text-[9px] font-medium leading-none tracking-[0.14em] shadow-sm",
+                "absolute left-3 top-3 inline-flex h-6 items-center rounded-md px-2 text-xs leading-none",
                 pill.className,
               )}
             >
@@ -172,10 +170,10 @@ export function GoalCard({ goal }: { goal: Goal }) {
             </div>
           )}
 
-          {/* Bottom-left italic quote */}
+          {/* Bottom-left quote */}
           {quote && (
             <div className="absolute bottom-2.5 left-3 right-3">
-              <span className="line-clamp-1 block font-serif text-[11px] italic text-white/95 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">
+              <span className="line-clamp-1 block text-[13px] text-white/95 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">
                 &ldquo;{quote}&rdquo;
               </span>
             </div>
@@ -187,17 +185,17 @@ export function GoalCard({ goal }: { goal: Goal }) {
           {/* Title + % */}
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <h3 className="truncate font-serif text-[19px] leading-tight">{goal.title}</h3>
-              <p className="text-muted-foreground mt-0.5 text-[9px] tracking-[0.15em]">
-                {targetDateStr ? `${targetDateStr} · ${timeLeftStr}` : timeLeftStr}
+              <h3 className="truncate text-[19px] leading-tight">{goal.title}</h3>
+              <p className="text-muted-foreground mt-0.5 text-[13px]">
+                {targetDateStr ? `${targetDateStr}, ${timeLeftStr}` : timeLeftStr}
               </p>
             </div>
             <div className="text-right">
-              <div className={cn("font-serif text-[20px] leading-none", accentClass)}>
+              <div className={cn("text-[20px] leading-none", accentClass)}>
                 {progressPct}
-                <span className="text-[11px]">%</span>
+                <span className="text-[13px]">%</span>
               </div>
-              <div className="text-muted-foreground mt-0.5 text-[9px] tracking-[0.15em]">
+              <div className="text-muted-foreground mt-0.5 text-[13px]">
                 {t("goals:card.complete")}
               </div>
             </div>
@@ -206,18 +204,14 @@ export function GoalCard({ goal }: { goal: Goal }) {
           {/* Amounts row: saved · remaining */}
           <div className="mt-2.5 flex items-end justify-between gap-3">
             <div>
-              <div className="font-serif text-[14px] font-semibold tabular-nums">
-                {currentDisplay}
-              </div>
-              <div className="text-muted-foreground mt-0.5 text-[10px]">
+              <div className="text-[14px] font-medium tabular-nums">{currentDisplay}</div>
+              <div className="text-muted-foreground mt-0.5 text-[13px]">
                 {t("goals:card.saved_of")} <span className="tabular-nums">{targetDisplay}</span>
               </div>
             </div>
             <div className="text-right">
-              <div className="font-serif text-[14px] font-semibold tabular-nums">
-                {remainingDisplay}
-              </div>
-              <div className="text-muted-foreground mt-0.5 text-[10px]">
+              <div className="text-[14px] font-medium tabular-nums">{remainingDisplay}</div>
+              <div className="text-muted-foreground mt-0.5 text-[13px]">
                 {hasRemaining ? t("goals:card.remaining") : t("goals:card.target_met")}
               </div>
             </div>

@@ -63,9 +63,6 @@ export function RetirementSnapshotTable({
     <Card>
       <CardHeader className="flex-row items-start justify-between pb-3">
         <div>
-          <div className="text-muted-foreground mb-0.5 text-[10px] font-semibold uppercase tracking-wider">
-            {t("goals:snapshot.table")}
-          </div>
           <CardTitle className="text-sm">{t("goals:snapshot.title")}</CardTitle>
           {hasPensionFunds && (
             <p className="text-muted-foreground mt-1 text-xs">{t("goals:snapshot.pension_note")}</p>
@@ -98,7 +95,7 @@ export function RetirementSnapshotTable({
         )}
       </CardHeader>
       <CardContent>
-        <div className="overflow-hidden rounded-lg border md:hidden">
+        <div className="overflow-hidden md:hidden">
           {pagedSnapshots.map((snap) => {
             const isFire = snap.phase === "fire";
             const isFireRow = snap.age === fiAge;
@@ -118,24 +115,21 @@ export function RetirementSnapshotTable({
             ];
 
             return (
-              <div
-                key={snap.age}
-                className={`border-border border-b border-l-2 px-3 py-2.5 last:border-b-0 ${rowClassName}`}
-              >
+              <div key={snap.age} className={`border-l-2 px-3 py-2.5 ${rowClassName}`}>
                 <div className="grid grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-2">
-                  <div className="text-muted-foreground text-xs font-semibold tabular-nums">
+                  <div className="text-muted-foreground text-xs font-medium tabular-nums">
                     {snap.age}
                   </div>
                   <div className="flex min-w-0 items-center gap-1.5">
                     <span className="text-xs font-medium tabular-nums">{snap.year}</span>
                     <Badge
                       variant={isFire ? "default" : "secondary"}
-                      className="h-5 shrink-0 px-2 text-[10px]"
+                      className="h-5 shrink-0 px-2 text-[13px]"
                     >
                       {phaseText}
                     </Badge>
                   </div>
-                  <div className="text-right text-sm font-semibold tabular-nums">
+                  <div className="text-right text-sm font-medium tabular-nums">
                     <SnapshotAmount
                       value={snap.portfolioEnd}
                       age={snap.age}
@@ -146,7 +140,7 @@ export function RetirementSnapshotTable({
                   </div>
                 </div>
 
-                <div className="mt-1.5 grid grid-cols-4 gap-2 pl-[2.75rem] text-[10px]">
+                <div className="mt-1.5 grid grid-cols-4 gap-2 pl-[2.75rem] text-[13px]">
                   {mobileMetrics.map((metric) => (
                     <div key={metric.label} className="min-w-0">
                       <div className="text-muted-foreground leading-3">{metric.label}</div>
@@ -184,7 +178,7 @@ export function RetirementSnapshotTable({
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[860px] text-xs">
             <thead>
-              <tr className="text-muted-foreground border-b">
+              <tr className="text-muted-foreground">
                 <th className="pb-2 text-left">{t("goals:snapshot.col_age")}</th>
                 <th className="pb-2 text-left">{t("goals:snapshot.col_year")}</th>
                 <th className="pb-2 text-left">{t("goals:snapshot.col_phase")}</th>
@@ -208,9 +202,9 @@ export function RetirementSnapshotTable({
                 return (
                   <tr
                     key={snap.age}
-                    className={`border-b last:border-0 ${
+                    className={`${
                       isFireRow
-                        ? "bg-green-50 font-semibold dark:bg-green-950/20"
+                        ? "bg-green-50 font-medium dark:bg-green-950/20"
                         : isIncomeRow
                           ? "bg-blue-50 dark:bg-blue-950/20"
                           : ""

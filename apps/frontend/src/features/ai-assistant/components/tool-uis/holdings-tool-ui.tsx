@@ -322,7 +322,7 @@ const TreemapTooltip: FC<TreemapTooltipProps> = ({ active, payload, currency = "
     <Card className="border shadow-lg">
       <CardContent className="space-y-2 p-3">
         <div>
-          <span className="text-sm font-bold">{data.symbol}</span>
+          <span className="text-sm font-medium">{data.symbol}</span>
           {data.name && <p className="text-muted-foreground text-xs">{data.name}</p>}
         </div>
         <div className="border-t pt-2">
@@ -572,7 +572,7 @@ function HoldingsContentImpl({ args, result, status }: HoldingsContentProps) {
           </p>
         </div>
         <div className="text-right">
-          <span className="text-xl font-bold">{formatValue(totalValue)}</span>
+          <span className="text-xl font-medium">{formatValue(totalValue)}</span>
           {!isBalanceHidden && (
             <p
               className={cn(
@@ -640,7 +640,7 @@ function HoldingsContentImpl({ args, result, status }: HoldingsContentProps) {
               </p>
             </div>
             <div className="text-right">
-              <span className="text-xl font-bold">{formatValue(totalValue)}</span>
+              <span className="text-xl font-medium">{formatValue(totalValue)}</span>
               {!isBalanceHidden && (
                 <p
                   className={cn(

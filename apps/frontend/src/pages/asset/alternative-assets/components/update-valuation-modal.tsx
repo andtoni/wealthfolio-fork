@@ -120,7 +120,7 @@ export function UpdateValuationModal({
                 <div className="text-muted-foreground text-sm">
                   {t("asset:updateValuation.current_recorded_value")}
                 </div>
-                <div className="text-xl font-semibold">{formattedCurrentValue}</div>
+                <div className="text-xl font-medium">{formattedCurrentValue}</div>
                 <div className="text-muted-foreground mt-1 text-xs">
                   {t("asset:updateValuation.last_updated", { date: formattedLastUpdatedDate })}
                 </div>

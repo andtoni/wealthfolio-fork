@@ -89,7 +89,7 @@ export const ExportForm = () => {
   return (
     <>
       <div className="mt-8 px-2">
-        <h3 className="pb-3 pt-5 font-semibold">{t("settings:export_format_title")}</h3>
+        <h3 className="pb-3 pt-5 font-medium">{t("settings:export_format_title")}</h3>
         <RadioGroup
           onValueChange={setSelectedFormat}
           className="grid grid-cols-1 gap-4 md:grid-cols-3"
@@ -103,7 +103,7 @@ export const ExportForm = () => {
               >
                 <format.icon className="mb-3 h-6 w-6" />
                 <div className="text-center">
-                  <h3 className="font-semibold">{format.name}</h3>
+                  <h3 className="font-medium">{format.name}</h3>
                   <p className="text-muted-foreground text-sm font-light">{format.description}</p>
                 </div>
               </Label>
@@ -114,7 +114,7 @@ export const ExportForm = () => {
 
       {selectedFormat && (
         <div className="px-2 pt-4">
-          <h3 className="pb-3 pt-5 font-semibold">{t("settings:export_customize_title")}</h3>
+          <h3 className="pb-3 pt-5 font-medium">{t("settings:export_customize_title")}</h3>
           {dataTypes[selectedFormat as keyof typeof dataTypes].map((item) => (
             <Card key={item.key} className="mb-4">
               <CardContent className="flex items-center justify-between p-4">

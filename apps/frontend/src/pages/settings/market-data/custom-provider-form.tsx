@@ -478,7 +478,7 @@ function CustomProviderFormContent({
         {/* ── Header ── */}
         <div className="bg-background flex shrink-0 items-start justify-between gap-4 border-b px-5 py-4">
           <div>
-            <DialogTitle className="text-lg font-semibold">
+            <DialogTitle className="text-lg font-medium">
               {isEditing
                 ? t("settings:market_data_page.edit_custom_provider")
                 : t("settings:market_data_page.add_custom_provider")}
@@ -515,7 +515,7 @@ function CustomProviderFormContent({
           <div className="min-h-0 space-y-3 overflow-y-auto border-r p-4">
             {/* Provider Mode */}
             <div>
-              <div className="text-muted-foreground mb-2 text-[11px] font-medium uppercase tracking-wide">
+              <div className="text-muted-foreground mb-2 text-[11px] font-medium">
                 {t("settings:market_data_page.provider_mode")}
               </div>
               <div className="grid gap-2 sm:grid-cols-3">
@@ -576,12 +576,12 @@ function CustomProviderFormContent({
             />
 
             {/* Step 3 — Provider identity */}
-            <div id="provider-identity-card" className="bg-background rounded-xl border p-4">
+            <div id="provider-identity-card" className="p-4">
               <div className="mb-3 flex items-center gap-2.5">
-                <div className="bg-muted text-muted-foreground flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
+                <div className="bg-muted text-muted-foreground flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium">
                   3
                 </div>
-                <h3 className="text-sm font-semibold">
+                <h3 className="text-sm font-medium">
                   {t("settings:market_data_page.provider_identity")}
                 </h3>
               </div>
@@ -592,7 +592,7 @@ function CustomProviderFormContent({
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+                      <FormLabel className="text-muted-foreground text-[11px] font-medium">
                         {t("settings:market_data_page.provider_name")}
                         {!nameManuallyEdited && !isEditing && form.getValues("name") && (
                           <span className="text-muted-foreground ml-1 font-normal normal-case tracking-normal">
@@ -616,7 +616,7 @@ function CustomProviderFormContent({
                   name="code"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+                      <FormLabel className="text-muted-foreground text-[11px] font-medium">
                         {t("settings:market_data_page.code")}{" "}
                         <span className="font-normal normal-case tracking-normal">
                           {t("settings:market_data_page.code_auto")}
@@ -642,7 +642,7 @@ function CustomProviderFormContent({
                   name="priority"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+                      <FormLabel className="text-muted-foreground text-[11px] font-medium">
                         {t("settings:market_data_page.priority")}
                       </FormLabel>
                       <FormControl>
@@ -659,7 +659,7 @@ function CustomProviderFormContent({
                 name="description"
                 render={({ field }) => (
                   <FormItem className="mt-3">
-                    <FormLabel className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+                    <FormLabel className="text-muted-foreground text-[11px] font-medium">
                       {t("common:description")}{" "}
                       <span className="font-normal normal-case tracking-normal">
                         {t("settings:market_data_page.description_optional")}

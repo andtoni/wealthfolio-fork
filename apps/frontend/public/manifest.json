@@ -3,21 +3,21 @@
   "short_name": "Wealthfolio",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#09090b",
-  "theme_color": "#09090b",
+  "background_color": "#10101a",
+  "theme_color": "#10101a",
   "icons": [
     {
-      "src": "/wealthfolio-native-icon-180-v4.png",
+      "src": "/wealthfolio-native-icon-180-v5.png",
       "sizes": "180x180",
       "type": "image/png"
     },
     {
-      "src": "/wealthfolio-native-icon-192-v4.png",
+      "src": "/wealthfolio-native-icon-192-v5.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/wealthfolio-native-icon-512-v4.png",
+      "src": "/wealthfolio-native-icon-512-v5.png",
       "sizes": "512x512",
       "type": "image/png"
     }

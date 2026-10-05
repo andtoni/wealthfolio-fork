@@ -109,11 +109,11 @@ export function GoalLeverRow({
     <div className="py-4 first:pt-1 last:pb-1">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-foreground text-sm font-semibold leading-tight">{label}</div>
+          <div className="text-foreground text-sm font-medium leading-tight">{label}</div>
           {hint && <div className="text-muted-foreground mt-1 text-xs leading-tight">{hint}</div>}
         </div>
         <div
-          className="bg-muted/70 flex h-8 w-32 items-center gap-1 rounded-md border px-2.5"
+          className="bg-muted/70 flex h-8 w-32 items-center gap-1 px-2.5"
           onFocus={
             kind === "money"
               ? () => {

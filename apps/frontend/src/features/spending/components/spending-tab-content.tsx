@@ -12,12 +12,15 @@ import {
   XAxis,
 } from "recharts";
 
-import { DashboardCard } from "@/components/dashboard-card";
+import { DashboardCard, LIST_ROW, SECTION_HEADING } from "@/components/dashboard-card";
+import { BlockBar } from "@/components/block-bar";
 import { useTaxonomy } from "@/hooks/use-taxonomies";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import { useSettingsContext } from "@/lib/settings-provider";
 import type { DateRange, TaxonomyCategory } from "@/lib/types";
+import { useIsMobileViewport } from "@/hooks/use-platform";
+import { PagedView } from "@wealthfolio/ui/components/ui/paged-view";
 import { cn, formatAmount, formatDateISO } from "@/lib/utils";
 import Balance from "@/pages/dashboard/balance";
 
@@ -31,7 +34,7 @@ import {
 
 import { useBudget } from "../hooks/use-budget";
 import { useCategorizationRules } from "../hooks/use-categorization-rules";
-import { useCashActivities, useUncategorizedCount } from "../hooks/use-cash-activities";
+import { useCashActivities } from "../hooks/use-cash-activities";
 import { useSpendingReport } from "../hooks/use-spending-report";
 import { useSpendingSettings } from "../hooks/use-spending-settings";
 import { topCategoryId } from "../lib/category-rollup";
@@ -59,7 +62,7 @@ import {
 } from "../lib/period-preferences";
 import type { ReportsPeriod } from "../lib/reports-period";
 import type { BudgetCycleSettings } from "../types";
-import { FOREST_THEME, themeBg, type Palette } from "../lib/theme";
+import { FOREST_THEME, SPENDING_WASH, type Palette } from "../lib/theme";
 import {
   addCalendarDays,
   addCalendarMonths,
@@ -70,11 +73,11 @@ import {
   localDateParts,
   zonedCalendarDateBoundaryToDate,
 } from "../lib/timezone";
-import { BudgetLineChartCard } from "./budget-line-chart-card";
+import { BudgetLineChartCard, BudgetRings } from "./budget-line-chart-card";
 import { CashFlowStrip } from "./cash-flow-strip";
 import { EventsCard } from "./events-card";
-import { RecentActivityCard } from "./recent-activity-card";
-import { SpendingPeriodSelector } from "./spending-period-toggle";
+import { RecentTransactions } from "./recent-transactions";
+import { SpendingPeriodMenu, SpendingPeriodSelector } from "./spending-period-toggle";
 
 const FUTURE_BAR = "#E5E7EB";
 const SPENDING_TAXONOMY = "spending_categories";
@@ -358,6 +361,7 @@ function barKeyToRange(
 
 export default function SpendingTabContent() {
   const { t } = useTranslation();
+  const isMobile = useIsMobileViewport();
   const { isBalanceHidden } = useBalancePrivacy();
   const { settings } = useSettingsContext();
   const baseCurrency = settings?.baseCurrency ?? "USD";
@@ -485,10 +489,6 @@ export default function SpendingTabContent() {
   const { accounts = [] } = useAccounts({ filterActive: false });
   const { data: categorizationRules = [], isLoading: categorizationRulesLoading } =
     useCategorizationRules();
-  const { data: uncategorizedCount = 0 } = useUncategorizedCount(
-    reportReq.startDate,
-    reportReq.endDate,
-  );
   // Aggregated error state for the headline banner. Activities / budget
   // failures degrade more silently than report (their absence shows up as
   // a flat treemap or hidden chips), but the user deserves a signal.
@@ -958,7 +958,7 @@ export default function SpendingTabContent() {
         title: (
           <>
             {t("spending:tabContent.spendingAbovePrefix")}{" "}
-            <span className="font-semibold">
+            <span className="font-medium">
               {t("spending:tabContent.pctAbove", { pct: (deltaPct * 100).toFixed(0) })}
             </span>{" "}
             {t("spending:tabContent.thePriorPeriod")}
@@ -978,7 +978,7 @@ export default function SpendingTabContent() {
         icon: "+",
         title: (
           <>
-            <span className="font-semibold">
+            <span className="font-medium">
               {t("spending:tabContent.uncategorizedCount", { count: uncategorized.txCount })}
             </span>{" "}
             {t("spending:tabContent.totaling")}{" "}
@@ -1008,7 +1008,7 @@ export default function SpendingTabContent() {
               {t("spending:tabContent.noRulesSet")}{" "}
               <Link
                 to="/settings/spending/rules"
-                className="font-semibold underline-offset-4 hover:underline"
+                className="font-medium underline-offset-4 hover:underline"
               >
                 {t("spending:tabContent.createRules")}
               </Link>
@@ -1032,12 +1032,150 @@ export default function SpendingTabContent() {
     t,
   ]);
 
+  const whereSection = (
+    <div>
+      <DashboardCard
+        title={t("spending:tabContent.whereItWent")}
+        className="overflow-hidden"
+        action={
+          <div className="flex items-center gap-3">
+            <SegmentedToggle
+              ariaLabel={t("spending:tabContent.whereItWentView")}
+              items={[
+                { value: "list", label: t("spending:tabContent.listView") },
+                { value: "map", label: t("spending:tabContent.mapView") },
+              ]}
+              value={whereItWentView}
+              onChange={(v) => setWhereItWentView(v as "list" | "map")}
+            />
+            <Link
+              to={dashboardInsightHref.where}
+              className="text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline"
+            >
+              {t("spending:tabContent.viewAll")}
+            </Link>
+          </div>
+        }
+      >
+        {isLoading ? (
+          <Skeleton className="h-[260px] w-full rounded-lg" />
+        ) : whereItWentView === "map" ? (
+          <CategoryTreemapMono
+            rows={categoryRows}
+            total={totalSpending}
+            currency={currency}
+            themeColor={theme.deep}
+            hasNoIncludedAccounts={hasNoIncludedAccounts}
+          />
+        ) : (
+          <CategoryRankedBar
+            rows={categoryRows}
+            total={totalSpending}
+            currency={currency}
+            themeColor={theme.deep}
+            groupRows={budget?.computed.groupRows ?? []}
+            hasNoIncludedAccounts={hasNoIncludedAccounts}
+          />
+        )}
+      </DashboardCard>
+    </div>
+  );
+  const digSection = (
+    <div>
+      <h2 className={`${SECTION_HEADING} pb-1`}>{t("spending:tabContent.digDeeper")}</h2>
+      <div>
+        {INSIGHT_STAGES.map((s) => (
+          <Link key={s.stage} to={dashboardInsightHref[s.stage]} className={LIST_ROW}>
+            <span className="bg-foreground/[0.07] flex h-10 w-10 shrink-0 items-center justify-center rounded-full">
+              <s.Icon className="h-[18px] w-[18px]" aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[17px] leading-snug">{t(s.labelKey)}</span>
+              <span className="text-muted-foreground block truncate text-[15px] leading-snug">
+                {t(s.subKey)}
+              </span>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+  const paceSection = (
+    <div>
+      <BudgetLineChartCard
+        monthKey={budgetMonthKey}
+        cycle={budgetCycle}
+        today={todayParts}
+        isCurrentMonth={budgetMonthKey === currentBudgetMonthKey}
+        onPreviousMonth={() => shiftBudgetMonth(-1)}
+        onNextMonth={() => shiftBudgetMonth(1)}
+        canGoNextMonth={budgetMonthKey < currentBudgetMonthKey}
+        target={budgetCardBudget?.computed.totals.spendingPlanned ?? 0}
+        spent={budgetActual}
+        currency={budgetCardBudget?.computed.currency ?? currency}
+        historicalDailyAvg={historicalDailyAvg}
+        monthByDay={budgetMonthByDay}
+        historicalByDay={budgetHistoricalByDay}
+      />
+    </div>
+  );
+  const worthSection = insights.length > 0 && (
+    <div>
+      <div className="mb-2 flex items-baseline gap-2">
+        <h3 className={SECTION_HEADING}>{t("spending:tabContent.worthALook")}</h3>
+        <span className="text-muted-foreground ml-auto text-sm">
+          {t("spending:tabContent.signalCount", { count: insights.length })}
+        </span>
+      </div>
+      <div className="space-y-2.5">
+        {insights.map((ins, i) => (
+          <div key={i} className="flex gap-2 text-[15px]">
+            <span
+              className="w-4 shrink-0 text-base font-medium leading-none"
+              style={{
+                color: ins.icon === "!" ? "#C28B47" : theme.deep,
+              }}
+            >
+              {ins.icon}
+            </span>
+            <div>
+              <div className="text-foreground">{ins.title}</div>
+              <div className="text-muted-foreground mt-0.5">{ins.sub}</div>
+              {ins.action && <div>{ins.action}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+      <Link
+        to={dashboardInsightHref.changed}
+        className="text-muted-foreground hover:text-foreground ml-6 mt-3 inline-flex items-center gap-1 text-sm underline-offset-4 hover:underline"
+      >
+        {t("spending:tabContent.seeTrends")}
+        <Icons.ChevronRight className="h-3 w-3" />
+      </Link>
+    </div>
+  );
+  const eventsSection = (
+    <div>
+      <EventsCard
+        activities={activities}
+        accountTypeById={accountTypeById}
+        categoriesMeta={categoriesMeta}
+        eventSummaryEndDate={reportReq.endDate}
+        eventSummaryStartDate={reportReq.startDate}
+        periodEndDate={dateRange?.to ? formatDateISO(dateRange.to) : reportReq.endDate}
+        periodStartDate={dateRange?.from ? formatDateISO(dateRange.from) : reportReq.startDate}
+        theme={theme}
+      />
+    </div>
+  );
+
   return (
     <div className="flex min-h-screen flex-col">
       {dataErrored && (
         <div className="mx-4 mt-2 flex items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 md:mx-6 lg:mx-8 dark:text-amber-300">
           <span>
-            <span className="font-semibold">{t("spending:tabContent.loadError")}</span>{" "}
+            <span className="font-medium">{t("spending:tabContent.loadError")}</span>{" "}
             {t("spending:insightsPage.showingZeros")}
           </span>
           <button
@@ -1049,15 +1187,21 @@ export default function SpendingTabContent() {
           </button>
         </div>
       )}
-      <div className="px-4 pb-6 pt-2 md:px-6 md:pb-2 lg:px-8">
+      <div className="px-4 pt-2 md:px-6 lg:px-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-8">
           <div>
-            <div className="text-muted-foreground/80 text-[11px] font-semibold uppercase tracking-[0.12em]">
+            <SpendingPeriodMenu
+              value={selectedPeriod}
+              onValueChange={handleIntervalSelect}
+              customMonth={customMonth}
+              maxMonth={maxPickerMonth}
+              onCustomMonthChange={handleCustomMonthSelect}
+            >
               {t("spending:tabContent.spentLabel")}
               {selectedIntervalDescription
-                ? ` · ${selectedIntervalDescription.startsWith("spending:") ? t(selectedIntervalDescription) : selectedIntervalDescription}`
+                ? ` ${selectedIntervalDescription.startsWith("spending:") ? t(selectedIntervalDescription) : selectedIntervalDescription}`
                 : ""}
-            </div>
+            </SpendingPeriodMenu>
             <Balance
               isLoading={isLoading}
               targetValue={totalSpending}
@@ -1080,25 +1224,75 @@ export default function SpendingTabContent() {
               ) : null}
             </div>
           </div>
-          <CashFlowStrip
-            income={report?.current.income ?? 0}
-            spending={report?.current.outflow ?? 0}
-            saving={report?.current.saved ?? 0}
-            currency={currency}
-            isLoading={isLoading}
-            incomeHref={dashboardInsightHref.cashflow}
-            spendingHref={dashboardInsightHref.cashflow}
-            savingHref={dashboardInsightHref.cashflow}
-          />
+          <div className="text-muted-foreground flex gap-5 text-sm tabular-nums sm:hidden">
+            <span>
+              {t("spending:cashFlow.income")}{" "}
+              <span className="text-success">
+                +{formatCompactAmount(report?.current.income ?? 0, currency)}
+              </span>
+            </span>
+            <span>
+              {t("spending:cashFlow.net")}{" "}
+              <span className="text-foreground">
+                {formatCompactAmount(
+                  (report?.current.income ?? 0) -
+                    (report?.current.outflow ?? 0) -
+                    (report?.current.saved ?? 0),
+                  currency,
+                )}
+              </span>
+            </span>
+          </div>
+          <div className="hidden sm:block">
+            <CashFlowStrip
+              income={report?.current.income ?? 0}
+              spending={report?.current.outflow ?? 0}
+              saving={report?.current.saved ?? 0}
+              currency={currency}
+              isLoading={isLoading}
+              incomeHref={dashboardInsightHref.cashflow}
+              spendingHref={dashboardInsightHref.cashflow}
+              savingHref={dashboardInsightHref.cashflow}
+            />
+          </div>
         </div>
       </div>
 
+      {/* Wrapper: everything under the headline shares one continuous gradient */}
       <div
         className="flex grow flex-col"
         style={{
-          backgroundImage: `linear-gradient(to top, ${themeBg(theme, 0.3)}, ${themeBg(theme, 0.15)} 50%, transparent 100%)`,
+          backgroundImage: `linear-gradient(to top, color-mix(in srgb, ${SPENDING_WASH} 30%, transparent), color-mix(in srgb, ${SPENDING_WASH} 15%, transparent) 50%, transparent 100%)`,
         }}
       >
+        <div className="px-4 pb-6 md:px-6 lg:px-8">
+          <div className="mt-6">
+            <h2 className={`${SECTION_HEADING} pb-3`}>{t("spending:tabContent.sectionBudget")}</h2>
+            <BudgetRings
+              monthKey={budgetMonthKey}
+              allocations={
+                budgetCardBudget?.computed.groupRows
+                  .flatMap((row) => row.categories)
+                  .filter((row) => !row.excludedFromBudget) ?? []
+              }
+              spendingBreakdown={budgetSpendingBreakdown}
+              categoriesMeta={categoriesMeta}
+              currency={budgetCardBudget?.computed.currency ?? currency}
+              activityRange={budgetMonthActivityRange}
+            />
+          </div>
+          <div className="mt-8">
+            <RecentTransactions
+              activities={activities}
+              accountTypeById={accountTypeById}
+              categoriesMeta={categoriesMeta}
+            />
+          </div>
+        </div>
+
+        <h2 className={`${SECTION_HEADING} px-4 pb-1 md:px-6 lg:px-8`}>
+          {t("spending:tabContent.sectionDaily")}
+        </h2>
         <div className="h-[280px] [&_.recharts-layer]:outline-none [&_.recharts-rectangle]:outline-none [&_.recharts-surface]:outline-none">
           {isLoading ? (
             <div className="flex h-full items-center justify-center">
@@ -1141,14 +1335,14 @@ export default function SpendingTabContent() {
                     return (
                       <div className="bg-background rounded-md border px-3 py-2 text-xs shadow-sm">
                         <div className="text-muted-foreground">{p.key}</div>
-                        <div className="text-foreground font-semibold tabular-nums">
+                        <div className="text-foreground font-medium tabular-nums">
                           {p.future ? "—" : <PrivacyAmount value={p.value} currency={currency} />}
                         </div>
                         {avgValue > 0 && (
                           <div className="text-muted-foreground/70 mt-1 flex items-center gap-1.5 tabular-nums">
                             <span
                               aria-hidden
-                              className="inline-block h-px w-3 border-t border-dashed border-current opacity-60"
+                              className="inline-block h-px w-3 border-t border-current opacity-60"
                             />
                             <span>
                               {avgLabel} · {formatCompactAmount(avgValue, currency)}
@@ -1192,7 +1386,7 @@ export default function SpendingTabContent() {
               </BarChart>
             </ResponsiveContainer>
           )}
-          <div className="flex w-full justify-center">
+          <div className="hidden w-full justify-center sm:flex">
             <SpendingPeriodSelector
               className="pointer-events-auto relative z-20 w-full max-w-screen-sm sm:max-w-screen-md md:max-w-2xl lg:max-w-3xl"
               value={selectedPeriod}
@@ -1205,173 +1399,37 @@ export default function SpendingTabContent() {
           </div>
         </div>
 
-        <div className="grow px-4 pb-[var(--mobile-nav-total-offset)] pt-24 md:px-6 md:pb-6 md:pt-20 lg:px-10 lg:pb-8 lg:pt-24">
-          <div className="flex flex-col gap-6 lg:grid lg:grid-cols-3 lg:gap-20">
-            <div className="contents lg:col-span-2 lg:block lg:space-y-6">
-              <DashboardCard
-                title={t("spending:tabContent.whereItWent")}
-                className="order-1 overflow-hidden lg:order-none"
-                action={
-                  <div className="flex items-center gap-3">
-                    <SegmentedToggle
-                      ariaLabel={t("spending:tabContent.whereItWentView")}
-                      items={[
-                        { value: "list", label: t("spending:tabContent.listView") },
-                        { value: "map", label: t("spending:tabContent.mapView") },
-                      ]}
-                      value={whereItWentView}
-                      onChange={(v) => setWhereItWentView(v as "list" | "map")}
-                    />
-                    <Link
-                      to={dashboardInsightHref.where}
-                      className="text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline"
-                    >
-                      {t("spending:tabContent.viewAll")}
-                    </Link>
-                  </div>
-                }
-              >
-                {isLoading ? (
-                  <Skeleton className="h-[260px] w-full rounded-lg" />
-                ) : whereItWentView === "map" ? (
-                  <CategoryTreemapMono
-                    rows={categoryRows}
-                    total={totalSpending}
-                    currency={currency}
-                    themeColor={theme.deep}
-                    hasNoIncludedAccounts={hasNoIncludedAccounts}
-                  />
-                ) : (
-                  <CategoryRankedBar
-                    rows={categoryRows}
-                    total={totalSpending}
-                    currency={currency}
-                    themeColor={theme.deep}
-                    groupRows={budget?.computed.groupRows ?? []}
-                    hasNoIncludedAccounts={hasNoIncludedAccounts}
-                  />
-                )}
-              </DashboardCard>
-
-              <div className="order-3 lg:order-none">
-                <RecentActivityCard
-                  activities={activities}
-                  accountTypeById={accountTypeById}
-                  categoriesMeta={categoriesMeta}
-                  uncategorizedCount={uncategorizedCount}
-                />
+        <div className="grow px-4 pb-[var(--mobile-nav-total-offset)] pt-8 sm:pt-24 md:px-6 md:pb-6 md:pt-20 lg:px-10 lg:pb-8 lg:pt-24">
+          {isMobile ? (
+            <PagedView
+              className="-mx-4"
+              pages={[
+                <div key="pace" className="space-y-6 px-4">
+                  {paceSection}
+                  {whereSection}
+                </div>,
+                <div key="look" className="space-y-6 px-4">
+                  {worthSection}
+                  {eventsSection}
+                </div>,
+                <div key="deeper" className="px-4">
+                  {digSection}
+                </div>,
+              ]}
+            />
+          ) : (
+            <div className="flex flex-col gap-6 lg:grid lg:grid-cols-3 lg:gap-20">
+              <div className="space-y-6 lg:col-span-2">
+                {whereSection}
+                {digSection}
               </div>
-
-              <div className="order-6 lg:order-none">
-                <h2 className="pb-2 text-sm font-semibold tracking-tight">
-                  {t("spending:tabContent.digDeeper")}
-                </h2>
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-                  {INSIGHT_STAGES.map((s) => (
-                    <Link
-                      key={s.stage}
-                      to={dashboardInsightHref[s.stage]}
-                      className="border-border/50 bg-background/30 hover:border-border hover:bg-background/60 group flex flex-col gap-3 rounded-lg border p-3.5 transition-colors"
-                    >
-                      <div className="flex items-center justify-between">
-                        <s.Icon className="h-4 w-4" style={{ color: theme.deep }} />
-                        <Icons.ArrowRight className="text-muted-foreground/40 group-hover:text-foreground h-3.5 w-3.5 transition-colors" />
-                      </div>
-                      <div>
-                        <div className="text-foreground text-sm font-medium">{t(s.labelKey)}</div>
-                        <div className="text-muted-foreground/80 mt-0.5 text-xs leading-snug">
-                          {t(s.subKey)}
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
+              <div className="space-y-6 lg:col-span-1">
+                {paceSection}
+                {worthSection}
+                {eventsSection}
               </div>
             </div>
-
-            <div className="contents lg:col-span-1 lg:block lg:space-y-6">
-              <div className="order-2 lg:order-none">
-                <BudgetLineChartCard
-                  monthKey={budgetMonthKey}
-                  cycle={budgetCycle}
-                  today={todayParts}
-                  isCurrentMonth={budgetMonthKey === currentBudgetMonthKey}
-                  onPreviousMonth={() => shiftBudgetMonth(-1)}
-                  onNextMonth={() => shiftBudgetMonth(1)}
-                  canGoNextMonth={budgetMonthKey < currentBudgetMonthKey}
-                  activityRange={budgetMonthActivityRange}
-                  target={budgetCardBudget?.computed.totals.spendingPlanned ?? 0}
-                  spent={budgetActual}
-                  currency={budgetCardBudget?.computed.currency ?? currency}
-                  historicalDailyAvg={historicalDailyAvg}
-                  allocations={
-                    budgetCardBudget?.computed.groupRows
-                      .flatMap((row) => row.categories)
-                      .filter((row) => !row.excludedFromBudget) ?? []
-                  }
-                  spendingBreakdown={budgetSpendingBreakdown}
-                  categoriesMeta={categoriesMeta}
-                  monthByDay={budgetMonthByDay}
-                  historicalByDay={budgetHistoricalByDay}
-                />
-              </div>
-
-              {insights.length > 0 && (
-                <div className="border-border/40 bg-card/70 order-4 rounded-xl border p-4 backdrop-blur-xl md:p-5 lg:order-none">
-                  <div className="mb-2 flex items-center gap-2">
-                    <Icons.AlertCircle className="h-4 w-4 shrink-0" style={{ color: theme.deep }} />
-                    <h3 className="text-foreground text-sm font-semibold">
-                      {t("spending:tabContent.worthALook")}
-                    </h3>
-                    <span className="text-muted-foreground/70 ml-auto text-xs">
-                      {t("spending:tabContent.signalCount", { count: insights.length })}
-                    </span>
-                  </div>
-                  <div className="space-y-2.5">
-                    {insights.map((ins, i) => (
-                      <div key={i} className="flex gap-2 text-xs">
-                        <span
-                          className="w-4 shrink-0 text-base font-bold leading-none"
-                          style={{
-                            color: ins.icon === "!" ? "#C28B47" : theme.deep,
-                          }}
-                        >
-                          {ins.icon}
-                        </span>
-                        <div>
-                          <div className="text-foreground">{ins.title}</div>
-                          <div className="text-muted-foreground/80 mt-0.5">{ins.sub}</div>
-                          {ins.action && <div>{ins.action}</div>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <Link
-                    to={dashboardInsightHref.changed}
-                    className="text-muted-foreground hover:text-foreground ml-6 mt-3 inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline"
-                  >
-                    {t("spending:tabContent.seeTrends")}
-                    <Icons.ChevronRight className="h-3 w-3" />
-                  </Link>
-                </div>
-              )}
-
-              <div className="order-5 lg:order-none">
-                <EventsCard
-                  activities={activities}
-                  accountTypeById={accountTypeById}
-                  categoriesMeta={categoriesMeta}
-                  eventSummaryEndDate={reportReq.endDate}
-                  eventSummaryStartDate={reportReq.startDate}
-                  periodEndDate={dateRange?.to ? formatDateISO(dateRange.to) : reportReq.endDate}
-                  periodStartDate={
-                    dateRange?.from ? formatDateISO(dateRange.from) : reportReq.startDate
-                  }
-                  theme={theme}
-                />
-              </div>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
@@ -1571,7 +1629,7 @@ function CategoryTreemapMono({
                 const p = payload[0].payload as { name: string; amount: number; pct: number };
                 return (
                   <div className="bg-background rounded-md border px-3 py-2 text-xs shadow-sm">
-                    <div className="text-foreground font-semibold">{p.name}</div>
+                    <div className="text-foreground font-medium">{p.name}</div>
                     <div className="text-muted-foreground tabular-nums">
                       <PrivacyAmount value={p.amount} currency={currency} /> · {p.pct.toFixed(1)}%
                     </div>
@@ -1667,7 +1725,7 @@ const CategoryTreemapNodeMono: FC<CategoryTreemapNodeMonoProps> = ({
           x={x + padX + (showDot ? dotR * 2 + 6 : 0)}
           y={y + padY + labelFontSize - 2}
           fill="var(--foreground)"
-          className="font-semibold uppercase"
+          className=""
           style={{ fontSize: labelFontSize, letterSpacing: "0.06em", opacity: 0.7 }}
           aria-hidden
         >
@@ -1683,7 +1741,7 @@ const CategoryTreemapNodeMono: FC<CategoryTreemapNodeMonoProps> = ({
           x={x + padX}
           y={y + height - padY}
           fill="var(--foreground)"
-          className="font-semibold tabular-nums"
+          className="font-medium tabular-nums"
           style={{ fontSize: amountFontSize, opacity: 0.92 }}
           aria-hidden
         >
@@ -1767,27 +1825,15 @@ function CategoryRankedBar({
   const { categoryGroup, hasAnyGroup, uncategorizedAmount, top, restAmount, barSegments } = derived;
 
   const StackedBar = (
-    <div className="bg-foreground/10 relative flex h-3 w-full overflow-hidden rounded-full">
-      {barSegments.map((s, i) => {
-        const share = (s.amount / total) * 100;
-        const color = s.color ?? themeColor;
-        return (
-          <div
-            key={s.id}
-            className="h-full transition-opacity hover:opacity-80"
-            style={{
-              width: `${share}%`,
-              backgroundColor: color,
-              opacity: 0.85 - i * 0.05,
-              borderRight: "1px solid var(--card)",
-            }}
-            title={`${s.name} — ${
-              isBalanceHidden ? "••••" : formatAmount(s.amount, currency)
-            } (${share.toFixed(1)}%)`}
-          />
-        );
-      })}
-    </div>
+    <BlockBar
+      segments={barSegments.map((s) => ({
+        value: s.amount,
+        color: s.color ?? themeColor,
+        label: `${s.name} — ${
+          isBalanceHidden ? "••••" : formatAmount(s.amount, currency)
+        } (${((s.amount / total) * 100).toFixed(1)}%)`,
+      }))}
+    />
   );
 
   if (hasAnyGroup) {
@@ -1889,7 +1935,7 @@ function CategoryRankedBar({
               <span className="text-muted-foreground/70 w-12 text-right text-[11px] tabular-nums">
                 {share.toFixed(1)}%
               </span>
-              <span className="text-foreground w-24 text-right text-xs font-semibold tabular-nums">
+              <span className="text-foreground w-24 text-right text-xs font-medium tabular-nums">
                 <PrivacyAmount value={r.amount} currency={currency} />
               </span>
             </Link>
@@ -1898,7 +1944,7 @@ function CategoryRankedBar({
         {uncategorizedAmount > 0.01 && (
           <Link
             to="/activities?tab=spending&status=uncategorized"
-            className="border-border/60 hover:bg-muted/40 mt-1 flex items-center gap-2.5 rounded-md border border-dashed px-2 py-1.5 transition-colors"
+            className="border-border/60 hover:bg-muted/40 mt-1 flex items-center gap-2.5 rounded-md border px-2 py-1.5 transition-colors"
           >
             <Icons.AlertCircle className="text-muted-foreground h-3 w-3 shrink-0" />
             <span className="text-foreground/80 min-w-0 flex-1 text-xs font-medium">
@@ -1907,7 +1953,7 @@ function CategoryRankedBar({
             <span className="text-muted-foreground/70 w-12 text-right text-[11px] tabular-nums">
               {uncategorizedShare.toFixed(1)}%
             </span>
-            <span className="text-foreground w-24 text-right text-xs font-semibold tabular-nums">
+            <span className="text-foreground w-24 text-right text-xs font-medium tabular-nums">
               <PrivacyAmount value={uncategorizedAmount} currency={currency} />
             </span>
           </Link>
@@ -1973,13 +2019,13 @@ function GroupedCategoryBlock({
           className="block h-2.5 w-2.5 shrink-0 rounded-sm"
           style={{ backgroundColor: accent }}
         />
-        <span className="text-foreground min-w-0 flex-1 truncate text-left text-xs font-semibold uppercase tracking-wide">
+        <span className="text-foreground min-w-0 flex-1 truncate text-left text-xs">
           {bucket.name}
         </span>
         <span className="text-muted-foreground/80 w-12 text-right text-[11px] font-medium tabular-nums">
           {share.toFixed(1)}%
         </span>
-        <span className="text-foreground w-24 text-right text-xs font-semibold tabular-nums">
+        <span className="text-foreground w-24 text-right text-xs font-medium tabular-nums">
           <PrivacyAmount value={bucket.total} currency={currency} />
         </span>
       </button>

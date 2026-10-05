@@ -47,14 +47,14 @@ export function ApplicationHeader({
         <div data-tauri-drag-region="true" className="draggable flex items-center space-x-4">
           {headingPrefix && (
             <>
-              <h1 className="font-heading text-muted-foreground text-xl font-bold tracking-tight md:text-2xl">
+              <h1 className="font-heading text-muted-foreground text-xl font-medium tracking-tight md:text-2xl">
                 {headingPrefix}
               </h1>
               <span className="h-6 border-l-2"></span>
             </>
           )}
 
-          <h1 className="font-heading text-xl font-bold tracking-tight md:text-2xl">{heading}</h1>
+          <h1 className="font-heading text-xl font-medium tracking-tight md:text-2xl">{heading}</h1>
           {text && <p className="text-muted-foreground ml-4 text-lg font-light">{text}</p>}
         </div>
       </div>

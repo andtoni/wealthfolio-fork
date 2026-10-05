@@ -1,3 +1,4 @@
+import { BlockBar } from "@/components/block-bar";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
@@ -71,7 +72,7 @@ export function OverviewCard({
     <Card className="rounded-lg">
       <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 p-6 pb-4">
         <div className="min-w-0 space-y-1">
-          <CardTitle className="text-base font-semibold tracking-tight">{title}</CardTitle>
+          <CardTitle className="text-base font-medium tracking-tight">{title}</CardTitle>
           {description && <CardDescription className="text-xs">{description}</CardDescription>}
         </div>
         {!isEmpty && (
@@ -111,24 +112,16 @@ export function OverviewCard({
         ) : (
           <div className="space-y-3">
             {showDistribution && chips.length > 0 && (
-              <div className="flex h-1.5 w-full gap-0.5 overflow-hidden rounded-sm">
-                {chips.map((c) => {
-                  const weight =
-                    totalValue > 0 && c.value && c.value > 0
-                      ? (c.value / totalValue) * 100
-                      : 100 / chips.length;
-                  return (
-                    <span
-                      key={c.id}
-                      className="block h-full"
-                      style={{
-                        width: `${weight}%`,
-                        background: c.color ?? "var(--muted-foreground)",
-                      }}
-                    />
-                  );
-                })}
-              </div>
+              <BlockBar
+                className="h-2.5"
+                segments={chips.map((c) => ({
+                  // without values the chips share the bar equally
+                  value:
+                    totalValue > 0 && c.value && c.value > 0 ? c.value : totalValue > 0 ? 0 : 1,
+                  color: c.color ?? "var(--muted-foreground)",
+                  label: c.name,
+                }))}
+              />
             )}
             <div className="flex flex-wrap items-center gap-1.5">
               {visible.map((chip) =>

@@ -245,7 +245,7 @@ export const OnboardingStep2 = forwardRef<OnboardingStep2Handle, OnboardingStep2
                       <div className="bg-muted rounded-lg p-2">
                         <Icons.Globe className="text-muted-foreground h-5 w-5" />
                       </div>
-                      <span className="text-xl font-semibold">
+                      <span className="text-xl font-medium">
                         {t("onboarding:steps.preferences.languageLabel")}
                       </span>
                     </div>
@@ -256,14 +256,14 @@ export const OnboardingStep2 = forwardRef<OnboardingStep2Handle, OnboardingStep2
                           type="button"
                           data-testid={`language-${locale.code}-button`}
                           onClick={() => handleLanguageSelect(locale.code)}
-                          className={`rounded-lg border-2 p-4 font-semibold transition-all ${
+                          className={`rounded-lg border-2 p-4 font-medium transition-all ${
                             language === locale.code
                               ? "border-primary bg-primary/10"
                               : "border-border hover:border-primary/50 hover:bg-accent"
                           }`}
                         >
                           <div className="flex flex-col items-start gap-1">
-                            <span className="font-semibold">{locale.label}</span>
+                            <span className="font-medium">{locale.label}</span>
                           </div>
                         </button>
                       ))}
@@ -279,7 +279,7 @@ export const OnboardingStep2 = forwardRef<OnboardingStep2Handle, OnboardingStep2
                           <div className="bg-muted rounded-lg p-2">
                             <Icons.DollarSign className="text-muted-foreground h-5 w-5" />
                           </div>
-                          <FormLabel className="text-xl font-semibold">
+                          <FormLabel className="text-xl font-medium">
                             {t("onboarding:steps.preferences.currencyLabel")}
                           </FormLabel>
                         </div>
@@ -291,14 +291,14 @@ export const OnboardingStep2 = forwardRef<OnboardingStep2Handle, OnboardingStep2
                                 type="button"
                                 data-testid={`currency-${curr.toLowerCase()}-button`}
                                 onClick={() => field.onChange(curr)}
-                                className={`rounded-lg border-2 p-4 font-semibold transition-all ${
+                                className={`rounded-lg border-2 p-4 font-medium transition-all ${
                                   field.value === curr
                                     ? "border-primary bg-primary/10"
                                     : "border-border hover:border-primary/50 hover:bg-accent"
                                 }`}
                               >
                                 <div className="flex flex-col items-start gap-1">
-                                  <span className="font-semibold">{curr}</span>
+                                  <span className="font-medium">{curr}</span>
                                 </div>
                               </button>
                             ))}
@@ -326,7 +326,7 @@ export const OnboardingStep2 = forwardRef<OnboardingStep2Handle, OnboardingStep2
                           <div className="bg-muted rounded-lg p-2">
                             <Icons.Clock className="text-muted-foreground h-5 w-5" />
                           </div>
-                          <FormLabel className="text-xl font-semibold">
+                          <FormLabel className="text-xl font-medium">
                             {t("onboarding:steps.preferences.timezoneLabel")}
                           </FormLabel>
                         </div>
@@ -338,14 +338,14 @@ export const OnboardingStep2 = forwardRef<OnboardingStep2Handle, OnboardingStep2
                                 type="button"
                                 data-testid={`timezone-${tz.toLowerCase().replace(/\//g, "-")}-button`}
                                 onClick={() => field.onChange(tz)}
-                                className={`rounded-lg border-2 p-4 font-semibold transition-all ${
+                                className={`rounded-lg border-2 p-4 font-medium transition-all ${
                                   field.value === tz
                                     ? "border-primary bg-primary/10"
                                     : "border-border hover:border-primary/50 hover:bg-accent"
                                 }`}
                               >
                                 <div className="flex flex-col items-start gap-1">
-                                  <span className="whitespace-nowrap font-semibold">
+                                  <span className="whitespace-nowrap font-medium">
                                     {formatTimezoneLabel(tz)}
                                   </span>
                                 </div>
@@ -376,7 +376,7 @@ export const OnboardingStep2 = forwardRef<OnboardingStep2Handle, OnboardingStep2
             <Card className="w-full max-w-md border shadow-lg">
               <div className="p-6">
                 <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-xl font-bold">
+                  <h3 className="text-xl font-medium">
                     {t("onboarding:steps.preferences.selectCurrency")}
                   </h3>
                   <button
@@ -413,7 +413,7 @@ export const OnboardingStep2 = forwardRef<OnboardingStep2Handle, OnboardingStep2
                     >
                       <div className="flex items-center gap-3">
                         <div className="text-left">
-                          <div className="font-semibold">{curr.value}</div>
+                          <div className="font-medium">{curr.value}</div>
                           <div className="text-muted-foreground text-sm">{curr.label}</div>
                         </div>
                       </div>
@@ -438,7 +438,7 @@ export const OnboardingStep2 = forwardRef<OnboardingStep2Handle, OnboardingStep2
             <Card className="w-full max-w-md border shadow-lg">
               <div className="p-6">
                 <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-xl font-bold">
+                  <h3 className="text-xl font-medium">
                     {t("onboarding:steps.preferences.selectTimezone")}
                   </h3>
                   <button
@@ -475,7 +475,7 @@ export const OnboardingStep2 = forwardRef<OnboardingStep2Handle, OnboardingStep2
                     >
                       <div className="flex items-center gap-3">
                         <div className="text-left">
-                          <div className="font-semibold">{formatTimezoneLabel(tz)}</div>
+                          <div className="font-medium">{formatTimezoneLabel(tz)}</div>
                           <div className="text-muted-foreground text-sm">{tz}</div>
                         </div>
                       </div>

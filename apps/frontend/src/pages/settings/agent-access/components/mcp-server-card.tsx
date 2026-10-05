@@ -107,26 +107,26 @@ function ConnectHelp({ serverUrl }: { serverUrl: string }) {
             <li>{t("settings:agentAccess.help_step_token")}</li>
             <li>
               {t("settings:agentAccess.help_step_add_prefix")}{" "}
-              <span className="font-mono">{TOKEN_PLACEHOLDER}</span>{" "}
+              <span className="">{TOKEN_PLACEHOLDER}</span>{" "}
               {t("settings:agentAccess.help_step_add_suffix")}
             </li>
           </ol>
         </div>
         <div className="space-y-1.5">
           <p className="text-xs font-medium">{t("settings:agentAccess.help_standard_config")}</p>
-          <pre className="bg-muted text-muted-foreground overflow-auto rounded-md p-2 font-mono text-[11px] leading-snug">
+          <pre className="bg-muted text-muted-foreground overflow-auto rounded-md p-2 text-[11px] leading-snug">
             {buildClientConfig(STANDARD_PRESET_ID, serverUrl)}
           </pre>
         </div>
         <div className="space-y-1.5">
           <p className="text-xs font-medium">{t("settings:agentAccess.help_vscode")}</p>
-          <pre className="bg-muted text-muted-foreground overflow-auto rounded-md p-2 font-mono text-[11px] leading-snug">
+          <pre className="bg-muted text-muted-foreground overflow-auto rounded-md p-2 text-[11px] leading-snug">
             {buildClientConfig("vscode", serverUrl)}
           </pre>
         </div>
         <p className="text-muted-foreground text-xs">
           {t("settings:agentAccess.help_http_prefix")}{" "}
-          <span className="font-mono">Authorization: Bearer {TOKEN_PLACEHOLDER}</span>{" "}
+          <span className="">Authorization: Bearer {TOKEN_PLACEHOLDER}</span>{" "}
           {t("settings:agentAccess.help_http_suffix")}
         </p>
         <div className="space-y-1">
@@ -134,16 +134,16 @@ function ConnectHelp({ serverUrl }: { serverUrl: string }) {
           <ul className="text-muted-foreground space-y-0.5 text-xs">
             <li>{t("settings:agentAccess.help_location_claude_desktop")}</li>
             <li>
-              Cursor — <span className="font-mono">~/.cursor/mcp.json</span>
+              Cursor — <span className="">~/.cursor/mcp.json</span>
             </li>
             <li>
-              VS Code — <span className="font-mono">.vscode/mcp.json</span>
+              VS Code — <span className="">.vscode/mcp.json</span>
             </li>
             <li>
-              Windsurf — <span className="font-mono">~/.codeium/windsurf/mcp_config.json</span>
+              Windsurf — <span className="">~/.codeium/windsurf/mcp_config.json</span>
             </li>
             <li>
-              Claude Code — <span className="font-mono">.mcp.json</span>{" "}
+              Claude Code — <span className="">.mcp.json</span>{" "}
               {t("settings:agentAccess.mcp_in_project")}
             </li>
           </ul>
@@ -257,14 +257,14 @@ export function McpServerCard() {
               )}
               aria-hidden
             />
-            <CardTitle className="text-base font-semibold tracking-tight">
+            <CardTitle className="text-base font-medium tracking-tight">
               {t("settings:agentAccess.server_card_title")}
             </CardTitle>
           </div>
           {serverUrl ? (
             <CardDescription className="flex flex-wrap items-center gap-1.5 text-xs">
               <span className="shrink-0">{t("settings:agentAccess.server_running_at")}</span>
-              <code className="bg-muted text-foreground truncate rounded px-1.5 py-0.5 font-mono text-xs">
+              <code className="bg-muted text-foreground truncate rounded px-1.5 py-0.5 text-xs">
                 {serverUrl}
               </code>
               <CopyIconButton

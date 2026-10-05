@@ -91,7 +91,7 @@ function CsvPreviewTable({ headers, rows, maxRows = 50 }: CsvPreviewTableProps) 
             {headers.map((header, idx) => (
               <th
                 key={idx}
-                className="border-r px-2 py-1.5 text-left font-mono text-xs font-semibold last:border-r-0"
+                className="border-r px-2 py-1.5 text-left font-mono text-xs font-medium last:border-r-0"
               >
                 {header || (
                   <span className="text-muted-foreground italic">
@@ -853,7 +853,7 @@ export function UploadStep() {
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5">
             <span className="text-muted-foreground font-mono text-[10px] tabular-nums">01</span>
-            <h2 className="text-sm font-semibold">{t("activity:import.upload.selectAccount")}</h2>
+            <h2 className="text-sm font-medium">{t("activity:import.upload.selectAccount")}</h2>
             <HelpTooltip content={t("activity:import.upload.selectAccountHelp")} />
           </div>
           <div className="h-[116px]">
@@ -908,7 +908,7 @@ export function UploadStep() {
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5">
             <span className="text-muted-foreground font-mono text-[10px] tabular-nums">02</span>
-            <h2 className="text-sm font-semibold">{t("activity:import.upload.uploadCsv")}</h2>
+            <h2 className="text-sm font-medium">{t("activity:import.upload.uploadCsv")}</h2>
             <HelpTooltip content={t("activity:import.upload.uploadCsvHelp")} />
           </div>
           <div className="h-[116px]">
@@ -928,7 +928,7 @@ export function UploadStep() {
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-1.5">
           <span className="text-muted-foreground font-mono text-[10px] tabular-nums">03</span>
-          <h2 className="text-sm font-semibold">{t("activity:import.upload.selectFormat")}</h2>
+          <h2 className="text-sm font-medium">{t("activity:import.upload.selectFormat")}</h2>
           <span className="text-muted-foreground rounded border px-1.5 py-px text-[10px] leading-none">
             {t("activity:import.upload.optional")}
           </span>

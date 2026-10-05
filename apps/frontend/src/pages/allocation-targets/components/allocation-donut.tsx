@@ -100,11 +100,11 @@ export function AllocationDonut({
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
         {hoveredRow ? (
           <>
-            <div className="text-muted-foreground max-w-[75%] truncate text-[10px] uppercase tracking-wider">
+            <div className="text-muted-foreground max-w-[75%] truncate text-[10px]">
               {hoveredRow.categoryName}
             </div>
             <div
-              className="text-foreground mt-0.5 font-semibold tabular-nums"
+              className="text-foreground mt-0.5 font-medium tabular-nums"
               style={{ fontSize: Math.round(size * 0.1) }}
             >
               {(hoveredRow.currentBps / 100).toFixed(1)}%
@@ -117,7 +117,7 @@ export function AllocationDonut({
             </div>
             {hoveredRow.status !== "in_band" && (
               <div
-                className="mt-1 text-[10px] font-semibold uppercase tracking-wide"
+                className="mt-1 text-[10px] font-medium"
                 style={{
                   color:
                     hoveredRow.status === "overweight" || hoveredRow.status === "not_targeted"
@@ -133,11 +133,11 @@ export function AllocationDonut({
           </>
         ) : (
           <>
-            <div className="text-muted-foreground text-[10px] uppercase tracking-wider">
+            <div className="text-muted-foreground text-[10px]">
               {t("allocation:donut.portfolio")}
             </div>
             <div
-              className="text-foreground mt-1 font-semibold tabular-nums"
+              className="text-foreground mt-1 font-medium tabular-nums"
               style={{ fontSize: Math.round(size * 0.09) }}
             >
               {formatCompactAmount(totalValue, currency)}

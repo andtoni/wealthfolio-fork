@@ -27,7 +27,7 @@ export function SuggestedCategoryButton({
     <button
       type="button"
       aria-label={t("spending:transactions.useSuggestedCategory", { name: category.name })}
-      className={cn("border-dashed", className)}
+      className={cn("", className)}
       onClick={onAccept}
     >
       {category.color && (

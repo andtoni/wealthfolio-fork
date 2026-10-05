@@ -246,7 +246,7 @@ export default function IncomePage() {
             <CardContent>
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-2xl font-bold">
+                  <div className="text-2xl font-medium">
                     <AmountDisplay
                       value={totalIncome}
                       currency={currency}
@@ -305,7 +305,7 @@ export default function IncomePage() {
               <Icons.DollarSign className="text-muted-foreground h-4 w-4" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
+              <div className="text-2xl font-medium">
                 <AmountDisplay
                   value={currentMonthlyAverageNumber}
                   currency={currency}

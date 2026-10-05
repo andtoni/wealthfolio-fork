@@ -1,102 +1,105 @@
-// AUTO-CURATED: duotone Phosphor icons an addon may use for its sidebar item.
+// AUTO-CURATED: icons an addon may use for its sidebar item.
 // The name set is the runtime mirror of the SDK's ADDON_ICON_NAMES; a test
 // in apps/frontend asserts the two stay in sync. Keep both in the same order.
+import {
+  Airplane01Icon as AirplaneIcon,
+  BrowserIcon as AppWindowIcon,
+  BankIcon as BankIcon,
+  Dumbbell01Icon as BarbellIcon,
+  ShoppingBasket01Icon as BasketIcon,
+  Notification01Icon as BellIcon,
+  Bicycle01Icon as BicycleIcon,
+  Bookmark01Icon as BookmarkIcon,
+  Briefcase01Icon as BriefcaseIcon,
+  Building03Icon as BuildingsIcon,
+  Calculator01Icon as CalculatorIcon,
+  CalendarCheckIn01Icon as CalendarCheckIcon,
+  Calendar03Icon as CalendarDotsIcon,
+  Calendar01Icon as CalendarIcon,
+  Car01Icon as CarIcon,
+  ArrowRight01Icon as CaretRightIcon,
+  ChartColumnIcon as ChartBarIcon,
+  ChartRingIcon as ChartDonutIcon,
+  ChartLineData02Icon as ChartLineIcon,
+  ChartLineData01Icon as ChartLineUpIcon,
+  PieChartIcon as ChartPieIcon,
+  PieChart01Icon as ChartPieSliceIcon,
+  ClipboardIcon as ClipboardTextIcon,
+  Clock01Icon as ClockIcon,
+  Coffee01Icon as CoffeeIcon,
+  Coins01Icon as CoinsIcon,
+  CompassIcon as CompassIcon,
+  CreditCardIcon as CreditCardIcon,
+  CubeIcon as CubeIcon,
+  BitcoinIcon as CurrencyBtcIcon,
+  DollarCircleIcon as CurrencyCircleDollarIcon,
+  DollarSignIcon as CurrencyDollarIcon,
+  DiamondIcon as DiamondIcon,
+  Files01Icon as FilesIcon,
+  FireIcon as FireIcon,
+  Flag01Icon as FlagIcon,
+  Folder01Icon as FolderIcon,
+  Restaurant01Icon as ForkKnifeIcon,
+  DashboardSpeed01Icon as GaugeIcon,
+  GiftIcon as GiftIcon,
+  Globe02Icon as GlobeIcon,
+  Mortarboard02Icon as GraduationCapIcon,
+  HandCoinsIcon as HandCoinsIcon,
+  MoneyReceive01Icon as HandDepositIcon,
+  FavouriteIcon as HeartIcon,
+  HourglassIcon as HourglassIcon,
+  Home03Icon as HouseIcon,
+  Invoice02Icon as InvoiceIcon,
+  KanbanIcon as KanbanIcon,
+  Idea01Icon as LightbulbIcon,
+  FlashIcon as LightningIcon,
+  CheckListIcon as ListChecksIcon,
+  Location01Icon as MapPinIcon,
+  Medal01Icon as MedalIcon,
+  Notebook01Icon as NotebookIcon,
+  PackageIcon as PackageIcon,
+  PercentIcon as PercentIcon,
+  PiggyBankIcon as PiggyBankIcon,
+  PlugSocketIcon as PlugsConnectedIcon,
+  Presentation01Icon as PresentationIcon,
+  PuzzleIcon as PuzzlePieceIcon,
+  Invoice01Icon as ReceiptIcon,
+  Rocket01Icon as RocketIcon,
+  BalanceScaleIcon as ScalesIcon,
+  ShoppingBag02Icon as ShoppingBagIcon,
+  ShoppingCart01Icon as ShoppingCartIcon,
+  SlidersHorizontalIcon as SlidersIcon,
+  SparklesIcon as SparkleIcon,
+  GridViewIcon as SquaresFourIcon,
+  Layers01Icon as StackIcon,
+  StarIcon as StarIcon,
+  Store01Icon as StorefrontIcon,
+  Tag01Icon as TagIcon,
+  Target01Icon as TargetIcon,
+  ToolsIcon as ToolboxIcon,
+  TrendingDownIcon as TrendDownIcon,
+  TrendingUpIcon as TrendUpIcon,
+  ChampionIcon as TrophyIcon,
+  SafeIcon as VaultIcon,
+  Wallet01Icon as WalletIcon,
+  DrinkIcon as WineIcon,
+  Wrench01Icon as WrenchIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import type { ComponentType } from "react";
-import type { Icon } from "@phosphor-icons/react";
-import { WalletIcon } from "@phosphor-icons/react/dist/csr/Wallet";
-import { CoinsIcon } from "@phosphor-icons/react/dist/csr/Coins";
-import { CurrencyDollarIcon } from "@phosphor-icons/react/dist/csr/CurrencyDollar";
-import { CurrencyCircleDollarIcon } from "@phosphor-icons/react/dist/csr/CurrencyCircleDollar";
-import { BankIcon } from "@phosphor-icons/react/dist/csr/Bank";
-import { CreditCardIcon } from "@phosphor-icons/react/dist/csr/CreditCard";
-import { PiggyBankIcon } from "@phosphor-icons/react/dist/csr/PiggyBank";
-import { ReceiptIcon } from "@phosphor-icons/react/dist/csr/Receipt";
-import { InvoiceIcon } from "@phosphor-icons/react/dist/csr/Invoice";
-import { HandCoinsIcon } from "@phosphor-icons/react/dist/csr/HandCoins";
-import { HandDepositIcon } from "@phosphor-icons/react/dist/csr/HandDeposit";
-import { VaultIcon } from "@phosphor-icons/react/dist/csr/Vault";
-import { ChartLineUpIcon } from "@phosphor-icons/react/dist/csr/ChartLineUp";
-import { ChartLineIcon } from "@phosphor-icons/react/dist/csr/ChartLine";
-import { TrendUpIcon } from "@phosphor-icons/react/dist/csr/TrendUp";
-import { TrendDownIcon } from "@phosphor-icons/react/dist/csr/TrendDown";
-import { PercentIcon } from "@phosphor-icons/react/dist/csr/Percent";
-import { ScalesIcon } from "@phosphor-icons/react/dist/csr/Scales";
-import { CalculatorIcon } from "@phosphor-icons/react/dist/csr/Calculator";
-import { ChartBarIcon } from "@phosphor-icons/react/dist/csr/ChartBar";
-import { ChartPieIcon } from "@phosphor-icons/react/dist/csr/ChartPie";
-import { ChartPieSliceIcon } from "@phosphor-icons/react/dist/csr/ChartPieSlice";
-import { ChartDonutIcon } from "@phosphor-icons/react/dist/csr/ChartDonut";
-import { GaugeIcon } from "@phosphor-icons/react/dist/csr/Gauge";
-import { TargetIcon } from "@phosphor-icons/react/dist/csr/Target";
-import { PresentationIcon } from "@phosphor-icons/react/dist/csr/Presentation";
-import { HouseIcon } from "@phosphor-icons/react/dist/csr/House";
-import { BuildingsIcon } from "@phosphor-icons/react/dist/csr/Buildings";
-import { CarIcon } from "@phosphor-icons/react/dist/csr/Car";
-import { AirplaneIcon } from "@phosphor-icons/react/dist/csr/Airplane";
-import { BicycleIcon } from "@phosphor-icons/react/dist/csr/Bicycle";
-import { DiamondIcon } from "@phosphor-icons/react/dist/csr/Diamond";
-import { CurrencyBtcIcon } from "@phosphor-icons/react/dist/csr/CurrencyBtc";
-import { StorefrontIcon } from "@phosphor-icons/react/dist/csr/Storefront";
-import { BriefcaseIcon } from "@phosphor-icons/react/dist/csr/Briefcase";
-import { PackageIcon } from "@phosphor-icons/react/dist/csr/Package";
-import { CubeIcon } from "@phosphor-icons/react/dist/csr/Cube";
-import { StarIcon } from "@phosphor-icons/react/dist/csr/Star";
-import { HeartIcon } from "@phosphor-icons/react/dist/csr/Heart";
-import { GiftIcon } from "@phosphor-icons/react/dist/csr/Gift";
-import { TrophyIcon } from "@phosphor-icons/react/dist/csr/Trophy";
-import { MedalIcon } from "@phosphor-icons/react/dist/csr/Medal";
-import { LightningIcon } from "@phosphor-icons/react/dist/csr/Lightning";
-import { SparkleIcon } from "@phosphor-icons/react/dist/csr/Sparkle";
-import { BellIcon } from "@phosphor-icons/react/dist/csr/Bell";
-import { TagIcon } from "@phosphor-icons/react/dist/csr/Tag";
-import { BookmarkIcon } from "@phosphor-icons/react/dist/csr/Bookmark";
-import { FlagIcon } from "@phosphor-icons/react/dist/csr/Flag";
-import { FireIcon } from "@phosphor-icons/react/dist/csr/Fire";
-import { RocketIcon } from "@phosphor-icons/react/dist/csr/Rocket";
-import { LightbulbIcon } from "@phosphor-icons/react/dist/csr/Lightbulb";
-import { GraduationCapIcon } from "@phosphor-icons/react/dist/csr/GraduationCap";
-import { BarbellIcon } from "@phosphor-icons/react/dist/csr/Barbell";
-import { ForkKnifeIcon } from "@phosphor-icons/react/dist/csr/ForkKnife";
-import { CoffeeIcon } from "@phosphor-icons/react/dist/csr/Coffee";
-import { WineIcon } from "@phosphor-icons/react/dist/csr/Wine";
-import { ShoppingCartIcon } from "@phosphor-icons/react/dist/csr/ShoppingCart";
-import { ShoppingBagIcon } from "@phosphor-icons/react/dist/csr/ShoppingBag";
-import { BasketIcon } from "@phosphor-icons/react/dist/csr/Basket";
-import { CalendarIcon } from "@phosphor-icons/react/dist/csr/Calendar";
-import { CalendarDotsIcon } from "@phosphor-icons/react/dist/csr/CalendarDots";
-import { CalendarCheckIcon } from "@phosphor-icons/react/dist/csr/CalendarCheck";
-import { ClockIcon } from "@phosphor-icons/react/dist/csr/Clock";
-import { HourglassIcon } from "@phosphor-icons/react/dist/csr/Hourglass";
-import { GlobeIcon } from "@phosphor-icons/react/dist/csr/Globe";
-import { MapPinIcon } from "@phosphor-icons/react/dist/csr/MapPin";
-import { CompassIcon } from "@phosphor-icons/react/dist/csr/Compass";
-import { FolderIcon } from "@phosphor-icons/react/dist/csr/Folder";
-import { FilesIcon } from "@phosphor-icons/react/dist/csr/Files";
-import { NotebookIcon } from "@phosphor-icons/react/dist/csr/Notebook";
-import { ClipboardTextIcon } from "@phosphor-icons/react/dist/csr/ClipboardText";
-import { ListChecksIcon } from "@phosphor-icons/react/dist/csr/ListChecks";
-import { SlidersIcon } from "@phosphor-icons/react/dist/csr/Sliders";
-import { WrenchIcon } from "@phosphor-icons/react/dist/csr/Wrench";
-import { ToolboxIcon } from "@phosphor-icons/react/dist/csr/Toolbox";
-import { PuzzlePieceIcon } from "@phosphor-icons/react/dist/csr/PuzzlePiece";
-import { PlugsConnectedIcon } from "@phosphor-icons/react/dist/csr/PlugsConnected";
-import { AppWindowIcon } from "@phosphor-icons/react/dist/csr/AppWindow";
-import { SquaresFourIcon } from "@phosphor-icons/react/dist/csr/SquaresFour";
-import { StackIcon } from "@phosphor-icons/react/dist/csr/Stack";
-import { KanbanIcon } from "@phosphor-icons/react/dist/csr/Kanban";
-import { CaretRightIcon } from "@phosphor-icons/react/dist/csr/CaretRight";
 
 export type AddonIconComponent = ComponentType<{ className?: string }>;
 
-// Wrap a Phosphor icon as a duotone renderer that only exposes className, so
-// the nav resolver can treat every addon icon uniformly.
-function duotone(PhosphorIcon: Icon): AddonIconComponent {
+// Wrap a Hugeicons glyph as a renderer that only exposes className, so the nav
+// resolver can treat every addon icon uniformly. The name "duotone" is kept
+// from the previous icon set to leave the table below untouched.
+function duotone(glyph: IconSvgElement): AddonIconComponent {
   return function AddonIcon({ className }: { className?: string }) {
-    return <PhosphorIcon weight="duotone" className={className} />;
+    return <HugeiconsIcon icon={glyph} strokeWidth={1.5} className={className} />;
   };
 }
 
-/** Duotone Phosphor icon for each supported addon sidebar icon name. */
+/** Icon for each supported addon sidebar icon name. */
 export const addonIcons: Record<string, AddonIconComponent> = {
   wallet: duotone(WalletIcon),
   coins: duotone(CoinsIcon),

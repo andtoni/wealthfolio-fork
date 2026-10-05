@@ -261,7 +261,7 @@ export function ThreadSidebar({
     <div className={cn("flex h-full flex-col border-r", className)}>
       {/* Header */}
       <div className="flex items-center justify-between border-b p-3">
-        <h2 className="text-sm font-semibold">{t("ai:threadSidebar.conversations")}</h2>
+        <h2 className="text-sm font-medium">{t("ai:threadSidebar.conversations")}</h2>
         <Button variant="ghost" size="icon" onClick={onNewThread} className="h-8 w-8">
           <Icons.Plus className="h-4 w-4" />
           <span className="sr-only">{t("ai:threadSidebar.newConversationButton")}</span>

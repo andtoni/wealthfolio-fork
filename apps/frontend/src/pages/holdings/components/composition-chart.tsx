@@ -258,7 +258,7 @@ const CompositionTooltip = ({ active, payload, settings }: TooltipProps) => {
           {/* Header with symbol and name */}
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <span className="text-primary text-sm font-bold">{data.symbol}</span>
+              <span className="text-primary text-sm font-medium">{data.symbol}</span>
               <span className="text-muted-foreground text-xs">
                 {data.asOfDate ? parseLocalDate(data.asOfDate).toLocaleDateString() : ""}
               </span>
@@ -275,7 +275,7 @@ const CompositionTooltip = ({ active, payload, settings }: TooltipProps) => {
               <span className="text-muted-foreground pr-6 text-sm">
                 {t("holdings:market_value_label")}
               </span>
-              <span className="text-sm font-semibold">
+              <span className="text-sm font-medium">
                 {formatAmount(value, settings?.baseCurrency ?? "USD")}
               </span>
             </div>
@@ -285,7 +285,7 @@ const CompositionTooltip = ({ active, payload, settings }: TooltipProps) => {
               <span className="text-muted-foreground text-sm">{t("holdings:return")}</span>
               <span
                 className={cn(
-                  "flex items-center gap-1 text-sm font-semibold",
+                  "flex items-center gap-1 text-sm font-medium",
                   isPositive ? "text-success" : "text-destructive",
                 )}
               >
@@ -361,7 +361,7 @@ export function PortfolioComposition({ holdings, isLoading }: PortfolioCompositi
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <div className="flex items-center space-x-2">
             <Icons.LayoutDashboard className="text-muted-foreground h-4 w-4" />
-            <CardTitle className="text-muted-foreground text-sm font-medium uppercase tracking-wider">
+            <CardTitle className="text-muted-foreground text-sm font-medium">
               {t("holdings:composition")}
             </CardTitle>
           </div>
@@ -401,7 +401,7 @@ export function PortfolioComposition({ holdings, isLoading }: PortfolioCompositi
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <div className="flex items-center space-x-2">
-          <CardTitle className="text-muted-foreground text-sm font-medium uppercase tracking-wider">
+          <CardTitle className="text-muted-foreground text-sm font-medium">
             {t("holdings:composition")}
           </CardTitle>
         </div>

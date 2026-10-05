@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Separator } from "@wealthfolio/ui/components/ui/separator";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Button } from "@wealthfolio/ui/components/ui/button";
@@ -71,10 +70,9 @@ export default function AiProvidersPage() {
           heading={t("settings:nav.items.ai_providers")}
           text={t("settings:ai_providers_description")}
         />
-        <Separator />
-        <div className="overflow-hidden rounded-lg border">
+        <div className="">
           {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="flex items-center gap-4 border-b px-4 py-3 last:border-b-0">
+            <div key={i} className="flex items-center gap-4 py-3">
               <Skeleton className="h-9 w-9 rounded-lg" />
               <div className="flex-1 space-y-2">
                 <div className="flex items-center gap-2">
@@ -101,7 +99,6 @@ export default function AiProvidersPage() {
           heading={t("settings:nav.items.ai_providers")}
           text={t("settings:ai_providers_description")}
         />
-        <Separator />
         <div className="border-destructive/20 bg-destructive/5 rounded-lg border p-6">
           <div className="flex items-start gap-3">
             <Icons.XCircle className="text-destructive mt-0.5 h-5 w-5 shrink-0" />
@@ -129,23 +126,21 @@ export default function AiProvidersPage() {
         heading={t("settings:nav.items.ai_providers")}
         text={t("settings:ai_providers_description")}
       />
-      <Separator />
       <div>
         {sortedProviders.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <Icons.Sparkles className="text-muted-foreground mb-4 h-12 w-12" />
-            <h3 className="text-lg font-semibold">{t("settings:ai_providers_empty_title")}</h3>
+            <h3 className="text-lg font-medium">{t("settings:ai_providers_empty_title")}</h3>
             <p className="text-muted-foreground mt-2 max-w-md text-sm">
               {t("settings:ai_providers_empty_description")}
             </p>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-lg border">
-            {sortedProviders.map((provider, index, arr) => (
+          <div className="">
+            {sortedProviders.map((provider) => (
               <ProviderSettingsCardWrapper
                 key={provider.id}
                 provider={provider}
-                isLast={index === arr.length - 1}
                 onToggleEnabled={(enabled) => updateSettings({ providerId: provider.id, enabled })}
                 onSetDefault={() => setDefault({ providerId: provider.id })}
                 onCustomUrlChange={(url) => handleCustomUrlChange(provider.id, url)}
@@ -172,7 +167,6 @@ export default function AiProvidersPage() {
  */
 function ProviderSettingsCardWrapper({
   provider,
-  isLast,
   onToggleEnabled,
   onSetDefault,
   onCustomUrlChange,
@@ -183,7 +177,6 @@ function ProviderSettingsCardWrapper({
   onTuningOverridesChange,
 }: {
   provider: Parameters<typeof ProviderSettingsCard>[0]["provider"];
-  isLast: boolean;
   onToggleEnabled: (enabled: boolean) => void;
   onSetDefault: () => void;
   onCustomUrlChange: (url: string) => void;
@@ -214,7 +207,6 @@ function ProviderSettingsCardWrapper({
   return (
     <ProviderSettingsCard
       provider={provider}
-      isLast={isLast}
       onToggleEnabled={onToggleEnabled}
       onSetDefault={onSetDefault}
       onSaveApiKey={(apiKey) => setApiKey.mutate(apiKey)}

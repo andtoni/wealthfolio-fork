@@ -36,10 +36,8 @@ import {
 import { canAddHoldings } from "@/lib/activity-restrictions";
 import { useIsMobileViewport } from "@/hooks/use-platform";
 import { HoldingsMobileFilterSheet } from "./components/holdings-mobile-filter-sheet";
-import { HoldingsTable } from "./components/holdings-table";
 import { HoldingsTableMobile } from "./components/holdings-table-mobile";
-import { AlternativeHoldingsTable } from "./components/alternative-holdings-table";
-import { AlternativeHoldingsListMobile } from "./components/alternative-holdings-list-mobile";
+import { AlternativeHoldingsList } from "./components/alternative-holdings-list";
 import { HoldingsEditMode } from "./components/holdings-edit-mode";
 import {
   AlternativeAssetQuickAddModal,
@@ -90,7 +88,7 @@ export const HoldingsPage = () => {
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [isAlternativeAssetModalOpen, setIsAlternativeAssetModalOpen] = useState(false);
-  const [sortBy, setSortBy] = usePersistentState<"symbol" | "marketValue">(
+  const [sortBy, setSortBy] = usePersistentState<"symbol" | "marketValue" | "gain">(
     "holdings-sort-by",
     "marketValue",
   );
@@ -407,7 +405,7 @@ export const HoldingsPage = () => {
         data-testid="connected-credit-card-balances"
       >
         <div className="border-border/50 border-b px-4 py-3">
-          <h3 className="text-sm font-semibold">{t("holdings:connected_credit_cards")}</h3>
+          <h3 className="text-sm font-medium">{t("holdings:connected_credit_cards")}</h3>
         </div>
         <div className="divide-border/50 divide-y">
           {connectedCreditCardBalances.map(({ account, balance }) => (
@@ -496,42 +494,23 @@ export const HoldingsPage = () => {
           </EmptyPlaceholder>
         </div>
       ) : (
-        <>
-          {/* Desktop View */}
-          <div className="hidden md:block">
-            <HoldingsTable
-              holdings={filteredHoldings ?? []}
-              isLoading={isDataLoading}
-              onClassify={(holding) =>
-                setClassifyAsset({
-                  id: holding.instrument?.id ?? holding.id,
-                  symbol: holding.instrument?.symbol ?? holding.id,
-                  name: holding.instrument?.name ?? undefined,
-                })
-              }
-            />
-          </div>
-
-          {/* Mobile View */}
-          <div className="block md:hidden">
-            <HoldingsTableMobile
-              holdings={nonCashHoldings ?? []}
-              isLoading={isDataLoading}
-              selectedTypes={selectedTypes}
-              setSelectedTypes={setSelectedTypes}
-              accountFilter={accountFilter}
-              onAccountScopeChange={handleAccountScopeChange}
-              accounts={allAccounts ?? []}
-              portfolios={portfolios}
-              showSearch={true}
-              showFilterButton={false}
-              sortBy={sortBy}
-              performanceMode={performanceMode}
-              setPerformanceMode={setPerformanceMode}
-              typeOptions={availableTypeOptions}
-            />
-          </div>
-        </>
+        <HoldingsTableMobile
+          holdings={filteredHoldings ?? []}
+          isLoading={isDataLoading}
+          selectedTypes={selectedTypes}
+          setSelectedTypes={setSelectedTypes}
+          accountFilter={accountFilter}
+          onAccountScopeChange={handleAccountScopeChange}
+          accounts={allAccounts ?? []}
+          portfolios={portfolios}
+          showSearch={true}
+          showFilterButton={!isMobileViewport}
+          sortBy={sortBy}
+          setSortBy={setSortBy}
+          performanceMode={performanceMode}
+          setPerformanceMode={setPerformanceMode}
+          typeOptions={availableTypeOptions}
+        />
       )}
     </>
   );
@@ -553,31 +532,16 @@ export const HoldingsPage = () => {
           </EmptyPlaceholder>
         </div>
       ) : (
-        <>
-          {/* Desktop View */}
-          <div className="hidden md:block">
-            <AlternativeHoldingsTable
-              holdings={assetsHoldings}
-              isLoading={isDataLoading}
-              emptyTitle={t("holdings:empty_no_assets")}
-              emptyDescription={t("holdings:empty_add_first_asset_button")}
-              onEdit={handleEditAsset}
-              onUpdateValue={setUpdateValueAsset}
-              onViewHistory={handleViewHistory}
-              onDelete={handleDeleteAsset}
-              onRowClick={handleRowClick}
-              isDeleting={isDeleting}
-            />
-          </div>
-          {/* Mobile View */}
-          <div className="block md:hidden">
-            <AlternativeHoldingsListMobile
-              holdings={assetsHoldings}
-              isLoading={isDataLoading}
-              onRowClick={handleRowClick}
-            />
-          </div>
-        </>
+        <AlternativeHoldingsList
+          holdings={assetsHoldings}
+          isLoading={isDataLoading}
+          onEdit={handleEditAsset}
+          onUpdateValue={setUpdateValueAsset}
+          onViewHistory={handleViewHistory}
+          onDelete={handleDeleteAsset}
+          onRowClick={handleRowClick}
+          isDeleting={isDeleting}
+        />
       )}
     </>
   );
@@ -600,31 +564,16 @@ export const HoldingsPage = () => {
           </EmptyPlaceholder>
         </div>
       ) : liabilitiesHoldings.length > 0 ? (
-        <>
-          {/* Desktop View */}
-          <div className="hidden md:block">
-            <AlternativeHoldingsTable
-              holdings={liabilitiesHoldings}
-              isLoading={isDataLoading}
-              emptyTitle={t("holdings:empty_no_liabilities")}
-              emptyDescription={t("holdings:empty_add_first_liability_button")}
-              onEdit={handleEditAsset}
-              onUpdateValue={setUpdateValueAsset}
-              onViewHistory={handleViewHistory}
-              onDelete={handleDeleteAsset}
-              onRowClick={handleRowClick}
-              isDeleting={isDeleting}
-            />
-          </div>
-          {/* Mobile View */}
-          <div className="block md:hidden">
-            <AlternativeHoldingsListMobile
-              holdings={liabilitiesHoldings}
-              isLoading={isDataLoading}
-              onRowClick={handleRowClick}
-            />
-          </div>
-        </>
+        <AlternativeHoldingsList
+          holdings={liabilitiesHoldings}
+          isLoading={isDataLoading}
+          onEdit={handleEditAsset}
+          onUpdateValue={setUpdateValueAsset}
+          onViewHistory={handleViewHistory}
+          onDelete={handleDeleteAsset}
+          onRowClick={handleRowClick}
+          isDeleting={isDeleting}
+        />
       ) : null}
     </>
   );

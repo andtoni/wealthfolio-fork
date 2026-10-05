@@ -281,7 +281,7 @@ export function SwipablePage({
                   content: (
                     <div
                       className={cn(
-                        withPadding ? "p-2" : "pb-safe",
+                        withPadding ? "p-2" : "flex min-h-full flex-col [&>*]:grow",
                         withMobileNavOffset && "pb-[var(--mobile-nav-total-offset)]",
                       )}
                     >

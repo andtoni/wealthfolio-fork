@@ -294,7 +294,7 @@ function DiffStat({
 }) {
   return (
     <div className="bg-background/70 min-w-[5rem] rounded-md border px-2 py-1.5">
-      <div className={cn("text-sm font-semibold", className)}>{value}</div>
+      <div className={cn("text-sm font-medium", className)}>{value}</div>
       <div className="text-muted-foreground text-[11px] leading-4">{label}</div>
     </div>
   );
@@ -468,10 +468,10 @@ function ClassificationComparisonTable({
             <div className="text-muted-foreground text-right text-xs font-medium">
               {t("ai:assetClassification.total")}
             </div>
-            <div className="text-right text-sm font-semibold">
+            <div className="text-right text-sm font-medium">
               {formatBasisPoints(currentTotalBasisPoints)}
             </div>
-            <div className="text-primary text-right text-sm font-semibold">
+            <div className="text-primary text-right text-sm font-medium">
               {formatBasisPoints(proposedTotalBasisPoints)}
             </div>
           </div>

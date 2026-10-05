@@ -451,7 +451,7 @@ export function MultiSelectTaxonomy({
               </span>
               <div
                 className={cn(
-                  "w-20 text-right text-sm font-semibold",
+                  "w-20 text-right text-sm font-medium",
                   totalWeight === 100
                     ? "text-green-600 dark:text-green-400"
                     : totalWeight > 100

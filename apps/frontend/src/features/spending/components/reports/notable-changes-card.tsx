@@ -108,9 +108,7 @@ function ChangeColumn({
   if (rows.length === 0) {
     return (
       <div>
-        <h3 className="text-muted-foreground/80 mb-2 text-[11px] font-semibold uppercase tracking-wide">
-          {heading}
-        </h3>
+        <h3 className="text-muted-foreground/80 mb-2 text-xs">{heading}</h3>
         <p className="text-muted-foreground/60 text-xs italic">
           {t("spending:notableChanges.noNotableChange")}
         </p>
@@ -123,9 +121,7 @@ function ChangeColumn({
 
   return (
     <div>
-      <h3 className="text-muted-foreground/80 mb-2 text-[11px] font-semibold uppercase tracking-wide">
-        {heading}
-      </h3>
+      <h3 className="text-muted-foreground/80 mb-2 text-xs">{heading}</h3>
       <ul className="space-y-1.5">
         {rows.map((r) => (
           <li key={r.id}>
@@ -140,7 +136,7 @@ function ChangeColumn({
               <span className="text-foreground/90 min-w-0 flex-1 truncate text-xs font-medium">
                 {r.name}
               </span>
-              <span className={cn("shrink-0 text-xs font-semibold tabular-nums", toneClass)}>
+              <span className={cn("shrink-0 text-xs font-medium tabular-nums", toneClass)}>
                 {arrow} <PrivacyAmount value={Math.abs(r.delta)} currency={currency} />
                 {r.pct != null && (
                   <span className="text-muted-foreground/60 ml-1 text-[10px] font-normal">

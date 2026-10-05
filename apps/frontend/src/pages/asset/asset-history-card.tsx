@@ -186,7 +186,7 @@ const AssetHistoryCard: React.FC<AssetHistoryProps> = ({
             <HoverCard>
               <HoverCardTrigger asChild className="cursor-pointer">
                 <div>
-                  <p className="pt-3 text-xl font-bold">
+                  <p className="pt-3 text-xl font-medium">
                     <AmountDisplay
                       value={marketPrice}
                       currency={currency}

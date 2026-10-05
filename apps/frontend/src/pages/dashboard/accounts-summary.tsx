@@ -1,6 +1,9 @@
 "use client";
 
 import { calculatePerformanceSummaries, performanceSummaryScopeKey } from "@/adapters";
+import { LIST_ROW, SECTION_HEADING } from "@/components/dashboard-card";
+import { MerchantAvatar } from "@/features/spending/components/merchant-avatar";
+import { SplitAmount } from "@/features/spending/components/split-amount";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useCurrentAccountValuations } from "@/hooks/use-current-account-valuations";
 import { AccountType } from "@/lib/constants";
@@ -15,10 +18,9 @@ import type {
   TrackingMode,
 } from "@/lib/types";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { GainAmount, GainPercent, PrivacyAmount } from "@wealthfolio/ui";
+import { GainAmount, GainPercent } from "@wealthfolio/ui";
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
-import { Separator } from "@wealthfolio/ui/components/ui/separator";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@wealthfolio/ui/components/ui/tooltip";
 import { format } from "date-fns";
@@ -159,14 +161,14 @@ const AccountSummaryComponent = React.memo(
 
       if (isGroup) {
         return (
-          <div className="flex w-full items-center justify-between gap-3 rounded-lg p-3 md:p-4">
+          <div className="flex w-full items-center justify-between gap-3 py-2.5">
             {skeletonContent}
           </div>
         );
       }
 
       return (
-        <div className="border-border/40 bg-card/90 shadow-xs flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 backdrop-blur-xl md:px-5 md:py-4">
+        <div className="flex w-full items-center justify-between gap-3 py-2.5">
           {skeletonContent}
         </div>
       );
@@ -236,7 +238,7 @@ const AccountSummaryComponent = React.memo(
     } else if (shouldRenderNestedPlaceholder) {
       secondaryMetricContent = (
         <div
-          className="text-muted-foreground text-xs font-medium md:text-sm md:font-medium"
+          className="text-muted-foreground text-[13px]"
           data-testid="account-summary-secondary-placeholder"
         >
           -
@@ -249,18 +251,14 @@ const AccountSummaryComponent = React.memo(
           {gainAmountToDisplay != null && (
             <>
               <GainAmount
-                className="text-xs font-medium md:text-sm md:font-medium"
+                className="text-[13px]"
                 value={gainAmountToDisplay}
                 currency={gainDisplayCurrency}
                 displayCurrency={false}
               />
-              <Separator orientation="vertical" className="h-3 md:h-4" />
             </>
           )}
-          <GainPercent
-            className="text-xs font-medium md:text-sm md:font-medium"
-            value={gainPercentToDisplay}
-          />
+          <GainPercent className="text-[13px]" value={gainPercentToDisplay} />
         </>
       );
       shouldExposeSecondaryMetric = true;
@@ -270,8 +268,9 @@ const AccountSummaryComponent = React.memo(
 
     const content = (
       <>
-        <div className="flex min-w-0 flex-1 flex-col gap-1 md:gap-1.5">
-          <h3 className="flex items-center gap-1.5 text-sm font-semibold leading-tight md:text-base md:font-semibold">
+        {!isNested && <MerchantAvatar name={name} currency={currency} logo={!isGroup} />}
+        <div className="min-w-0 flex-1">
+          <h3 className="flex items-center gap-1.5 text-[17px] leading-snug">
             <span className="truncate">{name}</span>
             {shouldShowWarning && (
               <Tooltip>
@@ -288,20 +287,20 @@ const AccountSummaryComponent = React.memo(
               </Tooltip>
             )}
           </h3>
-          <p className="text-muted-foreground truncate text-xs md:text-sm">{subText}</p>
+          <p className="text-muted-foreground truncate text-[15px] leading-snug">{subText}</p>
         </div>
-        <div className="flex shrink-0 items-center gap-2 md:gap-3">
-          <div className="flex min-h-[3rem] flex-col items-end justify-center gap-1 md:gap-1.5">
-            <p className="text-sm font-semibold leading-tight md:text-base md:font-semibold">
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-col items-end">
+            <p className="text-[19px] leading-snug">
               {valuationUnavailable ? (
                 t("dashboard:no_data")
               ) : (
-                <PrivacyAmount value={totalValue} currency={currency} />
+                <SplitAmount value={totalValue} currency={currency} />
               )}
             </p>
             {secondaryMetricContent && (
               <div
-                className="flex items-center gap-1.5 md:gap-2"
+                className="flex items-center gap-2"
                 data-testid={
                   shouldExposeSecondaryMetric ? "account-summary-secondary-metric" : undefined
                 }
@@ -310,63 +309,37 @@ const AccountSummaryComponent = React.memo(
               </div>
             )}
           </div>
-          {isGroup ? (
-            <div className="flex items-center justify-center">
-              <Icons.ChevronDown
-                className={`text-muted-foreground h-5 w-5 shrink-0 transition-transform duration-200 ${
-                  isExpanded ? "rotate-180" : ""
-                }`}
-              />
-            </div>
-          ) : (
-            !isLoadingValuation &&
-            accountId && (
-              <div className="flex items-center justify-center">
-                <Icons.ChevronRight className="text-muted-foreground h-5 w-5 shrink-0" />
-              </div>
-            )
+          {isGroup && (
+            <Icons.ChevronDown
+              className={`text-muted-foreground h-5 w-5 shrink-0 transition-transform duration-200 ${
+                isExpanded ? "rotate-180" : ""
+              }`}
+            />
           )}
         </div>
       </>
     );
 
+    // A nested row sits under its group, in line with the group's name.
+    const rowClass = isNested ? `${LIST_ROW} pl-[60px]` : LIST_ROW;
+
     if (isGroup) {
       return (
-        <div
-          onClick={onToggle}
-          className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg p-3 transition-colors duration-150 md:p-4"
-        >
+        <div onClick={onToggle} className={`${LIST_ROW} cursor-pointer`}>
           {content}
         </div>
       );
     }
 
-    if (!isLoadingValuation && accountId) {
-      if (isNested) {
-        return (
-          <Link
-            to={`/accounts/${accountId}`}
-            className="flex w-full cursor-pointer items-center justify-between gap-3"
-          >
-            {content}
-          </Link>
-        );
-      }
+    if (accountId) {
       return (
-        <Link
-          to={`/accounts/${accountId}`}
-          className="border-border/40 bg-card/90 shadow-xs flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border px-4 py-3 backdrop-blur-xl transition-all duration-150 hover:shadow-md md:px-5 md:py-4"
-        >
+        <Link to={`/accounts/${accountId}`} className={rowClass}>
           {content}
         </Link>
       );
     }
 
-    return (
-      <div className="border-border/40 bg-card/90 shadow-xs flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 backdrop-blur-xl md:px-5 md:py-4">
-        {content}
-      </div>
-    );
+    return <div className={rowClass}>{content}</div>;
   },
 );
 AccountSummaryComponent.displayName = "AccountSummaryComponent";
@@ -558,10 +531,7 @@ export const AccountsSummary = React.memo(
     const renderedContent = useMemo(() => {
       if (isLoadingAccounts) {
         return Array.from({ length: 4 }).map((_, index) => (
-          <div
-            key={`skeleton-${index}`}
-            className="border-border/40 bg-card/90 shadow-xs rounded-xl border px-4 py-3 backdrop-blur-xl md:px-5 md:py-4"
-          >
+          <div key={`skeleton-${index}`} className="py-2.5">
             <AccountSummarySkeleton />
           </div>
         ));
@@ -592,16 +562,12 @@ export const AccountsSummary = React.memo(
 
       if (!combinedAccountViews || combinedAccountViews.length === 0) {
         return (
-          <div className="border-border/50 bg-success/10 rounded-xl border p-6 text-center md:p-8">
-            <p className="text-sm">{t("dashboard:no_accounts_found")}</p>
-            <Link
-              to="/settings/accounts"
-              className="text-muted-foreground hover:text-foreground mt-2 inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline"
-            >
+          <p className="text-muted-foreground text-[15px]">
+            {t("dashboard:no_accounts_found")}{" "}
+            <Link to="/settings/accounts" className="text-foreground hover:underline">
               {t("dashboard:add_first_account")}
-              <Icons.ChevronRight className="h-3 w-3" />
             </Link>
-          </div>
+          </p>
         );
       }
 
@@ -683,11 +649,8 @@ export const AccountsSummary = React.memo(
               );
 
               return (
-                <div
-                  key={group.accountName}
-                  className="border-border/40 bg-card/90 shadow-xs overflow-hidden rounded-xl border backdrop-blur-xl transition-shadow duration-150 hover:shadow-md"
-                >
-                  <div className="cursor-pointer">
+                <div key={group.accountName}>
+                  <div>
                     <AccountSummaryComponent
                       item={group}
                       isExpanded={isExpanded}
@@ -697,10 +660,10 @@ export const AccountsSummary = React.memo(
                     />
                   </div>
                   {isExpanded && (
-                    <div className="border-border/50 border-t">
-                      <div className="divide-border/50 divide-y">
+                    <div>
+                      <div>
                         {sortedAccounts.map((account) => (
-                          <div key={account.accountId} className="px-4 py-3 md:px-5 md:py-4">
+                          <div key={account.accountId}>
                             <AccountSummaryComponent
                               item={account}
                               isLoadingValuation={isLoadingCurrentValuations}
@@ -762,7 +725,7 @@ export const AccountsSummary = React.memo(
     return (
       <div className="mb-4 w-full space-y-0">
         <div className="flex flex-row items-center justify-between gap-2 pb-2">
-          <h2 className="text-sm font-semibold tracking-tight">{t("dashboard:accounts")}</h2>
+          <h2 className={SECTION_HEADING}>{t("dashboard:accounts")}</h2>
           <Button
             variant="ghost"
             className="text-muted-foreground hover:bg-success/10"
@@ -802,7 +765,7 @@ export const AccountsSummary = React.memo(
             </div>
           </div>
         )}
-        <div className="space-y-2 md:space-y-3">{renderedContent}</div>
+        <div>{renderedContent}</div>
       </div>
     );
   },

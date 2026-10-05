@@ -1,10 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Icons } from "./icons";
 
 import { Button } from "./button";
 import { cn } from "../../lib/utils";
+
+const { ChevronLeft, ChevronRight } = Icons;
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 

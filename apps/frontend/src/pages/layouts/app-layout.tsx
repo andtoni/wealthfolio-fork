@@ -67,7 +67,7 @@ const AppLayoutContent = () => {
         className="flex h-screen items-center justify-center"
         style={{ backgroundColor: "#09090b" }}
       >
-        <img src="/logo-gold.png" alt="Wealthfolio" className="h-[100px] w-auto" />
+        <img src="/brand-mark-v5.png" alt="Wealthfolio" className="h-[100px] w-auto" />
       </div>
     );
   }
@@ -79,7 +79,7 @@ const AppLayoutContent = () => {
   return (
     <ErrorBoundary>
       <ApplicationShell
-        className="app-shell h-screen overflow-x-hidden"
+        className="app-shell plain-cards h-screen overflow-x-hidden"
         style={
           launchBarHeight ? { ["--mobile-nav-ui-height" as string]: launchBarHeight } : undefined
         }

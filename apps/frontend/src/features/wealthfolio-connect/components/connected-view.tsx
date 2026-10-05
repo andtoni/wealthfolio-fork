@@ -99,7 +99,7 @@ function ServiceUnavailableCard({ onRetry, isRetrying }: ServiceUnavailableCardP
 
 function BrokerConnectionSkeleton() {
   return (
-    <div className="flex items-center gap-4 rounded-lg border p-4">
+    <div className="flex items-center gap-4 p-4">
       <Skeleton className="h-12 w-12 rounded-lg" />
       <div className="flex-1 space-y-2">
         <Skeleton className="h-4 w-32" />
@@ -149,7 +149,7 @@ function BrokerAccountCard({ account, connections }: BrokerAccountCardProps) {
     : t("connect:accounts.noDataYet");
 
   return (
-    <div className="bg-muted/30 rounded-lg border p-3">
+    <div className="p-3">
       <div className="flex items-start gap-3">
         {/* Logo */}
         <Avatar className="mt-0.5 h-9 w-9 shrink-0 rounded-lg">
@@ -158,7 +158,7 @@ function BrokerAccountCard({ account, connections }: BrokerAccountCardProps) {
             alt={account.institution_name || t("connect:accounts.brokerFallback")}
             className="bg-white object-contain p-1"
           />
-          <AvatarFallback className="rounded-lg text-sm font-semibold">
+          <AvatarFallback className="rounded-lg text-sm font-medium">
             {(account.institution_name || account.name || "B").charAt(0)}
           </AvatarFallback>
         </Avatar>
@@ -249,7 +249,7 @@ function BrokerConnectionsCard({
             <div className="bg-muted flex h-8 w-8 shrink-0 items-center justify-center rounded-lg">
               <Icons.Link className="text-muted-foreground h-4 w-4" />
             </div>
-            <h3 className="text-base font-semibold">{t("connect:connections.title")}</h3>
+            <h3 className="text-base font-medium">{t("connect:connections.title")}</h3>
           </div>
           <div className="flex items-center gap-1">
             <Button
@@ -309,17 +309,14 @@ function BrokerConnectionsCard({
               const isConnected = connection.status === "connected" && !connection.disabled;
 
               return (
-                <div
-                  key={connection.id}
-                  className="bg-muted/30 flex items-center gap-3 rounded-lg border p-3"
-                >
+                <div key={connection.id} className="flex items-center gap-3 p-3">
                   <Avatar className="h-9 w-9 shrink-0 rounded-lg">
                     <AvatarImage
                       src={logoUrl}
                       alt={brokerageName}
                       className="bg-white object-contain p-1"
                     />
-                    <AvatarFallback className="rounded-lg text-sm font-semibold">
+                    <AvatarFallback className="rounded-lg text-sm font-medium">
                       {brokerageName.charAt(0)}
                     </AvatarFallback>
                   </Avatar>
@@ -444,14 +441,14 @@ export function ConnectedView() {
                 alt={user?.email ?? t("connect:account.userAvatar")}
               />
               <AvatarFallback className="bg-success/15">
-                <span className="text-success text-lg font-semibold">
+                <span className="text-success text-lg font-medium">
                   {(userInfo?.full_name?.[0] ?? user?.email?.[0] ?? "U").toUpperCase()}
                 </span>
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <h3 className="truncate text-base font-semibold">
+                <h3 className="truncate text-base font-medium">
                   {userInfo?.full_name ??
                     user?.email?.split("@")[0] ??
                     t("connect:account.userFallback")}
@@ -542,7 +539,7 @@ export function ConnectedView() {
                 <div className="bg-muted flex h-8 w-8 shrink-0 items-center justify-center rounded-lg">
                   <Icons.Wallet className="text-muted-foreground h-4 w-4" />
                 </div>
-                <h3 className="text-base font-semibold">{t("connect:accounts.title")}</h3>
+                <h3 className="text-base font-medium">{t("connect:accounts.title")}</h3>
               </div>
               <div className="flex items-center gap-1">
                 <Button

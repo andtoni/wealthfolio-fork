@@ -217,7 +217,7 @@ const WebBackupPanel = ({
         </CardHeader>
         <CardContent>
           {isLoadingBackups ? (
-            <div className="text-muted-foreground flex items-center gap-2 rounded-md border border-dashed p-4 text-sm">
+            <div className="text-muted-foreground flex items-center gap-2 py-2 text-[15px]">
               <Icons.Spinner className="h-4 w-4 animate-spin" />
               {t("settings:backup_loading")}
             </div>
@@ -230,19 +230,17 @@ const WebBackupPanel = ({
               </div>
             </div>
           ) : backups.length === 0 ? (
-            <div className="rounded-md border border-dashed p-6 text-center">
-              <Icons.DatabaseBackup className="text-muted-foreground mx-auto h-6 w-6" />
-              <p className="mt-3 text-sm font-medium">{t("settings:backup_empty_title")}</p>
-              <p className="text-muted-foreground mt-1 text-sm">
-                {t("settings:backup_empty_description")}
+            <div className="py-2">
+              <p className="text-muted-foreground text-[15px]">
+                {t("settings:backup_empty_title")}. {t("settings:backup_empty_description")}
               </p>
             </div>
           ) : (
-            <div className="divide-border divide-y rounded-md border">
+            <div className="">
               {backups.map((backup) => (
                 <div
                   key={backup.filename}
-                  className="grid gap-3 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                  className="grid gap-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium leading-5">{backup.filename}</p>
@@ -389,7 +387,7 @@ const PanelIntro = () => {
   const { t } = useTranslation();
   return (
     <div>
-      <h3 className="text-lg font-semibold">{t("settings:backup_title")}</h3>
+      <h3 className="text-lg font-medium">{t("settings:backup_title")}</h3>
       <p className="text-muted-foreground text-sm">{t("settings:backup_description")}</p>
     </div>
   );
@@ -444,7 +442,7 @@ const BackupCard = ({
 const ImportantNotes = ({ notes }: { notes: readonly string[] }) => {
   const { t } = useTranslation();
   return (
-    <div className="bg-muted/30 rounded-md border p-4">
+    <div className="p-4">
       <div className="flex items-start gap-3">
         <Icons.Info className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0" />
         <div className="min-w-0 text-sm">

@@ -20,10 +20,8 @@ import { useGoals } from "../hooks/use-goals";
 function StatBlock({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-baseline gap-2.5">
-      <span className="text-muted-foreground text-[10px] tracking-[0.15em]">{label}</span>
-      <span className="text-foreground font-serif text-[15px] font-semibold tabular-nums">
-        {value}
-      </span>
+      <span className="text-muted-foreground text-[13px]">{label}</span>
+      <span className="text-foreground text-[15px] font-medium tabular-nums">{value}</span>
     </div>
   );
 }
@@ -122,7 +120,7 @@ export default function GoalsDashboardPage() {
               <Icons.Target className="text-muted-foreground h-8 w-8" />
             </div>
             <div className="space-y-2">
-              <p className="text-lg font-semibold">{t("goals:dashboard.empty_title")}</p>
+              <p className="text-lg font-medium">{t("goals:dashboard.empty_title")}</p>
               <p className="text-muted-foreground max-w-md text-sm leading-relaxed">
                 {t("goals:dashboard.empty_description")}
               </p>

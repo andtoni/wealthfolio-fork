@@ -1,8 +1,10 @@
 import { format, parse, subMonths, addMonths } from "date-fns";
-import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { Icons } from "@wealthfolio/ui";
 import { useMemo, useState } from "react";
 
 import { Button, MonthYearPicker, Popover, PopoverContent, PopoverTrigger } from "@wealthfolio/ui";
+
+const { ChevronDown, ChevronLeft, ChevronRight } = Icons;
 
 interface MonthSwitcherProps {
   selectedMonth: string; // YYYY-MM

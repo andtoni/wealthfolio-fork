@@ -53,7 +53,7 @@ function CoverageProjectionTooltip({
     point.plannedSpending > 0 ? Math.min(100, (funded / point.plannedSpending) * 100) : 0;
 
   return (
-    <div className="bg-popover grid grid-cols-1 gap-1.5 rounded-md border p-2.5 shadow-md">
+    <div className="bg-popover grid grid-cols-1 gap-1.5 p-2.5 shadow-md">
       <p className="text-muted-foreground text-xs font-medium">
         {t("goals:coverage_chart.age_value", { age: point.age, valueLabel })}
       </p>
@@ -64,7 +64,7 @@ function CoverageProjectionTooltip({
             {t("goals:coverage_chart.planned_spending_yr")}
           </span>
         </div>
-        <span className="text-xs font-semibold tabular-nums">
+        <span className="text-xs font-medium tabular-nums">
           {formatCompactAmount(point.plannedSpending, currency)}
         </span>
       </div>
@@ -78,7 +78,7 @@ function CoverageProjectionTooltip({
             {t("goals:coverage_chart.retirement_income_used_yr")}
           </span>
         </div>
-        <span className="text-xs font-semibold tabular-nums">
+        <span className="text-xs font-medium tabular-nums">
           {formatCompactAmount(point.retirementIncome, currency)}
         </span>
       </div>
@@ -92,7 +92,7 @@ function CoverageProjectionTooltip({
             {t("goals:coverage_chart.portfolio_withdrawal_used_yr")}
           </span>
         </div>
-        <span className="text-xs font-semibold tabular-nums">
+        <span className="text-xs font-medium tabular-nums">
           {formatCompactAmount(point.portfolioWithdrawal, currency)}
         </span>
       </div>
@@ -107,7 +107,7 @@ function CoverageProjectionTooltip({
               {t("goals:coverage_chart.unfunded_spending_yr")}
             </span>
           </div>
-          <span className="text-xs font-semibold tabular-nums text-red-500">
+          <span className="text-xs font-medium tabular-nums text-red-500">
             {formatCompactAmount(point.shortfall, currency)}
           </span>
         </div>
@@ -117,17 +117,17 @@ function CoverageProjectionTooltip({
           <span className="text-muted-foreground text-xs">
             {t("goals:coverage_chart.withdrawal_taxes_yr")}
           </span>
-          <span className="text-xs font-semibold tabular-nums">
+          <span className="text-xs font-medium tabular-nums">
             +{formatCompactAmount(point.taxes, currency)}
           </span>
         </div>
       )}
-      <div className="flex items-center justify-between gap-5 border-t pt-1">
+      <div className="flex items-center justify-between gap-5 pt-1">
         <span className="text-muted-foreground text-xs">
           {t("goals:coverage_chart.spending_covered")}
         </span>
         <span
-          className={`text-xs font-semibold tabular-nums ${
+          className={`text-xs font-medium tabular-nums ${
             coveragePct >= 100
               ? "text-green-600"
               : coveragePct >= 75
@@ -203,7 +203,7 @@ export function RetirementCoverageChart({
           strokeDasharray="4 3"
           strokeOpacity={0.5}
           label={{
-            value: `${referenceLabelPrefix} · ${fireAgeForBudget}`,
+            value: `${referenceLabelPrefix}, ${fireAgeForBudget}`,
             position: "top",
             fontSize: 10,
             fontWeight: 600,

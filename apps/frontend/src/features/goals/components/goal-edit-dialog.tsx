@@ -123,7 +123,7 @@ export function GoalEditDialog({ goal, open, onClose }: Props) {
           </DialogHeader>
 
           <div className="space-y-5">
-            <div className="bg-muted/30 rounded-xl border p-3">
+            <div className="p-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium">{t("goals:edit.goal_type")}</p>
@@ -190,7 +190,7 @@ export function GoalEditDialog({ goal, open, onClose }: Props) {
                         >
                           <Icon className="h-4 w-4" />
                         </span>
-                        <span className="text-muted-foreground text-[11px] font-medium uppercase tracking-wider">
+                        <span className="text-muted-foreground text-[13px] font-medium">
                           {option.hint}
                         </span>
                       </span>

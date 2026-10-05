@@ -5,9 +5,7 @@ import { useTranslation } from "react-i18next";
 import {
   Button,
   FacetedFilter,
-  FacetedSearchInput,
   Icons,
-  Input,
   ScrollArea,
   Sheet,
   SheetContent,
@@ -15,6 +13,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@wealthfolio/ui";
+
+import { cn } from "@/lib/utils";
 
 import { AmountRangeFilter, type AmountRange } from "./amount-range-filter";
 import { DateRangeFilter } from "./date-range-filter";
@@ -61,10 +61,11 @@ interface TransactionsFilterBarProps {
   onClearAll: () => void;
 
   // Count display
-  visibleCount: number;
-  totalCount: number;
-  isRefreshing: boolean;
   isMobile?: boolean;
+  /** Phone only: the page title and the select toggle shown beside the filter button. */
+  title?: string;
+  selectMode?: boolean;
+  onToggleSelect?: () => void;
 }
 
 export function TransactionsFilterBar({
@@ -94,10 +95,10 @@ export function TransactionsFilterBar({
   hasEvents,
   filtersActive,
   onClearAll,
-  visibleCount,
-  totalCount,
-  isRefreshing,
   isMobile = false,
+  title,
+  selectMode = false,
+  onToggleSelect,
 }: TransactionsFilterBarProps) {
   const { t } = useTranslation();
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -117,15 +118,21 @@ export function TransactionsFilterBar({
     amountRange.max != null ||
     !!dateRange?.from ||
     !!dateRange?.to;
-  const countLabel =
-    totalCount > 0
-      ? t("spending:filters.countLabel", {
-          visible: visibleCount,
-          total: totalCount,
-          count: totalCount,
-        })
-      : t("spending:filters.countZero");
-
+  const chips = [
+    { label: t("spending:filters.category"), Icon: Icons.Tag, active: selectedCategories.size > 0 },
+    { label: t("activity:table_account"), Icon: Icons.Wallet, active: selectedAccounts.size > 0 },
+    {
+      label: t("activity:table_date"),
+      Icon: Icons.Calendar,
+      active: !!dateRange?.from || !!dateRange?.to,
+    },
+    {
+      label: t("spending:filters.statusUncategorized"),
+      Icon: Icons.ListFilter,
+      active: statusFilter !== "all",
+    },
+    { label: t("activity:table_type"), Icon: Icons.ArrowLeftRight, active: selectedTypes.size > 0 },
+  ];
   const filterControls = (
     <>
       <FacetedFilter
@@ -174,86 +181,92 @@ export function TransactionsFilterBar({
     </>
   );
 
-  if (isMobile) {
-    return (
-      <div className="space-y-2">
-        <div className="flex shrink-0 items-center gap-2 pt-2">
-          <Input
-            placeholder={t("common:search_placeholder")}
-            value={searchInput}
-            onChange={(e) => onSearchInputChange(e.target.value)}
-            className="bg-secondary/30 h-10 flex-1 rounded-full border-none md:h-12"
-          />
-          <Button
-            variant="outline"
-            size="icon"
-            className="size-9 flex-shrink-0"
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3 pt-1">
+        <h1 className="text-[32px] font-medium leading-tight tracking-tight">{title}</h1>
+        <div className="bg-card flex shrink-0 items-center rounded-full p-1 shadow-sm">
+          {onToggleSelect && (
+            <button
+              type="button"
+              className={cn(
+                "flex h-9 w-10 items-center justify-center rounded-full",
+                selectMode && "bg-foreground/10",
+              )}
+              onClick={onToggleSelect}
+              aria-label={selectMode ? t("spending:filters.done") : t("common:select")}
+              aria-pressed={selectMode}
+            >
+              <Icons.ListChecks className="h-[18px] w-[18px]" />
+            </button>
+          )}
+          <button
+            type="button"
+            className="relative flex h-9 w-10 items-center justify-center rounded-full"
             onClick={() => setMobileFiltersOpen(true)}
             aria-label={t("spending:filters.filterTransactions")}
-            title={t("spending:filters.filterTransactions")}
           >
-            <div className="relative">
-              <Icons.ListFilter className="h-4 w-4" />
-              {controlFiltersActive && (
-                <span className="bg-primary absolute -left-[1.5px] -top-1 h-2 w-2 rounded-full" />
-              )}
-            </div>
-          </Button>
+            <Icons.ListFilter className="h-[18px] w-[18px]" />
+            {controlFiltersActive && (
+              <span className="bg-primary absolute right-2 top-1.5 h-2 w-2 rounded-full" />
+            )}
+          </button>
         </div>
-        <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
-          <SheetContent side="bottom" className="rounded-t-4xl mx-1 flex h-[80vh] flex-col p-0">
-            <SheetHeader className="border-border border-b px-6 py-4 text-left">
-              <SheetTitle>{t("spending:filters.filterTransactions")}</SheetTitle>
-            </SheetHeader>
-            <ScrollArea className="flex-1">
-              <div className="flex flex-wrap gap-2 px-6 py-4">{filterControls}</div>
-            </ScrollArea>
-            <SheetFooter className="border-border flex-row border-t px-6 py-4">
-              <Button
-                variant="ghost"
-                className="text-muted-foreground hover:text-foreground"
-                onClick={onClearAll}
-                disabled={!filtersActive}
-              >
-                {t("spending:filters.clearAll")}
-              </Button>
-              <Button className="ml-auto" onClick={() => setMobileFiltersOpen(false)}>
-                {t("spending:filters.done")}
-              </Button>
-            </SheetFooter>
-          </SheetContent>
-        </Sheet>
       </div>
-    );
-  }
-
-  return (
-    <div className="-mx-1 flex flex-wrap items-center gap-2 px-1 pb-1">
-      <FacetedSearchInput
-        value={searchInput}
-        onChange={onSearchInputChange}
-        className="w-[160px] lg:w-[240px]"
-      />
-      {filterControls}
-      {filtersActive && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onClearAll}
-          className="text-muted-foreground hover:text-foreground h-8 shrink-0 px-2 text-xs"
+      <label className="bg-card flex h-11 items-center gap-2.5 rounded-full px-4 shadow-sm">
+        <Icons.Search className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
+        <input
+          placeholder={t("common:search_placeholder")}
+          value={searchInput}
+          onChange={(e) => onSearchInputChange(e.target.value)}
+          className="placeholder:text-muted-foreground h-full min-w-0 flex-1 bg-transparent text-[15px] outline-none"
+        />
+      </label>
+      <div
+        data-no-swipe-drag
+        className="-mx-4 overflow-x-auto whitespace-nowrap px-4 [scrollbar-width:none] md:mx-0 md:px-0 [&::-webkit-scrollbar]:hidden"
+      >
+        {chips.map((chip) => (
+          <button
+            key={chip.label}
+            type="button"
+            className={cn(
+              "mr-2 inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 text-sm",
+              chip.active ? "bg-foreground text-background" : "bg-foreground/[0.07]",
+            )}
+            onClick={() => setMobileFiltersOpen(true)}
+          >
+            <chip.Icon className="h-4 w-4" aria-hidden="true" />
+            {chip.label}
+          </button>
+        ))}
+      </div>
+      <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
+        <SheetContent
+          side={isMobile ? "bottom" : "right"}
+          className={cn("flex flex-col p-0", isMobile && "rounded-t-4xl mx-1 h-[80vh]")}
         >
-          {t("spending:filters.clearAll")}
-        </Button>
-      )}
-      <span className="text-muted-foreground ml-auto inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs tabular-nums">
-        {countLabel}
-        {isRefreshing && (
-          <Icons.Spinner
-            className="h-3 w-3 animate-spin"
-            aria-label={t("spending:filters.refreshing")}
-          />
-        )}
-      </span>
+          <SheetHeader className="border-border border-b px-6 py-4 text-left">
+            <SheetTitle>{t("spending:filters.filterTransactions")}</SheetTitle>
+          </SheetHeader>
+          <ScrollArea className="flex-1">
+            <div className="flex flex-wrap gap-2 px-6 py-4">{filterControls}</div>
+          </ScrollArea>
+          <SheetFooter className="border-border flex-row border-t px-6 py-4">
+            <Button
+              variant="ghost"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={onClearAll}
+              disabled={!filtersActive}
+            >
+              {t("spending:filters.clearAll")}
+            </Button>
+            <Button className="ml-auto" onClick={() => setMobileFiltersOpen(false)}>
+              {t("spending:filters.done")}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

@@ -2,13 +2,14 @@ import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
+import { SECTION_HEADING } from "@/components/dashboard-card";
 import type { Activity } from "@/lib/types";
 import { cn, formatDateISO } from "@/lib/utils";
 import { Icons, PrivacyAmount, Skeleton } from "@wealthfolio/ui";
 
 import { getActivitySpendingAmount } from "../lib/constants";
 import { useEventSpendingSummaries } from "../hooks/use-spending-events";
-import { themeBg, type Palette } from "../lib/theme";
+import { type Palette } from "../lib/theme";
 import { CategoryIcon, type CategoryMetaMap } from "./category-chips";
 import { useEventDialog } from "./event-dialog-provider";
 
@@ -132,12 +133,12 @@ export function EventsCard({
   // a server outage looks identical to "user has no events".
   if (eventSummariesErrored) {
     return (
-      <div className="border-border/40 bg-card/70 rounded-xl border p-4 text-center text-xs backdrop-blur-xl md:p-5">
+      <div className="text-[15px]">
         <div className="text-muted-foreground">{t("spending:events.loadError")}</div>
         <button
           type="button"
           onClick={() => void refetchEventSummaries()}
-          className="text-foreground mt-2 inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline"
+          className="text-foreground mt-2 inline-flex items-center gap-1 text-sm underline-offset-4 hover:underline"
         >
           {t("common:retry")}
         </button>
@@ -147,7 +148,7 @@ export function EventsCard({
 
   if (eventSummariesLoading) {
     return (
-      <div className="border-border/40 bg-card/70 rounded-xl border p-4 backdrop-blur-xl md:p-5">
+      <div>
         <div className="flex items-center gap-2">
           <Skeleton className="h-4 w-4 rounded-full" />
           <div className="flex-1 space-y-1.5">
@@ -165,27 +166,24 @@ export function EventsCard({
 
   if (!pick) {
     return (
-      <div className="border-border/40 bg-card/70 rounded-xl border p-4 backdrop-blur-xl md:p-5">
+      <div>
         <div className="flex items-center gap-2">
-          <Icons.Calendar className="h-4 w-4 shrink-0" style={{ color: theme.deep }} />
           <div className="min-w-0 flex-1">
-            <div className="text-foreground text-sm font-semibold">
-              {t("spending:eventsCard.title")}
-            </div>
-            <div className="text-muted-foreground/70 text-[11px]">
+            <div className={SECTION_HEADING}>{t("spending:eventsCard.title")}</div>
+            <div className="text-muted-foreground text-[15px]">
               {t("spending:eventsCard.noEventsInPeriod")}
             </div>
           </div>
         </div>
 
-        <div className="text-muted-foreground/80 mt-3 text-xs leading-snug">
+        <div className="text-muted-foreground mt-2 text-[15px] leading-snug">
           {t("spending:eventsCard.createPrompt")}
         </div>
 
         <button
           type="button"
           onClick={() => openEventDialog()}
-          className="text-muted-foreground hover:text-foreground mt-3 inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline"
+          className="text-muted-foreground hover:text-foreground mt-3 inline-flex items-center gap-1 text-sm underline-offset-4 hover:underline"
         >
           {t("spending:events.createEvent")}
           <Icons.ChevronRight className="h-3 w-3" />
@@ -245,24 +243,19 @@ export function EventsCard({
   }
 
   return (
-    <div className="border-border/40 bg-card/70 rounded-xl border p-4 backdrop-blur-xl md:p-5">
+    <div>
       <div className="flex items-center gap-2">
         <HeaderIcon className="h-4 w-4 shrink-0" style={{ color: theme.deep }} />
         <div className="min-w-0 flex-1">
-          <div className="text-foreground truncate text-sm font-semibold">{ev!.eventName}</div>
-          <div className="text-muted-foreground/70 text-[11px]">{dateRangeLabel}</div>
+          <div className={`${SECTION_HEADING} truncate`}>{ev!.eventName}</div>
+          <div className="text-muted-foreground text-[15px]">{dateRangeLabel}</div>
         </div>
-        <span
-          className="rounded-full px-1.5 py-0.5 text-[9px] font-bold tracking-wide"
-          style={{ backgroundColor: themeBg(theme, 0.2), color: theme.deep }}
-        >
-          {tag}
-        </span>
+        <span className="text-muted-foreground text-[13px]">{tag}</span>
       </div>
 
       {pick.mode === "upcoming" && eventSpent <= 0 ? (
         <div className="mt-3">
-          <div className="text-foreground text-2xl font-bold tabular-nums tracking-tight">
+          <div className="text-foreground text-[28px] font-medium tabular-nums leading-tight">
             {t("spending:eventsCard.daysValue", { count: pick.days })}
           </div>
           <div className="text-muted-foreground/80 text-xs">
@@ -275,33 +268,27 @@ export function EventsCard({
       ) : eventSpent > 0 ? (
         <>
           <div className="mt-3">
-            <div className="text-foreground text-2xl font-bold tabular-nums tracking-tight">
+            <div className="text-foreground text-[28px] font-medium tabular-nums leading-tight">
               <PrivacyAmount value={eventSpent} currency={currency} />
             </div>
-            <div className="text-muted-foreground/80 text-xs">
+            <div className="text-muted-foreground text-[15px]">
               {pick.mode === "recent"
                 ? t("spending:eventsCard.total")
-                : t("spending:eventsCard.spentSoFar")}{" "}
-              · {t("spending:eventsCard.transactionCount", { count: ev!.transactionCount })}
-              {subLine && (
-                <>
-                  {" · "}
-                  {subLine}
-                </>
-              )}
+                : t("spending:eventsCard.spentSoFar")}
+              , {t("spending:eventsCard.transactionCount", { count: ev!.transactionCount })}
+              {subLine && <>, {subLine}</>}
             </div>
           </div>
 
-          <div className="border-border/40 text-muted-foreground/80 mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t pt-2 text-[11px]">
+          <div className="text-muted-foreground mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[15px]">
             <span className="tabular-nums">
-              <span className="text-foreground/90 font-semibold">
+              <span className="text-foreground">
                 <PrivacyAmount value={dailyAvg} currency={currency} />
               </span>{" "}
               {t("spending:eventsCard.perDay")}
             </span>
             {compareMultiple > 0 && (
               <>
-                <span className="text-muted-foreground/40">·</span>
                 <span
                   className={cn(
                     "tabular-nums",
@@ -323,35 +310,30 @@ export function EventsCard({
           </div>
         </>
       ) : (
-        <div className="text-muted-foreground/80 mt-3 text-xs">
+        <div className="text-muted-foreground mt-3 text-[15px]">
           {subLine || t("spending:eventsCard.noTaggedYet")}
         </div>
       )}
 
       {eventSpent > 0 && topCategories.length > 0 && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="text-muted-foreground/60 text-[10px] font-semibold uppercase tracking-wide">
-            {t("spending:eventsCard.top")}
-          </span>
-          {topCategories.map((c) => {
-            const accent = c.color ?? theme.deep;
-            return (
+        <div className="mt-2">
+          {topCategories.map((c) => (
+            <div key={c.name} className="flex items-center gap-3 py-1.5 text-[15px]">
               <span
-                key={c.name}
-                className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
                 style={{
-                  backgroundColor: c.color ? `${c.color}1F` : themeBg(theme, 0.12),
-                  color: accent,
+                  backgroundColor: `color-mix(in srgb, ${c.color ?? theme.deep} 18%, transparent)`,
+                  color: c.color ?? theme.deep,
                 }}
               >
-                <CategoryIcon icon={c.icon} fallback={c.name} className="h-3.5 w-3.5" />
-                <span className="text-foreground/85">{c.name}</span>
-                <span className="opacity-70">
-                  <PrivacyAmount value={c.amount} currency={currency} />
-                </span>
+                <CategoryIcon icon={c.icon} fallback={c.name} className="h-4 w-4" />
               </span>
-            );
-          })}
+              <span className="min-w-0 flex-1 truncate">{c.name}</span>
+              <span className="tabular-nums">
+                <PrivacyAmount value={c.amount} currency={currency} />
+              </span>
+            </div>
+          ))}
         </div>
       )}
 
@@ -363,7 +345,7 @@ export function EventsCard({
             start.setDate(start.getDate() + 7);
             openEventDialog({ prefill: { startDate: start, endDate: start } });
           }}
-          className="text-muted-foreground hover:text-foreground mt-3 inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline"
+          className="text-muted-foreground hover:text-foreground mt-3 inline-flex items-center gap-1 text-sm underline-offset-4 hover:underline"
         >
           {t("spending:eventsCard.planEvent")}
           <Icons.ChevronRight className="h-3 w-3" />
@@ -371,7 +353,7 @@ export function EventsCard({
       ) : (
         <Link
           to="/spending/insights?stage=when"
-          className="text-muted-foreground hover:text-foreground mt-3 inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline"
+          className="text-muted-foreground hover:text-foreground mt-3 inline-flex items-center gap-1 text-sm underline-offset-4 hover:underline"
         >
           {pick.mode === "recent"
             ? t("spending:eventsCard.seeBreakdown")

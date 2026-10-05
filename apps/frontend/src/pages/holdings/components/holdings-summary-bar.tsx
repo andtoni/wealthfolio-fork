@@ -81,15 +81,13 @@ function SummaryItem({
 }: SummaryItemProps) {
   return (
     <div className="flex flex-col items-center sm:items-start">
-      <span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
-        {label}
-      </span>
+      <span className="text-muted-foreground text-xs font-medium">{label}</span>
       <AmountDisplay
         value={value}
         currency={currency}
         isHidden={isHidden}
         colorFormat={colorFormat}
-        className={cn("text-base", isBold && "font-semibold", className)}
+        className={cn("text-base", isBold && "font-medium", className)}
       />
     </div>
   );

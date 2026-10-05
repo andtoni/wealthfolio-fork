@@ -1,3 +1,4 @@
+import { SECTION_HEADING } from "@/components/dashboard-card";
 import { getPlatforms } from "@/features/wealthfolio-connect";
 import { useAccounts } from "@/hooks/use-accounts";
 import { QueryKeys } from "@/lib/query-keys";
@@ -7,7 +8,6 @@ import {
   Button,
   EmptyPlaceholder,
   Icons,
-  Separator,
   Skeleton,
   ToggleGroup,
   ToggleGroupItem,
@@ -197,7 +197,6 @@ const SettingsAccountsPage = () => {
             </Button>
           </>
         </SettingsHeader>
-        <Separator />
 
         {/* Search and Filter Bar */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -208,7 +207,7 @@ const SettingsAccountsPage = () => {
               placeholder={t("settings:accounts.search_placeholder")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="!h-9 pl-9 pr-9 text-sm"
+              className="bg-card !h-10 rounded-full border-0 pl-9 pr-9 text-[15px] shadow-sm"
             />
             {searchQuery && (
               <button
@@ -226,29 +225,29 @@ const SettingsAccountsPage = () => {
             type="single"
             value={filter}
             onValueChange={(value) => value && setFilter(value as FilterType)}
-            className="bg-muted h-9 rounded-md p-1"
+            className="bg-foreground/[0.07] h-9 rounded-full p-1"
           >
             <ToggleGroupItem
               value="all"
-              className="data-[state=on]:bg-background h-7 rounded px-3 text-xs"
+              className="data-[state=on]:bg-card h-7 rounded-full px-3 text-[13px] data-[state=on]:shadow-sm"
             >
               {t("settings:accounts.filter_all")}
             </ToggleGroupItem>
             <ToggleGroupItem
               value="active"
-              className="data-[state=on]:bg-background h-7 rounded px-3 text-xs"
+              className="data-[state=on]:bg-card h-7 rounded-full px-3 text-[13px] data-[state=on]:shadow-sm"
             >
               {t("settings:accounts.filter_active")}
             </ToggleGroupItem>
             <ToggleGroupItem
               value="hidden"
-              className="data-[state=on]:bg-background h-7 rounded px-3 text-xs"
+              className="data-[state=on]:bg-card h-7 rounded-full px-3 text-[13px] data-[state=on]:shadow-sm"
             >
               {t("settings:accounts.filter_hidden")}
             </ToggleGroupItem>
             <ToggleGroupItem
               value="archived"
-              className="data-[state=on]:bg-background h-7 rounded px-3 text-xs"
+              className="data-[state=on]:bg-card h-7 rounded-full px-3 text-[13px] data-[state=on]:shadow-sm"
             >
               {t("settings:accounts.filter_archived")}
             </ToggleGroupItem>
@@ -278,42 +277,34 @@ const SettingsAccountsPage = () => {
               {/* Active Accounts Section */}
               {activeAccounts.length > 0 && (
                 <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-muted-foreground text-sm font-medium">
-                      {t("settings:accounts.section_active")}
-                    </h3>
-                    <span className="bg-success/20 text-success rounded-full px-2 py-0.5 text-xs font-medium">
+                  <div className="flex items-baseline gap-2">
+                    <h3 className={SECTION_HEADING}>{t("settings:accounts.section_active")}</h3>
+                    <span className="text-muted-foreground text-[15px] tabular-nums">
                       {counts.active}
                     </span>
                   </div>
-                  <div className="divide-border bg-card divide-y rounded-md border">
-                    {activeAccounts.map(renderAccountItem)}
-                  </div>
+                  <div className="">{activeAccounts.map(renderAccountItem)}</div>
                 </div>
               )}
 
               {/* Hidden & Archived Section */}
               {inactiveAccounts.length > 0 && (
                 <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-muted-foreground text-sm font-medium">
+                  <div className="flex items-baseline gap-2">
+                    <h3 className={SECTION_HEADING}>
                       {t("settings:accounts.section_hidden_archived")}
                     </h3>
-                    <span className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-xs font-medium">
+                    <span className="text-muted-foreground text-[15px] tabular-nums">
                       {counts.hidden + counts.archived}
                     </span>
                   </div>
-                  <div className="divide-border bg-card divide-y rounded-md border">
-                    {inactiveAccounts.map(renderAccountItem)}
-                  </div>
+                  <div className="">{inactiveAccounts.map(renderAccountItem)}</div>
                 </div>
               )}
             </>
           ) : (
             /* Flat list when filtered */
-            <div className="divide-border bg-card divide-y rounded-md border">
-              {filteredAccounts.map(renderAccountItem)}
-            </div>
+            <div className="">{filteredAccounts.map(renderAccountItem)}</div>
           )}
         </div>
       </div>

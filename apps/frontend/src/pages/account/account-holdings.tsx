@@ -1,10 +1,8 @@
 import { useAccounts } from "@/hooks/use-accounts";
 import { useHoldings } from "@/hooks/use-holdings";
-import { useIsMobileViewport } from "@/hooks/use-platform";
 import { HoldingType } from "@/lib/types";
 import { AccountType, isLiabilityAccountType } from "@/lib/constants";
 import { canAddHoldings } from "@/lib/activity-restrictions";
-import { HoldingsTable } from "@/pages/holdings/components/holdings-table";
 import { HoldingsTableMobile } from "@/pages/holdings/components/holdings-table-mobile";
 import {
   Button,
@@ -33,7 +31,6 @@ const AccountHoldings = ({
   onAddHoldings,
 }: AccountHoldingsProps) => {
   const { t } = useTranslation();
-  const isMobile = useIsMobileViewport();
   const navigate = useNavigate();
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
 
@@ -209,7 +206,7 @@ const AccountHoldings = ({
     <div>
       {showHeader && (
         <div className={`flex items-center gap-3 ${showTitle ? "justify-between" : "justify-end"}`}>
-          {showTitle && <h3 className="text-lg font-bold">{t("account:holdings")}</h3>}
+          {showTitle && <h3 className="text-lg font-medium">{t("account:holdings")}</h3>}
           {canEditHoldingsDirectly && onAddHoldings && (
             <TooltipProvider>
               <Tooltip>
@@ -226,22 +223,18 @@ const AccountHoldings = ({
           )}
         </div>
       )}
-      {isMobile ? (
-        <HoldingsTableMobile
-          holdings={filteredHoldings ?? []}
-          isLoading={isLoading}
-          selectedTypes={selectedTypes}
-          setSelectedTypes={setSelectedTypes}
-          accountFilter={{ type: "account", accountId: selectedAccount?.id ?? "" }}
-          onAccountScopeChange={() => undefined}
-          accounts={[]}
-          portfolios={[]}
-          showAccountScope={false}
-          typeOptions={typeOptions}
-        />
-      ) : (
-        <HoldingsTable holdings={filteredHoldings ?? []} isLoading={isLoading} />
-      )}
+      <HoldingsTableMobile
+        holdings={filteredHoldings ?? []}
+        isLoading={isLoading}
+        selectedTypes={selectedTypes}
+        setSelectedTypes={setSelectedTypes}
+        accountFilter={{ type: "account", accountId: selectedAccount?.id ?? "" }}
+        onAccountScopeChange={() => undefined}
+        accounts={[]}
+        portfolios={[]}
+        showAccountScope={false}
+        typeOptions={typeOptions}
+      />
     </div>
   );
 };

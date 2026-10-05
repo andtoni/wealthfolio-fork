@@ -95,7 +95,7 @@ export const OnboardingAppearance = forwardRef<
               <div className="bg-muted rounded-lg p-2">
                 <Icons.Palette className="text-muted-foreground h-5 w-5" />
               </div>
-              <span className="text-xl font-semibold">{t("onboarding:appearance.themeLabel")}</span>
+              <span className="text-xl font-medium">{t("onboarding:appearance.themeLabel")}</span>
             </div>
 
             <div className="grid grid-cols-3 gap-3 sm:gap-4">
@@ -235,7 +235,7 @@ export const OnboardingAppearance = forwardRef<
                 <div className="bg-muted rounded-lg p-2">
                   <Icons.PanelLeft className="text-muted-foreground h-5 w-5" />
                 </div>
-                <span className="text-xl font-semibold">
+                <span className="text-xl font-medium">
                   {t("onboarding:appearance.navigationLabel")}
                 </span>
               </div>
@@ -250,7 +250,7 @@ export const OnboardingAppearance = forwardRef<
               <div className="bg-muted rounded-lg p-2">
                 <Icons.Type className="text-muted-foreground h-5 w-5" />
               </div>
-              <span className="text-xl font-semibold">{t("onboarding:appearance.fontLabel")}</span>
+              <span className="text-xl font-medium">{t("onboarding:appearance.fontLabel")}</span>
             </div>
 
             <div className="grid grid-cols-3 gap-3 sm:gap-4">

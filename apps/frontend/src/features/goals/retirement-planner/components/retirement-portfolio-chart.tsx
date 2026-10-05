@@ -136,7 +136,7 @@ function RetirementChartTooltip({
       : t("goals:portfolio_chart.phase_accumulation");
 
   return (
-    <div className="bg-popover grid grid-cols-1 gap-1.5 rounded-md border p-2.5 shadow-md">
+    <div className="bg-popover grid grid-cols-1 gap-1.5 p-2.5 shadow-md">
       <p className="text-muted-foreground text-xs font-medium">
         {t("goals:portfolio_chart.tooltip_header", {
           age: point.age,
@@ -154,7 +154,7 @@ function RetirementChartTooltip({
             {t("goals:portfolio_chart.start_portfolio")}
           </span>
         </div>
-        <span className="text-xs font-semibold tabular-nums">
+        <span className="text-xs font-medium tabular-nums">
           {formatCompactAmount(point.portfolioStart, currency)}
         </span>
       </div>
@@ -162,7 +162,7 @@ function RetirementChartTooltip({
         <span className="text-muted-foreground text-xs">
           {t("goals:portfolio_chart.end_portfolio")}
         </span>
-        <span className="text-xs font-semibold tabular-nums">
+        <span className="text-xs font-medium tabular-nums">
           {formatCompactAmount(point.portfolioEnd, currency)}
         </span>
       </div>
@@ -174,7 +174,7 @@ function RetirementChartTooltip({
               {t("goals:portfolio_chart.what_youll_need")}
             </span>
           </div>
-          <span className="text-xs font-semibold tabular-nums">
+          <span className="text-xs font-medium tabular-nums">
             {formatCompactAmount(point.target, currency)}
           </span>
         </div>
@@ -184,7 +184,7 @@ function RetirementChartTooltip({
           <span className="text-muted-foreground text-xs">
             {t("goals:portfolio_chart.contribution_yr")}
           </span>
-          <span className="text-xs font-semibold tabular-nums">
+          <span className="text-xs font-medium tabular-nums">
             {formatCompactAmount(point.annualContribution, currency)}
           </span>
         </div>
@@ -194,7 +194,7 @@ function RetirementChartTooltip({
           <span className="text-muted-foreground text-xs">
             {t("goals:portfolio_chart.income_yr")}
           </span>
-          <span className="text-xs font-semibold tabular-nums">
+          <span className="text-xs font-medium tabular-nums">
             {formatCompactAmount(point.annualIncome, currency)}
           </span>
         </div>
@@ -203,7 +203,7 @@ function RetirementChartTooltip({
         <span className="text-muted-foreground text-xs">
           {t("goals:coverage_chart.planned_spending_yr")}
         </span>
-        <span className="text-xs font-semibold tabular-nums">
+        <span className="text-xs font-medium tabular-nums">
           {formatCompactAmount(point.annualExpenses, currency)}
         </span>
       </div>
@@ -215,17 +215,17 @@ function RetirementChartTooltip({
               {t("goals:portfolio_chart.portfolio_withdrawal_yr")}
             </span>
           </div>
-          <span className="text-destructive text-xs font-semibold tabular-nums">
+          <span className="text-destructive text-xs font-medium tabular-nums">
             -{formatCompactAmount(point.withdrawal, currency)}
           </span>
         </div>
       )}
-      <div className="flex items-center justify-between space-x-4 border-t pt-1">
+      <div className="flex items-center justify-between space-x-4 pt-1">
         <span className="text-muted-foreground text-xs">
           {t("goals:portfolio_chart.net_portfolio_change")}
         </span>
         <span
-          className={`text-xs font-semibold tabular-nums ${
+          className={`text-xs font-medium tabular-nums ${
             point.netChange >= 0 ? "text-green-600" : "text-red-500"
           }`}
         >

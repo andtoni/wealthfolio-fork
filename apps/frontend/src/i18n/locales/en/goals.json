@@ -51,20 +51,20 @@
   "edit_limit": "Edit Limit",
   "delete_limit": "Delete Limit",
   "card": {
-    "complete": "COMPLETE",
+    "complete": "Complete",
     "saved_of": "saved of",
     "remaining": "remaining",
     "target_met": "target met",
-    "no_deadline": "NO DEADLINE",
-    "due": "DUE",
-    "achieved": "ACHIEVED",
-    "off_track": "OFF TRACK",
-    "at_risk": "AT RISK",
-    "months_left_one": "{{count}}M LEFT",
-    "months_left_other": "{{count}}M LEFT",
-    "years_left_one": "{{count}} YR LEFT",
-    "years_left_other": "{{count}} YRS LEFT",
-    "years_months_left": "{{years}}Y {{months}}M LEFT",
+    "no_deadline": "No deadline",
+    "due": "Due",
+    "achieved": "Achieved",
+    "off_track": "Off track",
+    "at_risk": "At risk",
+    "months_left_one": "{{count}}m left",
+    "months_left_other": "{{count}}m left",
+    "years_left_one": "{{count}} yr left",
+    "years_left_other": "{{count}} yrs left",
+    "years_months_left": "{{years}}y {{months}}m left",
     "quote_car": "for the road ahead",
     "quote_home": "a place to come home to",
     "quote_education": "for learning ahead",
@@ -80,10 +80,10 @@
     "create_first_goal": "Create Your First Goal",
     "archived_count_one": "Archived ({{count}})",
     "archived_count_other": "Archived ({{count}})",
-    "stat_saved": "SAVED",
-    "stat_target": "TARGET",
-    "stat_overall": "OVERALL",
-    "stat_on_track": "ON TRACK",
+    "stat_saved": "Saved",
+    "stat_target": "Target",
+    "stat_overall": "Overall",
+    "stat_on_track": "On track",
     "pending": {
       "failed_to_load": "Failed to load retirement projection.",
       "calculating": "Calculating retirement projection",
@@ -157,7 +157,7 @@
       "funded_pct": "{{pct}}% funded"
     },
     "chart": {
-      "projection_age_range": "Projection · age {{start}} → {{end}}",
+      "projection_age_range": "Projection, age {{start}}–{{end}}",
       "portfolio_trajectory": "Portfolio trajectory",
       "portfolio_trajectory_aria": "More info about portfolio trajectory",
       "trajectory_tip_traditional": "The retirement marker shows when withdrawals start. \"What you'll need\" is the minimum balance needed at each age to still fund planned retirement spending through life expectancy.",
@@ -182,7 +182,7 @@
       "fat_hint": "150% of planned spending",
       "fat_tip": "Retire with ~50% more spending than planned — room for travel, gifts, volatility, and lifestyle upgrades.",
       "more_info_about": "More info about {{label}}",
-      "done": "DONE"
+      "done": "Done"
     },
     "coverage": {
       "kicker": "Coverage",
@@ -296,7 +296,7 @@
       "title": "Retirement Income",
       "default_label": "Income {{n}}",
       "stream_fallback": "Stream",
-      "read_meta": "{{type}} · Age {{start}} → {{end}}",
+      "read_meta": "{{type}}, Age {{start}}–{{end}}",
       "pension_fund": "Pension fund",
       "income": "Income",
       "none_configured": "No retirement income configured",
@@ -305,7 +305,7 @@
       "growth_meta": "{{pct}}% growth",
       "inflation_indexed": "Inflation indexed",
       "fixed_nominal": "Fixed nominal",
-      "age_range": "Age {{start}} → {{end}}",
+      "age_range": "Age {{start}}–{{end}}",
       "remove": "Remove {{label}}",
       "item_fallback": "retirement income",
       "name_placeholder": "Income name",
@@ -540,7 +540,7 @@
     "open_retirement_guide": "Open retirement guide",
     "achieved": "Achieved",
     "header": "{{type}} goal",
-    "header_with_description": "{{type}} goal · {{description}}",
+    "header_with_description": "{{type}} goal, {{description}}",
     "delete_confirm": "Are you sure you want to delete \"{{title}}\"? This action cannot be undone.",
     "deleting": "Deleting...",
     "no_plan_yet": "This goal doesn't have a detailed plan yet."
@@ -586,7 +586,7 @@
     "showing": "Showing {{label}}"
   },
   "coverage_chart": {
-    "age_value": "Age {{age}} · {{valueLabel}}",
+    "age_value": "Age {{age}}, {{valueLabel}}",
     "planned_spending_yr": "Planned spending/yr:",
     "retirement_income_used_yr": "Retirement income used/yr:",
     "portfolio_withdrawal_used_yr": "Portfolio withdrawal used/yr:",
@@ -597,7 +597,7 @@
   "portfolio_chart": {
     "phase_retirement": "Retirement",
     "phase_accumulation": "Accumulation",
-    "tooltip_header": "Age {{age}} · {{phase}} · {{valueLabel}}",
+    "tooltip_header": "Age {{age}}, {{phase}}, {{valueLabel}}",
     "start_portfolio": "Start portfolio:",
     "end_portfolio": "End portfolio:",
     "what_youll_need": "What you'll need:",
@@ -607,7 +607,7 @@
     "net_portfolio_change": "Net portfolio change:",
     "event_goal": "Goal",
     "event_retirement": "Retirement",
-    "fi_reference": "FI · {{age}}",
+    "fi_reference": "FI, {{age}}",
     "series_required": "Required",
     "series_projected": "Projected"
   },
@@ -789,7 +789,7 @@
       "money_lasts_prompt_fire": "Run 10k paths to see how often the plan reaches FI and stays funded through age {{horizonAge}}."
     },
     "stress": {
-      "eyebrow_with_count": "What could break this plan? · {{count}} scenarios",
+      "eyebrow_with_count": "What could break this plan?, {{count}} scenarios",
       "heading": "What could break this plan?",
       "loading_short": "Stress tests are loading.",
       "running": "Running 6 stress scenarios against your plan…",

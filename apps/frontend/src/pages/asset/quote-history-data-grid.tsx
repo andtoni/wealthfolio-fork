@@ -455,7 +455,7 @@ export function QuoteHistoryDataGrid({
           onChangeDataSource={onChangeDataSource}
         />
 
-        <div className="divide-y rounded-md border">
+        <div className="divide-y">
           {mobilePageEntries.length === 0 ? (
             <p className="text-muted-foreground p-6 text-center text-sm">
               {t("asset:quoteGrid.no_quotes_available")}
@@ -468,7 +468,7 @@ export function QuoteHistoryDataGrid({
                 return (
                   <div key={entry.id} className="bg-muted/30 space-y-3 p-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium uppercase tracking-wide">
+                      <span className="text-xs font-medium">
                         {entry.isNew
                           ? t("asset:quoteGrid.new_quote")
                           : t("asset:quoteGrid.edit_quote")}
@@ -601,7 +601,7 @@ export function QuoteHistoryDataGrid({
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">{format(entry.date, "yyyy-MM-dd")}</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold">
+                      <span className="text-sm font-medium">
                         {formatAmount(entry.close, entry.currency, false)}
                       </span>
                       {isManualDataSource && (
@@ -694,7 +694,7 @@ export function QuoteHistoryDataGrid({
         onChangeDataSource={onChangeDataSource}
       />
 
-      <div className="min-h-0 flex-1 overflow-hidden rounded-md border">
+      <div className="min-h-0 flex-1 overflow-hidden">
         <DataGrid {...dataGrid} stretchColumns height="calc(100vh - 340px)" />
       </div>
     </div>

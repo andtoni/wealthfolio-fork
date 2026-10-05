@@ -70,7 +70,8 @@
   "tabs": {
     "investments": "Investments",
     "net_worth": "Net Worth",
-    "spending": "Spending"
+    "spending": "Spending",
+    "transactions": "Transactions"
   },
   "holdings": {
     "title": "Holdings",

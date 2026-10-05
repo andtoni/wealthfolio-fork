@@ -56,7 +56,7 @@ export function SyncHistory({ pageSize = 10 }: SyncHistoryProps) {
     return (
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+          <CardTitle className="flex items-center gap-2 text-base font-medium">
             <Icons.History className="h-5 w-5" />
             {t("connect:syncHistory.title")}
           </CardTitle>
@@ -74,7 +74,7 @@ export function SyncHistory({ pageSize = 10 }: SyncHistoryProps) {
     return (
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+          <CardTitle className="flex items-center gap-2 text-base font-medium">
             <Icons.History className="h-5 w-5" />
             {t("connect:syncHistory.title")}
           </CardTitle>
@@ -96,7 +96,7 @@ export function SyncHistory({ pageSize = 10 }: SyncHistoryProps) {
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+          <CardTitle className="flex items-center gap-2 text-base font-medium">
             <Icons.History className="h-5 w-5" />
             {t("connect:syncHistory.title")}
           </CardTitle>
@@ -154,7 +154,7 @@ function SyncRunItem({ run }: { run: ImportRun }) {
   }, [run.startedAt]);
 
   return (
-    <div className="hover:bg-muted/50 group rounded-lg border p-3 transition-colors">
+    <div className="hover:bg-muted/50 group p-3 transition-colors">
       <div className="flex items-start justify-between gap-3">
         {/* Left: Status icon + info */}
         <div className="flex items-start gap-3">
@@ -206,20 +206,18 @@ function SyncRunItem({ run }: { run: ImportRun }) {
         {run.summary && (
           <div className="flex shrink-0 items-center gap-3 text-xs">
             <div className="text-center">
-              <p className="font-semibold text-green-600 dark:text-green-400">
+              <p className="font-medium text-green-600 dark:text-green-400">
                 +{run.summary.inserted}
               </p>
               <p className="text-muted-foreground">{t("connect:syncHistory.new")}</p>
             </div>
             <div className="text-center">
-              <p className="font-semibold text-blue-600 dark:text-blue-400">
-                {run.summary.updated}
-              </p>
+              <p className="font-medium text-blue-600 dark:text-blue-400">{run.summary.updated}</p>
               <p className="text-muted-foreground">{t("connect:syncHistory.updated")}</p>
             </div>
             {run.summary.skipped > 0 && (
               <div className="text-center">
-                <p className="text-muted-foreground font-semibold">{run.summary.skipped}</p>
+                <p className="text-muted-foreground font-medium">{run.summary.skipped}</p>
                 <p className="text-muted-foreground">{t("connect:syncHistory.skipped")}</p>
               </div>
             )}

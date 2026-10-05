@@ -48,9 +48,6 @@ vi.mock("@tanstack/react-query", () => ({
 }));
 
 vi.mock("@wealthfolio/ui", () => ({
-  PrivacyAmount: ({ value, currency }: { value: number; currency: string }) => (
-    <span>{`value:${currency}:${value}`}</span>
-  ),
   GainAmount: ({
     value,
     currency,
@@ -82,8 +79,10 @@ vi.mock("@wealthfolio/ui/components/ui/icons", () => ({
   },
 }));
 
-vi.mock("@wealthfolio/ui/components/ui/separator", () => ({
-  Separator: () => <span>|</span>,
+vi.mock("@/features/spending/components/split-amount", () => ({
+  SplitAmount: ({ value, currency }: { value: number; currency: string }) => (
+    <span>{`value:${currency}:${value}`}</span>
+  ),
 }));
 
 vi.mock("@wealthfolio/ui/components/ui/skeleton", () => ({

@@ -51,20 +51,20 @@
   "edit_limit": "Modifier la limite",
   "delete_limit": "Supprimer la limite",
   "card": {
-    "complete": "TERMINÉ",
+    "complete": "Terminé",
     "saved_of": "épargné sur",
     "remaining": "restant",
     "target_met": "objectif atteint",
-    "no_deadline": "SANS ÉCHÉANCE",
-    "due": "ÉCHU",
-    "achieved": "ATTEINT",
-    "off_track": "HORS PISTE",
-    "at_risk": "À RISQUE",
-    "months_left_one": "{{count}} MOIS RESTANT",
-    "months_left_other": "{{count}} MOIS RESTANTS",
-    "years_left_one": "{{count}} AN RESTANT",
-    "years_left_other": "{{count}} ANS RESTANTS",
-    "years_months_left": "{{years}} A {{months}} M RESTANTS",
+    "no_deadline": "Sans échéance",
+    "due": "Échu",
+    "achieved": "Atteint",
+    "off_track": "Hors piste",
+    "at_risk": "À risque",
+    "months_left_one": "{{count}} mois restant",
+    "months_left_other": "{{count}} mois restants",
+    "years_left_one": "{{count}} an restant",
+    "years_left_other": "{{count}} ans restants",
+    "years_months_left": "{{years}} a {{months}} m restants",
     "quote_car": "pour la route à venir",
     "quote_home": "un endroit où rentrer",
     "quote_education": "pour l'apprentissage à venir",
@@ -80,10 +80,10 @@
     "create_first_goal": "Créer votre premier objectif",
     "archived_count_one": "Archivé ({{count}})",
     "archived_count_other": "Archivés ({{count}})",
-    "stat_saved": "ÉPARGNÉ",
-    "stat_target": "OBJECTIF",
-    "stat_overall": "GLOBAL",
-    "stat_on_track": "SUR LA BONNE VOIE",
+    "stat_saved": "Épargné",
+    "stat_target": "Objectif",
+    "stat_overall": "Global",
+    "stat_on_track": "Sur la bonne voie",
     "pending": {
       "failed_to_load": "Échec du chargement de la projection de retraite.",
       "calculating": "Calcul de la projection de retraite",
@@ -157,7 +157,7 @@
       "funded_pct": "{{pct}} % financé"
     },
     "chart": {
-      "projection_age_range": "Projection · de {{start}} à {{end}} ans",
+      "projection_age_range": "Projection, de {{start}} à {{end}} ans",
       "portfolio_trajectory": "Trajectoire du portefeuille",
       "portfolio_trajectory_aria": "Plus d’infos sur la trajectoire du portefeuille",
       "trajectory_tip_traditional": "Le repère de retraite indique quand les retraits commencent. « Ce dont vous aurez besoin » est le solde minimum nécessaire à chaque âge pour continuer à financer les dépenses de retraite prévues jusqu’à l’espérance de vie.",
@@ -182,7 +182,7 @@
       "fat_hint": "150 % des dépenses prévues",
       "fat_tip": "Partir à la retraite avec environ 50 % de dépenses de plus que prévu — de la marge pour les voyages, les cadeaux, la volatilité et l’amélioration du niveau de vie.",
       "more_info_about": "Plus d’infos sur {{label}}",
-      "done": "ATTEINT"
+      "done": "Atteint"
     },
     "coverage": {
       "kicker": "Couverture",
@@ -296,7 +296,7 @@
       "title": "Revenus de retraite",
       "default_label": "Revenu {{n}}",
       "stream_fallback": "Flux",
-      "read_meta": "{{type}} · Âge {{start}} → {{end}}",
+      "read_meta": "{{type}}, Âge {{start}}–{{end}}",
       "pension_fund": "Fonds de pension",
       "income": "Revenu",
       "none_configured": "Aucun revenu de retraite configuré",
@@ -305,7 +305,7 @@
       "growth_meta": "{{pct}} % de croissance",
       "inflation_indexed": "Indexé sur l’inflation",
       "fixed_nominal": "Nominal fixe",
-      "age_range": "Âge {{start}} → {{end}}",
+      "age_range": "Âge {{start}}–{{end}}",
       "remove": "Supprimer {{label}}",
       "item_fallback": "revenu de retraite",
       "name_placeholder": "Nom du revenu",
@@ -540,7 +540,7 @@
     "open_retirement_guide": "Ouvrir le guide de retraite",
     "achieved": "Atteint",
     "header": "Objectif {{type}}",
-    "header_with_description": "Objectif {{type}} · {{description}}",
+    "header_with_description": "Objectif {{type}}, {{description}}",
     "delete_confirm": "Voulez-vous vraiment supprimer « {{title}} » ? Cette action est irréversible.",
     "deleting": "Suppression...",
     "no_plan_yet": "Cet objectif n'a pas encore de plan détaillé."
@@ -586,7 +586,7 @@
     "showing": "Affichage : {{label}}"
   },
   "coverage_chart": {
-    "age_value": "Âge {{age}} · {{valueLabel}}",
+    "age_value": "Âge {{age}}, {{valueLabel}}",
     "planned_spending_yr": "Dépenses prévues/an :",
     "retirement_income_used_yr": "Revenu de retraite utilisé/an :",
     "portfolio_withdrawal_used_yr": "Retrait du portefeuille utilisé/an :",
@@ -597,7 +597,7 @@
   "portfolio_chart": {
     "phase_retirement": "Retraite",
     "phase_accumulation": "Accumulation",
-    "tooltip_header": "Âge {{age}} · {{phase}} · {{valueLabel}}",
+    "tooltip_header": "Âge {{age}}, {{phase}}, {{valueLabel}}",
     "start_portfolio": "Portefeuille initial :",
     "end_portfolio": "Portefeuille final :",
     "what_youll_need": "Ce dont vous aurez besoin :",
@@ -607,7 +607,7 @@
     "net_portfolio_change": "Variation nette du portefeuille :",
     "event_goal": "Objectif",
     "event_retirement": "Retraite",
-    "fi_reference": "IF · {{age}}",
+    "fi_reference": "IF, {{age}}",
     "series_required": "Requis",
     "series_projected": "Projeté"
   },
@@ -789,7 +789,7 @@
       "money_lasts_prompt_fire": "Exécutez 10 000 trajectoires pour voir à quelle fréquence le plan atteint l'IF et reste financé jusqu'à l'âge de {{horizonAge}} ans."
     },
     "stress": {
-      "eyebrow_with_count": "Qu'est-ce qui pourrait compromettre ce plan ? · {{count}} scénarios",
+      "eyebrow_with_count": "Qu'est-ce qui pourrait compromettre ce plan ?, {{count}} scénarios",
       "heading": "Qu'est-ce qui pourrait compromettre ce plan ?",
       "loading_short": "Les tests de résistance sont en cours de chargement.",
       "running": "Exécution de 6 scénarios de résistance sur votre plan…",

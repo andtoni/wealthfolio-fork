@@ -357,7 +357,7 @@ function IncomeContentImpl({ args, result, status }: IncomeContentProps) {
             <PrivacyAmount
               value={parsed.totalIncome}
               currency={currency}
-              className="text-2xl font-bold"
+              className="text-2xl font-medium"
             />
           </div>
         </div>
@@ -368,7 +368,7 @@ function IncomeContentImpl({ args, result, status }: IncomeContentProps) {
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-background/60 rounded-lg border p-3">
             <span className="text-muted-foreground text-xs">{t("ai:income.monthlyAverage")}</span>
-            <div className="mt-1 text-sm font-semibold tabular-nums">
+            <div className="mt-1 text-sm font-medium tabular-nums">
               {formatValue(parsed.monthlyAverage)}
             </div>
           </div>
@@ -378,7 +378,7 @@ function IncomeContentImpl({ args, result, status }: IncomeContentProps) {
               <div className="mt-1 space-y-0.5">
                 {typeBreakdown.map((item) => (
                   <div key={item.type} className="flex items-center justify-between text-xs">
-                    <span className="text-sm font-semibold">{item.label}</span>
+                    <span className="text-sm font-medium">{item.label}</span>
                     <span className="text-muted-foreground tabular-nums">
                       {item.percentage.toFixed(0)}%
                     </span>

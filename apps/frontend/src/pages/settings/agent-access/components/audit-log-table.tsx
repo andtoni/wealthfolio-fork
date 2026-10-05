@@ -106,7 +106,7 @@ export function AuditLogTable({ disabledNotice }: { disabledNotice?: string }) {
     <Card className="rounded-lg">
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 p-6 pb-4">
         <div className="space-y-1">
-          <CardTitle className="text-base font-semibold tracking-tight">
+          <CardTitle className="text-base font-medium tracking-tight">
             {t("settings:agentAccess.audit_card_title")}
           </CardTitle>
           <CardDescription className="text-xs">
@@ -206,7 +206,7 @@ export function AuditLogTable({ disabledNotice }: { disabledNotice?: string }) {
                       <TableCell className="text-muted-foreground whitespace-nowrap text-sm">
                         {format(new Date(entry.createdAt), "MMM d, HH:mm:ss")}
                       </TableCell>
-                      <TableCell className="font-mono text-xs">{entry.tool}</TableCell>
+                      <TableCell className="text-xs">{entry.tool}</TableCell>
                       <TableCell>
                         <Badge
                           variant={outcomeVariant(entry.outcome)}
@@ -215,7 +215,7 @@ export function AuditLogTable({ disabledNotice }: { disabledNotice?: string }) {
                           {entry.outcome}
                         </Badge>
                       </TableCell>
-                      <TableCell className="font-mono text-xs" title={entry.actorFingerprint}>
+                      <TableCell className="text-xs" title={entry.actorFingerprint}>
                         {nameByFingerprint.get(entry.actorFingerprint) ??
                           (ACTOR_LABEL_KEY[entry.actorKind]
                             ? t(ACTOR_LABEL_KEY[entry.actorKind])

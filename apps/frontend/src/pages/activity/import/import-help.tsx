@@ -25,14 +25,14 @@ function ActivitiesHelpContent() {
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <div className="space-y-4">
         <div>
-          <h4 className="text-lg font-semibold">{t("activity:import.help.activitiesTitle")}</h4>
+          <h4 className="text-lg font-medium">{t("activity:import.help.activitiesTitle")}</h4>
           <p className="text-muted-foreground mt-2 text-sm">
             {t("activity:import.help.activitiesIntro")}
           </p>
         </div>
 
         <div>
-          <p className="font-semibold">{t("activity:import.help.stepsLabel")}</p>
+          <p className="font-medium">{t("activity:import.help.stepsLabel")}</p>
           <ol className="mt-2 list-inside list-decimal space-y-1 text-sm">
             <li>
               <strong>{t("activity:import.help.activitiesStep1Bold")}</strong>
@@ -58,11 +58,11 @@ function ActivitiesHelpContent() {
         </div>
 
         <div>
-          <p className="text-sm font-semibold">{t("activity:import.help.requiredFields")}</p>
+          <p className="text-sm font-medium">{t("activity:import.help.requiredFields")}</p>
           <p className="text-muted-foreground mt-1 text-xs">
             {t("activity:import.help.activitiesRequiredFields")}
           </p>
-          <p className="mt-2 text-sm font-semibold">{t("activity:import.help.optionalFields")}</p>
+          <p className="mt-2 text-sm font-medium">{t("activity:import.help.optionalFields")}</p>
           <p className="text-muted-foreground mt-1 text-xs">
             {t("activity:import.help.activitiesOptionalFields")}
           </p>
@@ -113,7 +113,7 @@ function ActivitiesHelpContent() {
 
       <div className="space-y-4">
         <div>
-          <p className="font-semibold">{t("activity:import.help.exampleFormat")}</p>
+          <p className="font-medium">{t("activity:import.help.exampleFormat")}</p>
           <pre className="bg-muted mt-2 select-all overflow-x-auto p-3 text-xs leading-relaxed">
             <span className="text-muted-foreground">
               {t("activity:import.help.exampleStandard")}
@@ -151,7 +151,7 @@ function ActivitiesHelpContent() {
         </div>
 
         <div>
-          <p className="font-semibold">{t("activity:import.help.supportedActivityTypes")}</p>
+          <p className="font-medium">{t("activity:import.help.supportedActivityTypes")}</p>
           <pre className="bg-muted mt-2 overflow-x-auto p-4 text-xs">
             <ul className="list-inside list-disc space-y-1">
               <li>BUY</li>
@@ -185,14 +185,14 @@ function HoldingsHelpContent() {
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <div className="space-y-4">
         <div>
-          <h4 className="text-lg font-semibold">{t("activity:import.help.holdingsTitle")}</h4>
+          <h4 className="text-lg font-medium">{t("activity:import.help.holdingsTitle")}</h4>
           <p className="text-muted-foreground mt-2 text-sm">
             {t("activity:import.help.holdingsIntro")}
           </p>
         </div>
 
         <div>
-          <p className="font-semibold">{t("activity:import.help.stepsLabel")}</p>
+          <p className="font-medium">{t("activity:import.help.stepsLabel")}</p>
           <ol className="mt-2 list-inside list-decimal space-y-1 text-sm">
             <li>{t("activity:import.help.holdingsStep1")}</li>
             <li>{t("activity:import.help.holdingsStep2")}</li>
@@ -207,7 +207,7 @@ function HoldingsHelpContent() {
         </div>
 
         <div>
-          <p className="font-semibold">{t("activity:import.help.requiredFields")}</p>
+          <p className="font-medium">{t("activity:import.help.requiredFields")}</p>
           <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
             <li>
               <strong>{t("activity:import.help.holdingsDateBold")}</strong>
@@ -222,7 +222,7 @@ function HoldingsHelpContent() {
               {t("activity:import.help.holdingsQuantityDesc")}
             </li>
           </ul>
-          <p className="mt-3 font-semibold">{t("activity:import.help.optionalFields")}</p>
+          <p className="mt-3 font-medium">{t("activity:import.help.optionalFields")}</p>
           <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
             <li>
               <strong>{t("activity:import.help.holdingsAvgCostBold")}</strong>
@@ -269,7 +269,7 @@ function HoldingsHelpContent() {
 
       <div className="space-y-4">
         <div>
-          <p className="font-semibold">{t("activity:import.help.exampleFormat")}</p>
+          <p className="font-medium">{t("activity:import.help.exampleFormat")}</p>
           <pre className="bg-muted mt-2 select-all overflow-x-auto p-3 text-xs leading-relaxed">
             <span className="text-muted-foreground">
               {t("activity:import.help.holdingsExampleSnapshot")}
@@ -311,7 +311,7 @@ function HoldingsHelpContent() {
         </div>
 
         <div>
-          <p className="font-semibold">{t("activity:import.help.supportedDateFormats")}</p>
+          <p className="font-medium">{t("activity:import.help.supportedDateFormats")}</p>
           <pre className="bg-muted mt-2 overflow-x-auto p-4 text-xs">
             <ul className="list-inside list-disc space-y-1">
               <li>YYYY-MM-DD (2024-03-31)</li>

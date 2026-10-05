@@ -13,7 +13,6 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Separator,
   Skeleton,
 } from "@wealthfolio/ui";
 import { useMemo, useState } from "react";
@@ -335,9 +334,8 @@ export function AddonStoreBrowser({ installedAddonIds, onInstallSuccess }: Addon
       {/* Popular Categories */}
       {searchQuery === "" && filterBy === "all" && !selectedTag && popularTags.length > 0 && (
         <div className="space-y-4">
-          <Separator />
           <div>
-            <h3 className="mb-3 text-lg font-semibold">{t("settings:addon_store_categories")}</h3>
+            <h3 className="mb-3 text-lg font-medium">{t("settings:addon_store_categories")}</h3>
             <div className="flex flex-wrap gap-2">
               {popularTags.map((tag) => (
                 <Badge

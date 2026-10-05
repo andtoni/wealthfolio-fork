@@ -62,7 +62,6 @@ import { ActivityDateSheet } from "@/pages/activity/components/activity-date-she
 import { ActivityDeleteModal } from "@/pages/activity/components/activity-delete-modal";
 import { ActivityForm, type AccountSelectOption } from "@/pages/activity/components/activity-form";
 import { ActivityPagination } from "@/pages/activity/components/activity-pagination";
-import ActivityTable from "@/pages/activity/components/activity-table/activity-table";
 import ActivityTableMobile from "@/pages/activity/components/activity-table/activity-table-mobile";
 import { BulkHoldingsModal } from "@/pages/activity/components/forms/bulk-holdings-modal";
 import { MobileActivityForm } from "@/pages/activity/components/mobile-forms/mobile-activity-form";
@@ -184,9 +183,7 @@ const AccountPage = () => {
   const [isActivitySheetOpen, setIsActivitySheetOpen] = useState(false);
   const [showBulkHoldingsForm, setShowBulkHoldingsForm] = useState(false);
   const [accountDetailTab, setAccountDetailTab] = useState<AccountDetailTab>("holdings");
-  const [accountActivitiesSorting, setAccountActivitiesSorting] = useState<SortingState>([
-    { id: "date", desc: true },
-  ]);
+  const [accountActivitiesSorting] = useState<SortingState>([{ id: "date", desc: true }]);
   const {
     selectedActivity,
     formOpen: activityFormOpen,
@@ -604,7 +601,7 @@ const AccountPage = () => {
     setMobileSelectorOpen(false);
   };
 
-  const accountActivitiesContent = isMobile ? (
+  const accountActivitiesContent = (
     <>
       <ActivityTableMobile
         activities={accountActivitiesSearch.data}
@@ -613,25 +610,6 @@ const AccountPage = () => {
         handleEdit={handleActivityEdit}
         handleDelete={handleActivityDelete}
         onDuplicate={handleActivityDuplicate}
-        onAdd={() => navigate(`/activities/manage?account=${id}`)}
-      />
-      <ActivityPagination
-        hasMore={accountActivitiesSearch.hasNextPage ?? false}
-        onLoadMore={accountActivitiesSearch.fetchNextPage}
-        isFetching={accountActivitiesSearch.isFetchingNextPage}
-        totalFetched={accountActivitiesSearch.data.length}
-        totalCount={accountActivitiesSearch.totalRowCount}
-      />
-    </>
-  ) : (
-    <>
-      <ActivityTable
-        activities={accountActivitiesSearch.data}
-        isLoading={accountActivitiesSearch.isLoading}
-        sorting={accountActivitiesSorting}
-        onSortingChange={setAccountActivitiesSorting}
-        handleEdit={handleActivityEdit}
-        handleDelete={handleActivityDelete}
         onAdd={() => navigate(`/activities/manage?account=${id}`)}
       />
       <ActivityPagination
@@ -804,7 +782,7 @@ const AccountPage = () => {
                       <span className="flex min-w-0 items-center gap-1.5">
                         {account?.group ? (
                           <>
-                            <span className="text-muted-foreground truncate text-base font-semibold leading-tight md:text-lg">
+                            <span className="text-muted-foreground truncate text-base font-medium leading-tight md:text-lg">
                               {account.group}
                             </span>
                             <span className="text-muted-foreground text-sm" aria-hidden="true">
@@ -812,7 +790,7 @@ const AccountPage = () => {
                             </span>
                           </>
                         ) : null}
-                        <span className="truncate text-base font-semibold leading-tight md:text-lg">
+                        <span className="truncate text-base font-medium leading-tight md:text-lg">
                           {account?.name ?? t("account:account")}
                         </span>
                         <Icons.ChevronDown className="text-muted-foreground size-5 shrink-0" />
@@ -867,7 +845,7 @@ const AccountPage = () => {
                       aria-label={t("account:switch_account")}
                     >
                       <span className="flex min-w-0 items-center gap-1.5">
-                        <span className="truncate text-base font-semibold leading-tight">
+                        <span className="truncate text-base font-medium leading-tight">
                           {account?.name ?? t("account:account")}
                         </span>
                         <Icons.ChevronDown className="text-muted-foreground h-5 w-5 shrink-0" />
@@ -948,7 +926,7 @@ const AccountPage = () => {
                     >
                       <div className="flex items-start gap-2">
                         <div>
-                          <p className="pt-3 text-xl font-bold">
+                          <p className="pt-3 text-xl font-medium">
                             {isCurrentValuationLoading ? (
                               <Skeleton className="h-8 w-36" />
                             ) : isCurrentValuationUnavailable ? (

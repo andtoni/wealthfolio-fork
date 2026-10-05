@@ -28,7 +28,7 @@ export const AllocationBreadcrumb: React.FC<AllocationBreadcrumbProps> = ({
     <nav className={cn("flex items-center gap-1.5 text-[12px] leading-none", className)}>
       <button
         onClick={() => onNavigate(0)}
-        className="text-muted-foreground hover:text-foreground font-semibold uppercase tracking-[0.18em] transition-colors"
+        className="text-muted-foreground hover:text-foreground font-medium transition-colors"
       >
         {rootLabel}
       </button>
@@ -36,11 +36,11 @@ export const AllocationBreadcrumb: React.FC<AllocationBreadcrumbProps> = ({
         <span key={item.id} className="flex items-center gap-1.5">
           <Icons.ChevronRight className="text-muted-foreground h-3.5 w-3.5" />
           {index === path.length - 1 ? (
-            <span className="text-foreground font-semibold">{item.name}</span>
+            <span className="text-foreground font-medium">{item.name}</span>
           ) : (
             <button
               onClick={() => onNavigate(index + 1)}
-              className="text-muted-foreground hover:text-foreground font-semibold transition-colors"
+              className="text-muted-foreground hover:text-foreground font-medium transition-colors"
             >
               {item.name}
             </button>

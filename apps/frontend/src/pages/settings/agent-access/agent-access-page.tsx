@@ -7,7 +7,6 @@ import { Alert, AlertDescription, AlertTitle } from "@wealthfolio/ui/components/
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import { EmptyPlaceholder } from "@wealthfolio/ui/components/ui/empty-placeholder";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
-import { Separator } from "@wealthfolio/ui/components/ui/separator";
 import { SettingsHeader } from "../settings-header";
 import { AuditLogTable } from "./components/audit-log-table";
 import { McpHero } from "./components/mcp-hero";
@@ -89,7 +88,7 @@ function WebAgentAccess() {
             status.mcpEnabled ? undefined : (
               <>
                 {t("settings:agentAccess.web_hint_prefix")}{" "}
-                <code className="font-mono">WF_MCP_ENABLED=true</code>{" "}
+                <code className="">WF_MCP_ENABLED=true</code>{" "}
                 {t("settings:agentAccess.web_hint_suffix")}
               </>
             )
@@ -120,7 +119,6 @@ export default function AgentAccessPage() {
         heading={t("settings:agentAccess.page_heading")}
         text={t("settings:agentAccess.page_text")}
       />
-      <Separator />
 
       {loading ? null : isDesktop && isMobile ? (
         <EmptyPlaceholder>

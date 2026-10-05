@@ -233,14 +233,12 @@ export default function GoalNewPage() {
               return (
                 <div
                   key={tmpl.type}
-                  className={`border-border/60 bg-card shadow-xs group overflow-hidden rounded-xl border transition-all ${
-                    disabled
-                      ? "cursor-not-allowed opacity-50"
-                      : "hover:border-border cursor-pointer hover:shadow-md"
+                  className={`group transition-opacity ${
+                    disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
                   }`}
                   onClick={() => handleSelectType(tmpl.type)}
                 >
-                  <div className="relative h-36 overflow-hidden sm:h-40">
+                  <div className="relative h-36 overflow-hidden rounded-2xl sm:h-40">
                     <img
                       src={coverImageSrc(tmpl.type)}
                       alt={tmpl.title}
@@ -255,16 +253,16 @@ export default function GoalNewPage() {
                     </div>
                     <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/60 to-transparent" />
                     <div className="absolute bottom-3 left-4">
-                      <p className="text-base font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]">
+                      <p className="text-base font-medium text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]">
                         {tmpl.title}
                       </p>
                     </div>
                   </div>
-                  <CardHeader className="pb-4">
-                    <CardDescription className="text-xs leading-relaxed">
+                  <CardHeader className="pb-2 pt-2">
+                    <CardDescription className="text-[15px] leading-snug">
                       {tmpl.description}
                       {disabled && (
-                        <span className="text-muted-foreground mt-1 block text-[11px]">
+                        <span className="text-muted-foreground mt-1 block text-[13px]">
                           {t("goals:new.retirement_exists_hint")}
                         </span>
                       )}
@@ -316,7 +314,7 @@ export default function GoalNewPage() {
                   </div>
 
                   {template?.requiresPlannerMode && (
-                    <div className="border-border/60 space-y-3 border-t pt-4 sm:col-span-2">
+                    <div className="space-y-3 pt-4 sm:col-span-2">
                       <div>
                         <p className="text-sm font-medium">{t("goals:new.planning_style")}</p>
                         <p className="text-muted-foreground mt-1 text-xs">
@@ -326,10 +324,10 @@ export default function GoalNewPage() {
                       <div className="grid grid-cols-2 gap-3">
                         <button
                           type="button"
-                          className={`rounded-xl border p-3 text-left transition-colors ${
+                          className={`rounded-2xl p-3 text-left transition-colors ${
                             plannerMode === "traditional"
-                              ? "border-primary bg-primary/5"
-                              : "border-border/60 hover:border-muted-foreground/60"
+                              ? "bg-foreground/[0.12]"
+                              : "bg-foreground/[0.04] hover:bg-foreground/[0.07]"
                           }`}
                           onClick={() => setPlannerModeWithDefaultAge("traditional")}
                         >
@@ -342,10 +340,10 @@ export default function GoalNewPage() {
                         </button>
                         <button
                           type="button"
-                          className={`rounded-xl border p-3 text-left transition-colors ${
+                          className={`rounded-2xl p-3 text-left transition-colors ${
                             plannerMode === "fire"
-                              ? "border-primary bg-primary/5"
-                              : "border-border/60 hover:border-muted-foreground/60"
+                              ? "bg-foreground/[0.12]"
+                              : "bg-foreground/[0.04] hover:bg-foreground/[0.07]"
                           }`}
                           onClick={() => setPlannerModeWithDefaultAge("fire")}
                         >
@@ -359,7 +357,7 @@ export default function GoalNewPage() {
                   )}
 
                   {isRetirement && (
-                    <div className="border-border/60 space-y-4 border-t pt-4 sm:col-span-2">
+                    <div className="space-y-4 pt-4 sm:col-span-2">
                       <div>
                         <p className="text-sm font-medium">{t("goals:new.retirement_timeline")}</p>
                         <p className="text-muted-foreground mt-1 text-xs">

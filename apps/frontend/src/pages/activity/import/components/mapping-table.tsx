@@ -85,7 +85,7 @@ export function MappingTable({
               <TableRow>
                 <TableHead className="border-border sticky left-0 z-30 w-12 min-w-12 border-r">
                   <div className="bg-muted/50 flex items-center justify-center rounded-sm p-1">
-                    <span className="text-muted-foreground text-xs font-semibold">#</span>
+                    <span className="text-muted-foreground text-xs font-medium">#</span>
                   </div>
                 </TableHead>
                 {visibleFields.map((field) => (

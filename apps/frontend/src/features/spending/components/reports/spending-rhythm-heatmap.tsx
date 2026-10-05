@@ -62,10 +62,7 @@ export function SpendingRhythmHeatmap({
       <div className="grid grid-cols-[auto_repeat(7,1fr)] gap-1.5">
         <div />
         {dayNamesShort.map((d, i) => (
-          <div
-            key={`hd-${i}`}
-            className="text-muted-foreground/70 text-center text-[10px] uppercase"
-          >
+          <div key={`hd-${i}`} className="text-muted-foreground/70 text-center text-xs">
             {d}
           </div>
         ))}
@@ -126,7 +123,7 @@ function RhythmRow({
             key={i}
             className="aspect-square rounded-md transition-opacity"
             style={{ backgroundColor: accent, opacity }}
-            title={`${cell.date.toLocaleDateString()} · ${
+            title={`${cell.date.toLocaleDateString()}, ${
               cell.amount > 0 ? (isBalanceHidden ? "••••" : cell.amount.toFixed(2)) : noSpendLabel
             }`}
           />

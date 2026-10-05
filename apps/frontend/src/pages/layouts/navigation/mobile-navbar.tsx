@@ -179,7 +179,7 @@ export function MobileNavBar({ navigation }: MobileNavBarProps) {
         >
           <div className="bg-muted mx-auto mt-4 h-1.5 w-14 rounded-full" />
           <div className="flex items-center justify-between px-8 pb-4 pt-7">
-            <SheetTitle className="text-2xl font-semibold">{t("common:layout.more")}</SheetTitle>
+            <SheetTitle className="text-2xl font-medium">{t("common:layout.more")}</SheetTitle>
             <button
               type="button"
               onClick={() => setMobileMenuOpen(false)}
@@ -212,7 +212,7 @@ export function MobileNavBar({ navigation }: MobileNavBarProps) {
                     <span className="flex size-7 shrink-0 items-center justify-center">
                       {renderIcon(item.icon)}
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-lg font-semibold">
+                    <span className="min-w-0 flex-1 truncate text-lg font-medium">
                       {item.title}
                     </span>
                     <Icons.ChevronRight className="text-muted-foreground/50 size-5 shrink-0 transition-transform group-hover:translate-x-0.5" />
@@ -223,7 +223,7 @@ export function MobileNavBar({ navigation }: MobileNavBarProps) {
 
             {addonItems.length > 0 && (
               <div className="pt-6">
-                <div className="text-muted-foreground pb-3 text-xs font-semibold uppercase tracking-[0.35em]">
+                <div className="text-muted-foreground pb-3 text-xs font-medium">
                   {t("common:addons")}
                 </div>
                 <div className="divide-border/70 divide-y">
@@ -247,7 +247,7 @@ export function MobileNavBar({ navigation }: MobileNavBarProps) {
                         <span className="flex size-7 shrink-0 items-center justify-center">
                           {renderIcon(item.icon)}
                         </span>
-                        <span className="min-w-0 flex-1 truncate text-lg font-semibold">
+                        <span className="min-w-0 flex-1 truncate text-lg font-medium">
                           {item.title}
                         </span>
                         <Icons.ChevronRight className="text-muted-foreground/50 size-5 shrink-0 transition-transform group-hover:translate-x-0.5" />

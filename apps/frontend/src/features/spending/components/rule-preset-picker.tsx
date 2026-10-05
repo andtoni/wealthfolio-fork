@@ -12,6 +12,7 @@ import {
   AlertDialogTitle,
   Icons,
 } from "@wealthfolio/ui";
+import { SECTION_HEADING } from "@/components/dashboard-card";
 import { cn } from "@/lib/utils";
 
 import {
@@ -71,11 +72,11 @@ export function RulePresetPicker({ compact = false }: RulePresetPickerProps) {
     <div className={compact ? "space-y-2" : "space-y-3"}>
       {!compact && (
         <div className="space-y-0.5">
-          <div className="text-foreground text-sm font-medium">{t("spending:presets.title")}</div>
-          <p className="text-muted-foreground text-xs">{t("spending:presets.subtitle")}</p>
+          <div className={SECTION_HEADING}>{t("spending:presets.title")}</div>
+          <p className="text-muted-foreground text-[15px]">{t("spending:presets.subtitle")}</p>
         </div>
       )}
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-stretch">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-stretch sm:gap-4">
         {presets.map((preset) => {
           const flag = PRESET_FLAGS[preset.presetId] ?? "🌐";
           const isImporting =
@@ -100,21 +101,21 @@ export function RulePresetPicker({ compact = false }: RulePresetPickerProps) {
                       })
                 }
                 className={cn(
-                  "border-input bg-card hover:bg-muted/50 group flex w-full items-center gap-3 rounded-lg border py-2.5 pl-3 text-left transition-colors sm:w-auto sm:min-w-[160px]",
+                  "hover:bg-foreground/5 group flex w-full items-center gap-3 rounded-xl py-2.5 pl-2 text-left transition-colors sm:w-auto sm:min-w-[160px]",
                   "focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
                   "disabled:cursor-not-allowed disabled:opacity-60",
-                  preset.installed && "border-success/40 bg-success/5",
                   preset.installed ? "pr-9" : "pr-3",
                 )}
               >
-                <span className="text-xl leading-none" aria-hidden="true">
+                <span
+                  className="bg-foreground/[0.07] flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xl leading-none"
+                  aria-hidden="true"
+                >
                   {flag}
                 </span>
                 <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-foreground text-sm font-medium leading-tight">
-                    {preset.name}
-                  </span>
-                  <span className="text-muted-foreground text-[11px] leading-tight">
+                  <span className="text-foreground text-[17px] leading-snug">{preset.name}</span>
+                  <span className="text-muted-foreground text-[15px] leading-snug">
                     {t("spending:presets.rulesCount", { count: preset.ruleCount })}
                   </span>
                 </div>

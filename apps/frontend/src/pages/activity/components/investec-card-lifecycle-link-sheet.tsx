@@ -338,7 +338,7 @@ export function InvestecCardLifecycleLinkSheet({
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto py-4">
           {sourceActivity ? (
             <div className="bg-muted/30 rounded-md border p-3 text-sm">
-              <div className="text-muted-foreground text-xs font-medium uppercase">
+              <div className="text-muted-foreground text-xs font-medium">
                 {t("activity:lifecycle_link.authorization")}
               </div>
               <div className="mt-1 flex items-center justify-between gap-3">
@@ -358,7 +358,7 @@ export function InvestecCardLifecycleLinkSheet({
           ) : null}
 
           <div className="space-y-2">
-            <div className="text-muted-foreground text-xs font-medium uppercase">
+            <div className="text-muted-foreground text-xs font-medium">
               {t("activity:lifecycle_link.posted_candidates")}
             </div>
             {loading ? (
@@ -381,7 +381,7 @@ export function InvestecCardLifecycleLinkSheet({
                 ))}
               </div>
             ) : (
-              <div className="text-muted-foreground rounded-md border border-dashed p-4 text-center text-sm">
+              <div className="text-muted-foreground rounded-md border p-4 text-center text-sm">
                 {t("activity:lifecycle_link.no_candidates")}
               </div>
             )}

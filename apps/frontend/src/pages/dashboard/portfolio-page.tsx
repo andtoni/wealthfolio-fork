@@ -7,9 +7,6 @@ import { AlternativeAssetKind } from "@/lib/types";
 import SpendingTabContent from "@/features/spending/components/spending-tab-content";
 import { useSpendingSettings } from "@/features/spending/hooks/use-spending-settings";
 import { Button, Icons, type Icon } from "@wealthfolio/ui";
-import { HandCoinsIcon } from "@phosphor-icons/react/dist/csr/HandCoins";
-import { TrendUpIcon } from "@phosphor-icons/react/dist/csr/TrendUp";
-import { WalletIcon } from "@phosphor-icons/react/dist/csr/Wallet";
 import { Card, CardContent, CardHeader } from "@wealthfolio/ui/components/ui/card";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { Suspense, useCallback, useMemo, useState } from "react";
@@ -18,10 +15,9 @@ import { NetWorthContent } from "../net-worth/net-worth-content";
 import { DashboardActions } from "./dashboard-actions";
 import { DashboardContent } from "./dashboard-content";
 
-// Tab icons rendered as duotone Phosphor glyphs
-const InvestmentsTabIcon: Icon = (props) => <TrendUpIcon weight="duotone" {...props} />;
-const NetWorthTabIcon: Icon = (props) => <WalletIcon weight="duotone" {...props} />;
-const SpendingTabIcon: Icon = (props) => <HandCoinsIcon weight="duotone" {...props} />;
+const InvestmentsTabIcon: Icon = Icons.TrendingUp;
+const NetWorthTabIcon: Icon = Icons.Wallet;
+const SpendingTabIcon: Icon = Icons.HandCoins;
 
 // Loading skeleton
 const PageLoader = () => (
@@ -107,7 +103,6 @@ export default function PortfolioPage() {
   );
 
   const { isEnabled: spendingEnabled } = useSpendingSettings();
-
   const views: SwipablePageView[] = useMemo(() => {
     const items: SwipablePageView[] = [
       {

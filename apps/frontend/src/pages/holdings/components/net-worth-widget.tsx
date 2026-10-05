@@ -227,10 +227,7 @@ export const NetWorthWidget = ({
         {/* Header with title and staleness warning */}
         <div className="flex items-center justify-between">
           <span
-            className={cn(
-              "text-muted-foreground font-medium uppercase tracking-wider",
-              compact ? "text-[10px]" : "text-xs",
-            )}
+            className={cn("text-muted-foreground font-medium", compact ? "text-[10px]" : "text-xs")}
           >
             {t("holdings:net_worth")}
           </span>
@@ -270,10 +267,7 @@ export const NetWorthWidget = ({
 
         {/* Main net worth amount */}
         <div
-          className={cn(
-            "font-semibold tracking-tight",
-            compact ? "text-xl" : "text-2xl sm:text-3xl",
-          )}
+          className={cn("font-medium tracking-tight", compact ? "text-xl" : "text-2xl sm:text-3xl")}
         >
           <PrivacyAmount value={parsedValues.netWorth} currency={currency} />
         </div>
@@ -283,7 +277,7 @@ export const NetWorthWidget = ({
           <div className="flex flex-col gap-0.5">
             <span
               className={cn(
-                "text-muted-foreground font-medium uppercase",
+                "text-muted-foreground font-medium",
                 compact ? "text-[9px]" : "text-[10px]",
               )}
             >
@@ -297,7 +291,7 @@ export const NetWorthWidget = ({
           <div className="flex flex-col items-end gap-0.5">
             <span
               className={cn(
-                "text-muted-foreground font-medium uppercase",
+                "text-muted-foreground font-medium",
                 compact ? "text-[9px]" : "text-[10px]",
               )}
             >

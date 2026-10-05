@@ -3,8 +3,8 @@ import { formatPercent } from "@/lib/utils";
 
 // Goldish orange net-worth theme (matches the history chart). Reserved for the
 // chart/brand; value numbers use semantic green/red tones (orange == warning).
-export const THEME_COLOR = "hsl(38 75% 50%)";
-export const THEME_COLOR_LIGHT = "hsl(38 75% 50% / 0.12)";
+export const THEME_COLOR = "var(--net-worth-accent)";
+export const THEME_COLOR_LIGHT = "color-mix(in srgb, var(--net-worth-accent) 12%, transparent)";
 
 /** Semantic text tone for a signed value: green gain, red loss, muted when flat. */
 export function toneClass(value: number): string {

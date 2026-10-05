@@ -24,7 +24,7 @@ export function RiskLabSkeleton() {
             </div>
           </div>
 
-          <div className="bg-muted/25 grid overflow-hidden rounded-lg border md:grid-cols-4">
+          <div className="bg-muted/25 grid overflow-hidden md:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <HeroMetricSkeleton key={i} />
             ))}
@@ -34,7 +34,7 @@ export function RiskLabSkeleton() {
 
       {/* Market paths (Monte Carlo) */}
       <Card className="overflow-hidden">
-        <CardHeader className="border-b p-0">
+        <CardHeader className="p-0">
           <div className="flex flex-col gap-5 p-5 md:p-6">
             <div className="min-w-0 flex-1 space-y-3">
               <Skeleton className="h-2.5 w-20 rounded" />
@@ -47,7 +47,7 @@ export function RiskLabSkeleton() {
           </div>
         </CardHeader>
         <CardContent className="space-y-0 p-0">
-          <div className="bg-muted/10 grid border-b md:grid-cols-5">
+          <div className="bg-muted/10 grid md:grid-cols-5">
             {Array.from({ length: 5 }).map((_, i) => (
               <SimMetricSkeleton key={i} />
             ))}
@@ -98,12 +98,12 @@ export function RiskLabSkeleton() {
 function CalculatingBanner() {
   const { t } = useTranslation();
   return (
-    <div className="bg-muted/20 flex items-start gap-4 rounded-xl border px-5 py-4 md:px-6">
+    <div className="flex items-start gap-4 px-5 py-4 md:px-6">
       <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[hsl(91,34%,29%)]/10 text-[hsl(91,34%,29%)]">
         <Icons.Spinner className="size-5 animate-spin" />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold">{t("goals:skeleton.calculating_title")}</p>
+        <p className="text-sm font-medium">{t("goals:skeleton.calculating_title")}</p>
         <p className="text-muted-foreground mt-1 max-w-[720px] text-sm leading-relaxed">
           {t("goals:skeleton.calculating_desc")}
         </p>
@@ -114,7 +114,7 @@ function CalculatingBanner() {
 
 function HeroMetricSkeleton() {
   return (
-    <div className="space-y-2 border-t p-4 first:border-t-0 md:border-l md:border-t-0 md:first:border-l-0">
+    <div className="space-y-2 p-4">
       <Skeleton className="h-2.5 w-20 rounded" />
       <Skeleton className="h-6 w-24 rounded" />
       <Skeleton className="h-2.5 w-16 rounded" />
@@ -124,7 +124,7 @@ function HeroMetricSkeleton() {
 
 function SimMetricSkeleton() {
   return (
-    <div className="space-y-2 border-t p-4 first:border-t-0 md:border-l md:border-t-0 md:first:border-l-0">
+    <div className="space-y-2 p-4">
       <Skeleton className="h-2.5 w-20 rounded" />
       <Skeleton className="h-6 w-20 rounded" />
       <Skeleton className="h-2.5 w-24 rounded" />
@@ -134,7 +134,7 @@ function SimMetricSkeleton() {
 
 export function StressCardSkeleton() {
   return (
-    <div className="bg-card relative overflow-hidden rounded-xl border shadow-sm">
+    <div className="relative overflow-hidden">
       <div className="bg-muted/60 absolute inset-y-5 left-0 w-0.5 rounded-r-full" />
       <div className="space-y-5 p-5">
         <div className="flex items-start justify-between gap-4">
@@ -150,7 +150,7 @@ export function StressCardSkeleton() {
           </div>
           <Skeleton className="h-5 w-16 rounded-full" />
         </div>
-        <div className="grid grid-cols-3 gap-4 border-t pt-4">
+        <div className="grid grid-cols-3 gap-4 pt-4">
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="space-y-2">
               <Skeleton className="h-2.5 w-16 rounded" />
@@ -167,7 +167,7 @@ export function StressCardSkeleton() {
 function HeatmapCardSkeleton() {
   return (
     <Card className="overflow-hidden">
-      <CardHeader className="border-b px-5 py-4">
+      <CardHeader className="px-5 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-2">
             <Skeleton className="h-4 w-40 rounded" />

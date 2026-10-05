@@ -124,10 +124,7 @@ export function HeatmapCellSheet({
               "linear-gradient(to bottom, color-mix(in oklch, var(--heatmap-accent) 25%, transparent) 0%, color-mix(in oklch, var(--heatmap-accent) 10%, transparent) 55%, transparent 100%)",
           }}
         >
-          <div
-            className="text-[10px] font-semibold uppercase tracking-[0.14em]"
-            style={{ color: "var(--heatmap-accent)" }}
-          >
+          <div className="text-xs" style={{ color: "var(--heatmap-accent)" }}>
             {t("spending:heatmapSheet.eyebrow")}
           </div>
           <div className="mt-2 flex items-start gap-3">
@@ -141,8 +138,8 @@ export function HeatmapCellSheet({
               <Icons.Calendar className="h-5 w-5" />
             </span>
             <div className="min-w-0 flex-1">
-              <SheetTitle className="text-foreground text-lg font-semibold tracking-tight">
-                {dayLabel ? `${dayLabel} · ${hourLabel}` : t("spending:heatmapSheet.activity")}
+              <SheetTitle className="text-foreground text-lg font-medium tracking-tight">
+                {dayLabel ? `${dayLabel}, ${hourLabel}` : t("spending:heatmapSheet.activity")}
               </SheetTitle>
               <p className="text-muted-foreground mt-0.5 text-xs">
                 {t("spending:heatmapSheet.subtitle")}
@@ -177,7 +174,7 @@ export function HeatmapCellSheet({
         {/* ── Body ───────────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {activities.length === 0 ? (
-            <div className="text-muted-foreground border-border/60 flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed py-12 text-center text-sm">
+            <div className="text-muted-foreground flex flex-col items-center justify-center gap-2 py-12 text-center text-sm">
               <Icons.Activity className="h-6 w-6 opacity-50" aria-hidden />
               <div>{t("spending:heatmapSheet.noSpending")}</div>
             </div>
@@ -186,11 +183,9 @@ export function HeatmapCellSheet({
               {grouped.map((group) => (
                 <section key={group.key}>
                   <header className="mb-2 flex items-baseline justify-between">
-                    <h3 className="text-foreground text-xs font-semibold uppercase tracking-wide">
-                      {group.label}
-                    </h3>
+                    <h3 className="text-foreground text-xs">{group.label}</h3>
                     <span className="text-muted-foreground/80 text-[11px] tabular-nums">
-                      {group.items.length} ·{" "}
+                      {group.items.length},{" "}
                       {isBalanceHidden ? "••••" : formatCompactAmount(group.total, currency)}
                     </span>
                   </header>
@@ -220,7 +215,7 @@ export function HeatmapCellSheet({
                                 )}
                               </span>
                               {isOutlier && (
-                                <span className="rounded-full bg-amber-100/80 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
+                                <span className="rounded-full bg-amber-100/80 px-1.5 py-px text-xs text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
                                   {t("spending:heatmapSheet.outlier")}
                                 </span>
                               )}
@@ -229,22 +224,20 @@ export function HeatmapCellSheet({
                               <span className="tabular-nums">
                                 {formatZonedTime(it.activityDate, timezone)}
                               </span>
-                              <span aria-hidden>·</span>
                               <span>{formatZonedDate(it.activityDate, timezone)}</span>
-                              <span aria-hidden>·</span>
                               <span className="truncate">{account?.name ?? it.accountId}</span>
                             </div>
                           </div>
                           <div
                             className={cn(
-                              "shrink-0 text-right text-[13px] font-semibold tabular-nums leading-tight",
+                              "shrink-0 text-right text-[13px] font-medium tabular-nums leading-tight",
                               isOutflow ? "text-foreground" : "text-success",
                             )}
                           >
                             {isOutflow ? "−" : "+"}
                             <PrivacyAmount value={safeAmt} currency={it.currency} />
                             {it.currency !== currency && (
-                              <span className="text-muted-foreground/70 ml-1 text-[9px] uppercase tracking-wide">
+                              <span className="text-muted-foreground/70 ml-1 text-xs">
                                 {it.currency}
                               </span>
                             )}
@@ -284,10 +277,8 @@ function Stat({
 }) {
   return (
     <div>
-      <div className="text-muted-foreground/70 text-[10px] font-semibold uppercase tracking-[0.12em]">
-        {label}
-      </div>
-      <div className="text-foreground mt-1 text-base font-semibold tabular-nums tracking-tight">
+      <div className="text-muted-foreground/70 text-xs">{label}</div>
+      <div className="text-foreground mt-1 text-base font-medium tabular-nums tracking-tight">
         {value}
       </div>
       {hint && <div className="text-muted-foreground/70 mt-0.5 truncate text-[10px]">{hint}</div>}

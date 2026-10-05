@@ -254,7 +254,7 @@ function HealthyState() {
       <div className="bg-success/10 mb-6 flex h-16 w-16 items-center justify-center rounded-full">
         <Icons.CheckCircle className="text-success h-8 w-8" />
       </div>
-      <h2 className="mb-2 text-lg font-semibold">{t("health:healthy.title")}</h2>
+      <h2 className="mb-2 text-lg font-medium">{t("health:healthy.title")}</h2>
       <p className="text-muted-foreground max-w-sm text-center text-sm">
         {t("health:healthy.description")}
       </p>
@@ -367,7 +367,7 @@ export default function HealthPage() {
             </div>
 
             {/* Issues List */}
-            <div className="bg-card rounded-lg border">
+            <div className="">
               {filteredIssues && filteredIssues.length > 0 ? (
                 <div className="divide-y">
                   {filteredIssues.map((issue) => (

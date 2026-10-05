@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@wealthfolio/ui/components/ui/card";
-import { Separator } from "@wealthfolio/ui/components/ui/separator";
 import { LanguageSelector } from "@/components/language-selector";
 import { DEFAULT_LOCALE } from "@/i18n/locales";
 import { useSettingsContext } from "@/lib/settings-provider";
@@ -54,8 +53,6 @@ export function LanguageRegionSettings() {
             className="w-full max-w-[360px]"
           />
         </section>
-
-        <Separator />
 
         <section className="space-y-3">
           <div>

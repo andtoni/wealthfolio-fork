@@ -43,6 +43,8 @@ import {
 } from "@wealthfolio/ui";
 import { Switch } from "@wealthfolio/ui/components/ui/switch";
 
+import { BlockBar } from "@/components/block-bar";
+import { SECTION_HEADING } from "@/components/dashboard-card";
 import { cn } from "@/lib/utils";
 
 import { useBudget, useBudgetMutations } from "../hooks/use-budget";
@@ -68,8 +70,7 @@ import { EXTENDED_PALETTE } from "./color-picker";
 import { IconPicker } from "./icon-picker";
 
 const SPENDING_TAXONOMY = "spending_categories";
-const CARD_CLASS =
-  "border-border/60 bg-card/40 shadow-xs min-w-0 max-w-full rounded-xl border backdrop-blur-xl";
+const CARD_CLASS = "min-w-0 max-w-full";
 
 export type BudgetEditorMode = "setup" | "period";
 
@@ -211,7 +212,7 @@ export function BudgetEditor({ mode, periodKey }: BudgetEditorProps) {
           onClick={() =>
             mutations.createGroup.mutate({
               name: t("spending:budgetEditor.newGroup"),
-              color: FOREST_THEME.deep,
+              color: null,
               icon: "Folder",
             })
           }
@@ -277,6 +278,13 @@ export function BudgetEditor({ mode, periodKey }: BudgetEditorProps) {
   );
 }
 
+/** A group's own colour, or the colour of its largest category when it has none. */
+function groupAccent(row: BudgetGroupRow): string {
+  if (row.group.color) return row.group.color;
+  const lead = [...row.categories].sort((a, b) => b.target - a.target).find((c) => c.color);
+  return lead?.color ?? FOREST_THEME.deep;
+}
+
 function BudgetSummary({
   budget,
   currency,
@@ -302,14 +310,12 @@ function BudgetSummary({
       : t("spending:budgetEditor.cyclePlan");
 
   return (
-    <section className={cn(CARD_CLASS, "overflow-hidden p-3 sm:p-4")}>
+    <section className={cn(CARD_CLASS, "pb-5")}>
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-muted-foreground text-[10px] font-semibold uppercase tracking-[0.08em]">
-            {headingLabel}
-          </div>
+          <div className="text-muted-foreground text-sm">{headingLabel}</div>
           <div className="mt-0.5 flex items-baseline gap-1.5">
-            <span className="text-foreground truncate text-lg font-semibold tabular-nums tracking-tight sm:text-xl">
+            <span className="text-foreground truncate text-[32px] font-medium tabular-nums tracking-tight">
               <PrivacyAmount value={planned} currency={currency} />
             </span>
             {income > 0 && (
@@ -321,12 +327,12 @@ function BudgetSummary({
         </div>
         <div
           className={cn(
-            "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
+            "inline-flex shrink-0 items-center gap-1 text-sm",
             fullyAllocated
-              ? "bg-success/10 text-success"
+              ? "text-success"
               : overAllocated
-                ? "bg-destructive/10 text-destructive"
-                : "bg-muted/60 text-muted-foreground",
+                ? "text-destructive"
+                : "text-muted-foreground",
           )}
         >
           {fullyAllocated ? (
@@ -340,7 +346,7 @@ function BudgetSummary({
 
       <SegmentedGroupBar groupRows={groupRows} total={planned} hasPlan={hasPlan} />
 
-      <div className="mt-2.5 grid grid-cols-1 gap-x-4 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
         {groupRows.map((row) => (
           <GroupSummaryCell
             key={row.group.id}
@@ -359,7 +365,7 @@ function BudgetFxNote({ budget, currency }: { budget: BudgetSnapshot; currency: 
   if (!budget.computed.fxAsOf) return null;
 
   return (
-    <div className="border-border/60 bg-muted/30 text-muted-foreground rounded-lg border px-3 py-2 text-xs">
+    <div className="text-muted-foreground text-xs">
       {t("spending:budgetEditor.fxNote", { currency, asOf: budget.computed.fxAsOf })}
     </div>
   );
@@ -377,27 +383,25 @@ function SegmentedGroupBar({
   const { t } = useTranslation();
   if (!hasPlan) {
     return (
-      <div className="bg-muted/40 mt-3 h-1.5 rounded-full">
+      <div className="mt-4">
+        <BlockBar segments={[]} total={1} />
         <div className="sr-only">{t("spending:budgetEditor.noBudgetAllocated")}</div>
       </div>
     );
   }
 
-  const visibleRows = groupRows.filter((row) => row.plannedTotal > 0);
-
   return (
-    <div className="bg-muted/40 mt-3 flex h-1.5 overflow-hidden rounded-full">
-      {visibleRows.map((row) => (
-        <div
-          key={row.group.id}
-          className="min-w-[3px] transition-all"
-          style={{
-            width: `${Math.max(1, safePercent(row.plannedTotal, total) * 100)}%`,
-            backgroundColor: row.group.color ?? FOREST_THEME.deep,
-          }}
-        />
-      ))}
-    </div>
+    <BlockBar
+      className="mt-4"
+      segments={groupRows
+        .filter((row) => row.plannedTotal > 0)
+        .map((row) => ({
+          value: row.plannedTotal,
+          color: groupAccent(row),
+          label: row.group.name,
+        }))}
+      total={total}
+    />
   );
 }
 
@@ -410,20 +414,20 @@ function GroupSummaryCell({
   currency: string;
   denominator: number;
 }) {
-  const accent = row.group.color ?? FOREST_THEME.deep;
+  const accent = groupAccent(row);
   const pct = safePercent(row.plannedTotal, denominator);
   return (
     <div className="flex min-w-0 items-center gap-2 py-0.5">
       <span
-        className="h-1.5 w-1.5 shrink-0 rounded-full"
+        className="h-2 w-2 shrink-0 rounded-full"
         style={{ backgroundColor: accent }}
         aria-hidden
       />
-      <span className="text-foreground min-w-0 flex-1 truncate text-xs">{row.group.name}</span>
-      <span className="text-muted-foreground w-8 shrink-0 text-right text-[10px] tabular-nums">
+      <span className="text-foreground min-w-0 flex-1 truncate text-sm">{row.group.name}</span>
+      <span className="text-muted-foreground w-9 shrink-0 text-right text-xs tabular-nums">
         {formatPercent(pct)}
       </span>
-      <span className="text-foreground shrink-0 text-xs font-medium tabular-nums">
+      <span className="text-foreground shrink-0 text-sm tabular-nums">
         <PrivacyAmount value={row.plannedTotal} currency={currency} />
       </span>
     </div>
@@ -488,7 +492,7 @@ function GroupBudgetSection({
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const groupOverride = findGroupBufferTarget(targets, periodKey, row.group.id);
   const groupRollover = findGroupRollover(rolloverSettings, row.group.id);
-  const accent = row.group.color ?? FOREST_THEME.deep;
+  const accent = groupAccent(row);
   const spentPct = safePercent(Math.max(0, row.actual), row.plannedTotal);
   const totalSuffix =
     mode === "setup"
@@ -497,7 +501,7 @@ function GroupBudgetSection({
 
   return (
     <section className={cn(CARD_CLASS, "overflow-hidden")}>
-      <div className="flex items-center gap-2 px-3 py-2 sm:gap-3 sm:px-4">
+      <div className="flex items-center gap-2 py-3 sm:gap-3">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -515,11 +519,10 @@ function GroupBudgetSection({
         <button
           type="button"
           onClick={() => setEditOpen(true)}
-          className="ring-offset-background focus-visible:ring-ring flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 enabled:hover:scale-105 disabled:cursor-default disabled:hover:scale-100"
-          style={{ backgroundColor: `${accent}1f`, color: accent }}
+          className="flex h-7 w-5 shrink-0 items-center justify-center"
           aria-label={t("spending:budgetEditor.editGroupName", { name: row.group.name })}
         >
-          <CategoryIcon icon={row.group.icon ?? null} className="h-3.5 w-3.5" />
+          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: accent }} />
         </button>
 
         <GroupEditDialog
@@ -540,37 +543,35 @@ function GroupBudgetSection({
           className="min-w-0 flex-1 text-left"
         >
           <div className="flex min-w-0 items-center gap-1.5">
-            <div className="text-foreground truncate text-sm font-semibold">{row.group.name}</div>
+            <div className="text-foreground truncate text-[15px]">{row.group.name}</div>
             {row.group.excludeFromBudget && (
-              <span className="text-muted-foreground shrink-0 text-[9px] font-medium uppercase tracking-wide">
+              <span className="text-muted-foreground shrink-0 text-xs font-medium">
                 {t("spending:budgetEditor.excludedFromBudget")}
               </span>
             )}
           </div>
           <div className="mt-0.5 flex items-center gap-1.5">
-            <div className="bg-muted/40 h-1 w-16 shrink-0 overflow-hidden rounded-full sm:w-20">
+            <div className="bg-foreground/10 h-2 w-12 shrink-0 overflow-hidden rounded-[4px] sm:w-24">
               <div
-                className="h-full rounded-full transition-all"
+                className="h-full rounded-[4px] transition-all"
                 style={{
                   width: `${Math.min(100, spentPct * 100)}%`,
                   backgroundColor: accent,
                 }}
               />
             </div>
-            <span className="text-muted-foreground truncate text-[10px] tabular-nums">
-              <PrivacyAmount value={row.actual} currency={currency} /> /{" "}
-              <PrivacyAmount value={row.plannedTotal} currency={currency} />
+            <span className="text-muted-foreground truncate text-xs tabular-nums">
+              <PrivacyAmount value={row.actual} currency={currency} />{" "}
+              {t("spending:budgetChart.spentLower")}
             </span>
           </div>
         </button>
 
         <div className="text-right">
-          <div className="text-sm font-semibold tabular-nums">
+          <div className="text-[15px] tabular-nums">
             <PrivacyAmount value={row.plannedTotal} currency={currency} />
           </div>
-          <div className="text-muted-foreground text-[9px] uppercase tracking-wide">
-            {totalSuffix}
-          </div>
+          <div className="text-muted-foreground text-xs">{totalSuffix}</div>
         </div>
 
         <DropdownMenu>
@@ -585,7 +586,7 @@ function GroupBudgetSection({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuLabel className="text-muted-foreground/70 text-[10px] font-normal uppercase tracking-wide">
+            <DropdownMenuLabel className="text-muted-foreground/70 text-xs font-normal">
               {t("spending:budgetEditor.categoryCount", { count: row.categories.length })}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
@@ -662,7 +663,7 @@ function GroupBudgetSection({
       </AlertDialog>
 
       {open && (
-        <div className="border-border/30 border-t">
+        <div>
           <GroupBufferLine
             row={row}
             target={groupOverride}
@@ -744,9 +745,9 @@ function AddCategoryRow({
   const trigger = (
     <button
       type="button"
-      className="text-muted-foreground hover:text-foreground hover:bg-muted/40 border-border/40 group flex w-full items-center gap-2 border-t border-dashed px-3 py-2 text-left transition-colors sm:px-4"
+      className="text-muted-foreground hover:text-foreground hover:bg-muted/40 border-border/40 group flex w-full items-center gap-2 border-t px-3 py-2 text-left transition-colors sm:px-4"
     >
-      <span className="border-border/50 group-hover:border-foreground/30 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-dashed">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center">
         <Icons.Plus className="h-3 w-3" />
       </span>
       <span className="text-xs">{t("spending:budgetEditor.addCategory")}</span>
@@ -768,7 +769,7 @@ function AddCategoryRow({
 
   const list = (
     <div className={cn("overflow-y-auto", isMobile ? "max-h-[55vh]" : "max-h-72")}>
-      {pool.map((entry, idx) => {
+      {pool.map((entry) => {
         const accent = entry.category.color ?? FOREST_THEME.deep;
         return (
           <button
@@ -778,7 +779,6 @@ function AddCategoryRow({
             className={cn(
               "active:bg-muted/80 hover:bg-muted/50 flex w-full items-center gap-3 text-left transition-colors",
               isMobile ? "px-4 py-3" : "px-3 py-2",
-              idx > 0 && "border-border/40 border-t",
             )}
           >
             <span
@@ -786,7 +786,10 @@ function AddCategoryRow({
                 "flex shrink-0 items-center justify-center rounded-md",
                 isMobile ? "h-8 w-8" : "h-6 w-6",
               )}
-              style={{ backgroundColor: `${accent}1f`, color: accent }}
+              style={{
+                backgroundColor: `color-mix(in srgb, ${accent} 12%, transparent)`,
+                color: accent,
+              }}
               aria-hidden
             >
               <CategoryIcon
@@ -815,13 +818,13 @@ function AddCategoryRow({
     <Link
       to="/settings/spending/categories?tab=expense"
       className={cn(
-        "text-foreground hover:bg-muted/40 active:bg-muted/60 border-border/60 flex w-full items-center gap-3 border-t transition-colors",
+        "text-foreground hover:bg-foreground/5 active:bg-foreground/5 flex w-full items-center gap-3 rounded-xl transition-colors",
         isMobile ? "px-4 py-4" : "px-3 py-2.5 text-sm",
       )}
     >
       <span
         className={cn(
-          "border-border bg-muted/40 flex shrink-0 items-center justify-center rounded-md border border-dashed",
+          "border-border bg-muted/40 flex shrink-0 items-center justify-center rounded-md border",
           isMobile ? "h-8 w-8" : "h-6 w-6",
         )}
         aria-hidden
@@ -849,11 +852,7 @@ function AddCategoryRow({
                 {t("spending:budgetEditor.addCategoryTo", { name: groupName })}
               </SheetTitle>
             </SheetHeader>
-            {pool.length === 0 ? (
-              emptyState
-            ) : (
-              <div className="border-border/60 border-t">{list}</div>
-            )}
+            {pool.length === 0 ? emptyState : <div>{list}</div>}
             {pool.length > 0 && footer}
           </SheetContent>
         </Sheet>
@@ -865,7 +864,7 @@ function AddCategoryRow({
               emptyState
             ) : (
               <>
-                <div className="text-muted-foreground border-border/60 border-b px-3 py-2 text-[10px] font-medium uppercase tracking-widest">
+                <div className="text-muted-foreground border-border/60 border-b px-3 py-2 text-xs font-medium">
                   {t("spending:budgetEditor.moveExistingCategory")}
                 </div>
                 {list}
@@ -1007,9 +1006,7 @@ function GroupEditDialogBody({
 
       <div className="space-y-4 py-2">
         <div className="space-y-1.5">
-          <label className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wide">
-            {t("common:name")}
-          </label>
+          <label className="text-muted-foreground text-xs">{t("common:name")}</label>
           <div className="bg-muted/60 border-border/60 focus-within:ring-ring/50 flex h-9 items-center rounded-md border px-3 transition-shadow focus-within:ring-2">
             <input
               type="text"
@@ -1025,16 +1022,12 @@ function GroupEditDialogBody({
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wide">
-            {t("spending:category.color")}
-          </label>
+          <label className="text-muted-foreground text-xs">{t("spending:category.color")}</label>
           <GroupColorSwatchGrid value={draftColor} onChange={setDraftColor} />
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wide">
-            {t("spending:category.icon")}
-          </label>
+          <label className="text-muted-foreground text-xs">{t("spending:category.icon")}</label>
           <IconPicker value={draftIcon} accent={draftColor} onChange={setDraftIcon} />
         </div>
 
@@ -1145,11 +1138,11 @@ function BudgetCategoryLine({
   return (
     <div className="group/row hover:bg-muted/15 flex items-center gap-2 px-3 py-1.5 text-xs transition-colors sm:gap-3 sm:px-4">
       <span
-        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md"
-        style={{ backgroundColor: `${accent}1f`, color: accent }}
+        className="flex h-5 w-5 shrink-0 items-center justify-center"
+        style={{ color: accent }}
         aria-hidden
       >
-        <CategoryIcon icon={row.icon ?? null} className="h-3 w-3" />
+        <CategoryIcon icon={row.icon ?? null} className="h-4 w-4" />
       </span>
       <span className="text-foreground min-w-0 flex-1 truncate">{row.name}</span>
 
@@ -1180,9 +1173,9 @@ function BudgetCategoryLine({
 
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className="bg-muted/50 hidden h-1 w-14 shrink-0 overflow-hidden rounded-full sm:block">
+          <div className="bg-foreground/10 hidden h-2 w-14 shrink-0 overflow-hidden rounded-[4px] sm:block">
             <div
-              className="h-full rounded-full transition-all"
+              className="h-full rounded-[4px] transition-all"
               style={{
                 width: `${usagePct * 100}%`,
                 backgroundColor: overBudget ? "var(--destructive)" : accent,
@@ -1210,7 +1203,7 @@ function BudgetCategoryLine({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuLabel className="text-[10px] font-semibold uppercase tracking-wide">
+          <DropdownMenuLabel className="text-xs">
             {t("spending:budgetEditor.moveToGroup")}
           </DropdownMenuLabel>
           <DropdownMenuRadioGroup
@@ -1294,10 +1287,7 @@ function GroupBufferLine({
       : t("spending:budgetEditor.groupBuffer");
   return (
     <div className="hover:bg-muted/15 flex items-center gap-2 px-3 py-1.5 text-xs sm:gap-3 sm:px-4">
-      <span
-        className="border-muted-foreground/40 h-4 w-0.5 shrink-0 border-l border-dashed"
-        aria-hidden
-      />
+      <span className="border-muted-foreground/40 h-4 w-0.5 shrink-0 border-l" aria-hidden />
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="text-muted-foreground min-w-0 flex-1 truncate">{label}</span>
@@ -1371,11 +1361,11 @@ function IncomeSourcesPanel({
   const visibleRows = isMonthly && !showAll ? nonZeroRows : rows;
 
   return (
-    <section className={cn(CARD_CLASS, "p-3 sm:p-4")}>
+    <section className={cn(CARD_CLASS, "py-4")}>
       <div className="flex items-center justify-between">
         <PanelHeader title={title} icon={<Icons.Wallet className="h-3.5 w-3.5" />} />
         {isMonthly && (
-          <span className="text-foreground text-xs font-semibold tabular-nums">
+          <span className="text-foreground text-xs font-medium tabular-nums">
             <PrivacyAmount value={total} currency={currency} />
           </span>
         )}
@@ -1428,7 +1418,7 @@ function IncomeSourcesPanel({
           <span className="text-muted-foreground text-xs">
             {t("spending:budgetEditor.totalDefault")}
           </span>
-          <span className="text-sm font-semibold tabular-nums">
+          <span className="text-sm font-medium tabular-nums">
             <PrivacyAmount value={total} currency={currency} />
           </span>
         </div>
@@ -1548,7 +1538,7 @@ function OverridesSummary({
   if (overrides.length === 0) return null;
 
   return (
-    <section className={cn(CARD_CLASS, "p-3 sm:p-4")}>
+    <section className={cn(CARD_CLASS, "py-4")}>
       <div className="flex items-center justify-between gap-2">
         <PanelHeader
           title={tr("spending:budgetEditor.overridesTitle", { count: overrides.length })}
@@ -1649,7 +1639,7 @@ function CopyFromPeriodRow({
   };
 
   return (
-    <section className={cn(CARD_CLASS, "p-3 sm:p-4")}>
+    <section className={cn(CARD_CLASS, "py-4")}>
       <PanelHeader
         title={t("spending:budgetEditor.copyPlanTitle")}
         icon={<Icons.Copy className="h-3.5 w-3.5" />}
@@ -1704,7 +1694,7 @@ function BudgetTotalsPanel({
 }) {
   const { t } = useTranslation();
   return (
-    <section className={cn(CARD_CLASS, "p-3 sm:p-4")}>
+    <section className={cn(CARD_CLASS, "py-4")}>
       <PanelHeader
         title={t("spending:budgetEditor.totals")}
         icon={<Icons.PieChart className="h-3.5 w-3.5" />}
@@ -1759,10 +1749,10 @@ function TotalLine({
 }) {
   return (
     <div className="flex min-w-0 flex-col">
-      <span className="text-muted-foreground text-[10px] uppercase tracking-wide">{label}</span>
+      <span className="text-muted-foreground text-xs">{label}</span>
       <span
         className={cn(
-          "truncate text-sm font-semibold tabular-nums",
+          "truncate text-sm font-medium tabular-nums",
           destructive ? "text-destructive" : "text-foreground",
         )}
       >
@@ -1776,9 +1766,7 @@ function PanelHeader({ title, icon }: { title: string; icon: ReactNode }) {
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-muted-foreground">{icon}</span>
-      <h2 className="text-muted-foreground min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.08em]">
-        {title}
-      </h2>
+      <h2 className={`${SECTION_HEADING} min-w-0 truncate`}>{title}</h2>
     </div>
   );
 }
@@ -1789,12 +1777,12 @@ function BudgetErrorState({ error, onRetry }: { error: unknown; onRetry: () => v
   const missingTables = message.includes("no such table: budget_groups");
 
   return (
-    <section className={cn(CARD_CLASS, "p-5")}>
+    <section className={cn(CARD_CLASS, "py-5")}>
       <div className="flex gap-3">
         <Icons.AlertCircle className="text-destructive mt-0.5 h-5 w-5 shrink-0" />
         <div className="min-w-0 space-y-3">
           <div>
-            <h2 className="font-semibold">{t("spending:budgetEditor.dataUnavailable")}</h2>
+            <h2 className="font-medium">{t("spending:budgetEditor.dataUnavailable")}</h2>
             <p className="text-muted-foreground mt-1 text-sm">
               {missingTables ? t("spending:budgetEditor.migrationNeeded") : message}
             </p>
@@ -1828,11 +1816,7 @@ function BudgetSkeleton() {
 }
 
 function EmptyPanelLine({ children }: { children: ReactNode }) {
-  return (
-    <div className="text-muted-foreground border-border/40 rounded-lg border border-dashed p-3 text-xs">
-      {children}
-    </div>
-  );
+  return <div className="text-muted-foreground text-sm">{children}</div>;
 }
 
 function findCategoryTarget(

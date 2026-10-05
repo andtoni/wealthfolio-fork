@@ -1,16 +1,18 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
-  Badge,
-  Button,
   Checkbox,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
   Icons,
-  PrivacyAmount,
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
 } from "@wealthfolio/ui";
 import type { Account } from "@/lib/types";
 import { getOriginalCurrencyDisplay, isProvisionalCardSpending } from "@/lib/original-currency";
@@ -18,13 +20,18 @@ import { useInvestecCardLifecycleLinkEnabled } from "@/lib/provider-features";
 import { cn, formatDateTime } from "@/lib/utils";
 
 import { BudgetPeriodBadge } from "./budget-period-badge";
+import { LIST_ROW } from "@/components/dashboard-card";
+import { MerchantAvatar } from "./merchant-avatar";
+import { SplitAmount } from "./split-amount";
 import { QuickCategorizePopover } from "./quick-categorize-popover";
 import { QuickEventPopover } from "./quick-event-popover";
 import { SuggestedCategoryButton, type SuggestedCategory } from "./suggested-category-button";
 import {
+  getActivityTypesForAccount,
   getCashActivityLabel,
   getEffectiveCashActivityType,
   isCreditCardAccountType,
+  type CashActivityType,
 } from "../lib/constants";
 import {
   getTransactionDisplay,
@@ -40,6 +47,10 @@ interface TransactionCardProps {
   eventTypeColor: string | null;
   appTimezone?: string;
   isSelected: boolean;
+  /** Checkboxes show, and a tap selects, only while the list is in select mode. */
+  selectMode: boolean;
+  /** Details open from the bottom on a phone and from the side on a computer. */
+  isMobile: boolean;
   suggestedCategory?: SuggestedCategory | null;
   onToggleSelect: (id: string) => void;
   onAssignCategory: (activityId: string, taxonomyId: string, categoryId: string) => void;
@@ -48,6 +59,7 @@ interface TransactionCardProps {
   onMarkReimbursement: (row: TransactionRowVM) => void;
   onEditSplits: (row: TransactionRowVM) => void;
   onEdit: (row: TransactionRowVM) => void;
+  onChangeType: (row: TransactionRowVM, type: CashActivityType) => void;
   onDuplicate: (row: TransactionRowVM) => void;
   onDelete: (row: TransactionRowVM) => void;
   onLinkTransfer?: (row: TransactionRowVM) => void;
@@ -55,8 +67,9 @@ interface TransactionCardProps {
   onLinkInvestecCardLifecycle?: (row: TransactionRowVM) => void;
 }
 
-const CHIP =
-  "border-border/60 bg-background/50 hover:bg-muted/60 inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors";
+const SHEET_ROW = "flex min-h-11 items-center justify-between gap-3 py-1.5 text-[15px]";
+const SHEET_ACTION =
+  "hover:bg-foreground/5 -mx-2 flex min-h-11 w-[calc(100%+1rem)] items-center gap-3 rounded-xl px-2 text-left text-[15px]";
 
 function TransactionCardImpl({
   row,
@@ -65,6 +78,8 @@ function TransactionCardImpl({
   eventTypeColor,
   appTimezone,
   isSelected,
+  selectMode,
+  isMobile,
   suggestedCategory,
   onToggleSelect,
   onAssignCategory,
@@ -73,6 +88,7 @@ function TransactionCardImpl({
   onMarkReimbursement,
   onEditSplits,
   onEdit,
+  onChangeType,
   onDuplicate,
   onDelete,
   onLinkTransfer,
@@ -80,6 +96,7 @@ function TransactionCardImpl({
   onLinkInvestecCardLifecycle,
 }: TransactionCardProps) {
   const { t } = useTranslation();
+  const [detailOpen, setDetailOpen] = useState(false);
   const investecCardLifecycleLinkEnabled = useInvestecCardLifecycleLinkEnabled();
   const a = row.activity;
   const originalCurrency = getOriginalCurrencyDisplay(a);
@@ -90,6 +107,18 @@ function TransactionCardImpl({
   );
   const accountName = account?.name ?? a.accountId;
   const activityType = getEffectiveCashActivityType(a);
+  // The types this account allows, plus the current one if it is not among them.
+  const allowedTypes = getActivityTypesForAccount(account?.accountType);
+  const typeOptions = allowedTypes.includes(activityType as CashActivityType)
+    ? allowedTypes
+    : [...allowedTypes, activityType as CashActivityType];
+  const typeLabel = getCashActivityLabel(
+    activityType,
+    account?.accountType,
+    a.subtype,
+    a.sourceType,
+    a.activityTypeOverride,
+  );
   const isTransfer = isTransferCashActivity(a);
   const transferLinkStatus = getTransferLinkStatus(a);
   const canMarkReimbursement =
@@ -101,241 +130,352 @@ function TransactionCardImpl({
     a.sourceRecordId?.startsWith("investec-card:") === true &&
     onLinkInvestecCardLifecycle !== undefined;
   const formattedDate = formatDateTime(a.activityDate, appTimezone, a.activityDatePrecision);
+  const suggestion = !row.category && !isNeutral && row.splitCount === 0 ? suggestedCategory : null;
+  const acceptSuggestion = () =>
+    suggestion && onAssignCategory(a.id, suggestion.taxonomyId, suggestion.id);
+  const amountTone = isNeutral
+    ? "text-muted-foreground"
+    : isIncome || isSaving
+      ? "text-success"
+      : "text-foreground";
+  const act = (run: () => void) => () => {
+    setDetailOpen(false);
+    run();
+  };
 
   return (
-    <div
-      data-state={isSelected ? "selected" : undefined}
-      className={cn(
-        "border-border/40 bg-card/40 rounded-2xl border p-3",
-        row.needsReview && "border-amber-500/40 bg-amber-500/5",
-      )}
-    >
-      <div className="flex items-start gap-3">
-        <Checkbox
-          checked={isSelected}
-          onCheckedChange={() => onToggleSelect(a.id)}
-          aria-label={
-            isSelected ? t("spending:transactions.deselect") : t("spending:transactions.select")
+    <>
+      <div
+        role="button"
+        tabIndex={0}
+        data-state={isSelected ? "selected" : undefined}
+        className={LIST_ROW}
+        onClick={() => (selectMode ? onToggleSelect(a.id) : setDetailOpen(true))}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            if (selectMode) onToggleSelect(a.id);
+            else setDetailOpen(true);
           }
-          className="mt-0.5 shrink-0"
+        }}
+      >
+        {selectMode && (
+          <Checkbox
+            checked={isSelected}
+            aria-label={
+              isSelected ? t("spending:transactions.deselect") : t("spending:transactions.select")
+            }
+            className="pointer-events-none shrink-0"
+          />
+        )}
+        <MerchantAvatar
+          name={a.notes ?? null}
+          currency={a.currency}
+          logo={isOutflow && !isNeutral}
+          tint={row.category?.color}
         />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
-              {a.notes ?? <span className="text-muted-foreground italic">—</span>}
-            </span>
-            {row.needsReview && (
-              <Badge
-                variant="outline"
-                className="shrink-0 border-amber-500/50 text-[10px] text-amber-600"
+          <div className="text-foreground truncate text-[17px] leading-snug">
+            {a.notes ?? <span className="text-muted-foreground">—</span>}
+          </div>
+          <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-[15px] leading-snug">
+            {isNeutral ? (
+              <span className="truncate">{typeLabel}</span>
+            ) : row.splitCount > 0 ? (
+              <span className="truncate">
+                {t("spending:transactions.splitLines", { count: row.splitCount })}
+              </span>
+            ) : row.category ? (
+              <span className="truncate">{row.category.name}</span>
+            ) : suggestion ? (
+              <span
+                className="min-w-0 shrink-0"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+                role="presentation"
               >
-                {t("spending:transactions.review")}
-              </Badge>
-            )}
-            {isProvisional && (
-              <Badge
-                variant="outline"
-                className="shrink-0 border-sky-500/50 text-[10px] text-sky-600"
-              >
-                {t("spending:transactions.provisional")}
-              </Badge>
+                <SuggestedCategoryButton
+                  category={suggestion}
+                  onAccept={acceptSuggestion}
+                  className="text-foreground inline-flex max-w-full items-center gap-1.5"
+                />
+              </span>
+            ) : (
+              <span className="truncate text-amber-600 dark:text-amber-500">
+                {t("spending:dashboard.uncategorized")}
+              </span>
             )}
           </div>
-          <div className="text-muted-foreground mt-0.5 truncate text-[11px]">
-            {formattedDate.date} {formattedDate.time} · {accountName} ·{" "}
-            {getCashActivityLabel(
-              activityType,
-              account?.accountType,
-              a.subtype,
-              a.sourceType,
-              a.activityTypeOverride,
-            )}
-          </div>
-          {a.budgetPeriodStart && (
-            // On its own line: beside the name it leaves no room for the name on a phone.
-            <div className="mt-1">
-              <BudgetPeriodBadge periodStart={a.budgetPeriodStart} />
+          {(isProvisional || row.needsReview) && (
+            <div className="mt-1 flex gap-1.5">
+              {isProvisional && (
+                <span className="bg-foreground/[0.07] text-muted-foreground rounded-md px-1.5 py-0.5 text-xs">
+                  {t("spending:transactions.provisional")}
+                </span>
+              )}
+              {row.needsReview && (
+                <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 text-xs text-amber-700 dark:text-amber-400">
+                  {t("spending:transactions.review")}
+                </span>
+              )}
             </div>
           )}
         </div>
-        <div
-          className={cn(
-            "shrink-0 text-sm font-medium tabular-nums",
-            isSaving
-              ? "text-[#6B8E54]"
-              : isOutflow
-                ? "text-destructive"
-                : isNeutral
-                  ? "text-muted-foreground"
-                  : "text-success",
-          )}
-        >
-          <div>
-            {sign}
-            <PrivacyAmount value={Math.abs(safeAmount)} currency={a.currency} />
-          </div>
+        <div className={cn("shrink-0 text-right text-[19px]", amountTone)}>
+          <SplitAmount value={safeAmount} currency={a.currency} sign={sign} />
           {originalCurrency && (
-            <span className="text-muted-foreground text-[10px] font-normal leading-tight">
-              {t("spending:transactions.original_amount", { value: originalCurrency.label })}
-            </span>
+            <div className="text-muted-foreground text-xs leading-tight">
+              {originalCurrency.label}
+            </div>
           )}
         </div>
       </div>
 
-      <div className="mt-2.5 flex items-center gap-2 pl-7">
-        {isNeutral ? (
-          <span className="text-muted-foreground text-xs">
-            {t("spending:transactions.neutral")}
-          </span>
-        ) : row.splitCount > 0 ? (
-          <button type="button" className={cn(CHIP, "min-w-0")} onClick={() => onEditSplits(row)}>
-            <Icons.SplitHorizontal className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            <span className="truncate">
-              {t("spending:transactions.splitLines", { count: row.splitCount })}
-            </span>
-          </button>
-        ) : (
-          <>
-            {!row.category && suggestedCategory && (
-              <SuggestedCategoryButton
-                category={suggestedCategory}
-                className={cn(CHIP, "min-w-0")}
-                onAccept={() =>
-                  onAssignCategory(a.id, suggestedCategory.taxonomyId, suggestedCategory.id)
-                }
-              />
+      <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
+        <SheetContent
+          side={isMobile ? "bottom" : "right"}
+          className={cn("overflow-y-auto", isMobile && "pb-safe max-h-[88vh] rounded-t-xl")}
+        >
+          <SheetHeader className="pr-10 text-left">
+            <SheetTitle className="truncate text-base font-medium">{a.notes ?? "—"}</SheetTitle>
+            <SheetDescription className="sr-only">{accountName}</SheetDescription>
+          </SheetHeader>
+          <div className={cn("mt-3 text-[32px] font-medium", amountTone)}>
+            <SplitAmount value={safeAmount} currency={a.currency} sign={sign} />
+          </div>
+          {originalCurrency && (
+            <div className="text-muted-foreground text-xs">
+              {t("spending:transactions.original_amount", { value: originalCurrency.label })}
+            </div>
+          )}
+
+          <div className="mt-4">
+            <div className={SHEET_ROW}>
+              <span className="text-muted-foreground text-[15px]">{t("activity:table_date")}</span>
+              <span className="text-[15px]">
+                {formattedDate.date} {formattedDate.time}
+              </span>
+            </div>
+            <div className={SHEET_ROW}>
+              <span className="text-muted-foreground text-[15px]">
+                {t("activity:table_account")}
+              </span>
+              <span className="truncate text-[15px]">{accountName}</span>
+            </div>
+            <div className={SHEET_ROW}>
+              <span className="text-muted-foreground text-[15px]">{t("activity:table_type")}</span>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" className="inline-flex items-center gap-1.5 text-[15px]">
+                    {typeLabel}
+                    <Icons.ChevronRight
+                      className="text-muted-foreground h-4 w-4 shrink-0"
+                      aria-hidden="true"
+                    />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {typeOptions.map((type) => (
+                    <DropdownMenuItem
+                      key={type}
+                      onSelect={() => type !== activityType && onChangeType(row, type)}
+                    >
+                      <span className="flex-1">
+                        {getCashActivityLabel(
+                          type,
+                          account?.accountType,
+                          type === "CREDIT" && !isCreditCardAccountType(account?.accountType)
+                            ? "REIMBURSEMENT"
+                            : undefined,
+                        )}
+                      </span>
+                      {type === activityType && (
+                        <Icons.Check className="ml-3 h-4 w-4" aria-hidden="true" />
+                      )}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            {!isNeutral && (
+              <div className={SHEET_ROW}>
+                <span className="text-muted-foreground text-[15px]">
+                  {t("spending:filters.category")}
+                </span>
+                {row.splitCount > 0 ? (
+                  <button
+                    type="button"
+                    className="text-[15px]"
+                    onClick={act(() => onEditSplits(row))}
+                  >
+                    {t("spending:transactions.splitLines", { count: row.splitCount })}
+                  </button>
+                ) : (
+                  <span className="flex min-w-0 items-center gap-3">
+                    {suggestion && (
+                      <SuggestedCategoryButton
+                        category={suggestion}
+                        onAccept={acceptSuggestion}
+                        className="inline-flex min-w-0 items-center gap-1.5 text-[15px]"
+                      />
+                    )}
+                    <QuickCategorizePopover
+                      scope={isIncome ? "income" : isSaving ? "saving" : "expense"}
+                      selectedCategoryId={row.category?.id ?? null}
+                      onSelect={(taxonomyId, categoryId) =>
+                        onAssignCategory(a.id, taxonomyId, categoryId)
+                      }
+                      onClear={() => row.category && onClearCategory(a.id, row.category.taxonomyId)}
+                      align="end"
+                      trigger={
+                        <button
+                          type="button"
+                          aria-label={
+                            row.category
+                              ? t("spending:transactions.changeCategory", {
+                                  name: row.category.name,
+                                })
+                              : t("spending:transactions.assignCategory")
+                          }
+                          className="inline-flex min-w-0 items-center gap-1.5 text-[15px]"
+                        >
+                          {row.category ? (
+                            <>
+                              {row.category.color && (
+                                <span
+                                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                  style={{ backgroundColor: row.category.color }}
+                                  aria-hidden="true"
+                                />
+                              )}
+                              <span className="truncate">{row.category.name}</span>
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">
+                              {t("spending:transactions.categorize")}
+                            </span>
+                          )}
+                          <Icons.ChevronRight
+                            className="text-muted-foreground h-4 w-4 shrink-0"
+                            aria-hidden="true"
+                          />
+                        </button>
+                      }
+                    />
+                  </span>
+                )}
+              </div>
             )}
-            <QuickCategorizePopover
-              scope={isIncome ? "income" : isSaving ? "saving" : "expense"}
-              selectedCategoryId={row.category?.id ?? null}
-              onSelect={(taxonomyId, categoryId) => onAssignCategory(a.id, taxonomyId, categoryId)}
-              onClear={() => row.category && onClearCategory(a.id, row.category.taxonomyId)}
-              trigger={
-                <button
-                  type="button"
-                  aria-label={
-                    row.category
-                      ? t("spending:transactions.changeCategory", { name: row.category.name })
-                      : t("spending:transactions.assignCategory")
-                  }
-                  className={cn(CHIP, "min-w-0")}
-                >
-                  {row.category ? (
-                    <>
-                      {row.category.color && (
+            <div className={SHEET_ROW}>
+              <span className="text-muted-foreground text-[15px]">
+                {t("spending:filters.event")}
+              </span>
+              <QuickEventPopover
+                selectedEventId={event?.id ?? null}
+                onSelect={(eventId) => onSetEvent(a.id, eventId)}
+                onClear={() => onSetEvent(a.id, null)}
+                activityId={a.id}
+                defaultDate={a.activityDate ? new Date(a.activityDate) : undefined}
+                trigger={
+                  <button
+                    type="button"
+                    aria-label={
+                      event
+                        ? t("spending:transactions.changeEvent", { name: event.name })
+                        : t("spending:transactions.tagEvent")
+                    }
+                    className="inline-flex min-w-0 items-center gap-1.5 text-[15px]"
+                  >
+                    {event ? (
+                      <>
                         <span
-                          className="h-2.5 w-2.5 shrink-0 rounded-full"
-                          style={{ backgroundColor: row.category.color }}
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: eventTypeColor ?? "var(--muted-foreground)" }}
                           aria-hidden="true"
                         />
-                      )}
-                      <span className="truncate">{row.category.name}</span>
-                    </>
-                  ) : (
-                    <span className="text-muted-foreground inline-flex items-center gap-1 italic">
-                      <Icons.Plus className="h-3 w-3" aria-hidden="true" />
-                      {t("spending:transactions.categorize")}
-                    </span>
-                  )}
-                </button>
-              }
-            />
-          </>
-        )}
+                        <span className="truncate">{event.name}</span>
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">
+                        {t("spending:transactions.tagEvent")}
+                      </span>
+                    )}
+                    <Icons.ChevronRight
+                      className="text-muted-foreground h-4 w-4 shrink-0"
+                      aria-hidden="true"
+                    />
+                  </button>
+                }
+              />
+            </div>
+            {a.budgetPeriodStart && (
+              <div className={SHEET_ROW}>
+                <span className="text-muted-foreground text-[15px]">
+                  {t("spending:transactions.budgetPeriod")}
+                </span>
+                <BudgetPeriodBadge periodStart={a.budgetPeriodStart} />
+              </div>
+            )}
+          </div>
 
-        <QuickEventPopover
-          selectedEventId={event?.id ?? null}
-          onSelect={(eventId) => onSetEvent(a.id, eventId)}
-          onClear={() => onSetEvent(a.id, null)}
-          activityId={a.id}
-          defaultDate={a.activityDate ? new Date(a.activityDate) : undefined}
-          trigger={
-            event ? (
-              <button
-                type="button"
-                aria-label={t("spending:transactions.changeEvent", { name: event.name })}
-                className={cn(CHIP, "min-w-0")}
-              >
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: eventTypeColor ?? "var(--muted-foreground)" }}
-                  aria-hidden="true"
-                />
-                <span className="truncate">{event.name}</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                aria-label={t("spending:transactions.tagEvent")}
-                className="border-border/60 bg-background/50 text-muted-foreground hover:bg-muted/60 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition-colors"
-              >
-                <Icons.Tag className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-            )
-          }
-        />
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="ml-auto h-8 w-8 shrink-0"
-              aria-label={t("spending:transactions.rowActions")}
-            >
-              <Icons.MoreVertical className="h-4 w-4" aria-hidden="true" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onEdit(row)}>
-              <Icons.Pencil className="mr-2 h-4 w-4" aria-hidden="true" />
+          <div className="mt-3">
+            <button type="button" className={SHEET_ACTION} onClick={act(() => onEdit(row))}>
               {t("common:edit")}
-            </DropdownMenuItem>
-            {canMarkReimbursement && (
-              <DropdownMenuItem onClick={() => onMarkReimbursement(row)}>
-                <Icons.RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
-                {t("spending:transactions.markReimbursement")}
-              </DropdownMenuItem>
-            )}
+            </button>
             {!isNeutral && (
-              <DropdownMenuItem onClick={() => onEditSplits(row)}>
-                <Icons.SplitHorizontal className="mr-2 h-4 w-4" aria-hidden="true" />
+              <button type="button" className={SHEET_ACTION} onClick={act(() => onEditSplits(row))}>
                 {t("spending:transactions.splitTransaction")}
-              </DropdownMenuItem>
+              </button>
             )}
-            <DropdownMenuItem onClick={() => onDuplicate(row)}>
-              <Icons.Copy className="mr-2 h-4 w-4" aria-hidden="true" />
+            {canMarkReimbursement && (
+              <button
+                type="button"
+                className={SHEET_ACTION}
+                onClick={act(() => onMarkReimbursement(row))}
+              >
+                {t("spending:transactions.markReimbursement")}
+              </button>
+            )}
+            <button type="button" className={SHEET_ACTION} onClick={act(() => onDuplicate(row))}>
               {t("spending:transactions.duplicate")}
-            </DropdownMenuItem>
-            {isTransfer && (onLinkTransfer || onUnlinkTransfer) ? (
-              transferLinkStatus === "linked" ? (
-                onUnlinkTransfer ? (
-                  <DropdownMenuItem onClick={() => onUnlinkTransfer(row)}>
-                    <Icons.Unlink className="mr-2 h-4 w-4" aria-hidden="true" />
-                    {t("spending:transactions.unlinkTransfer")}
-                  </DropdownMenuItem>
-                ) : null
-              ) : onLinkTransfer ? (
-                <DropdownMenuItem onClick={() => onLinkTransfer(row)}>
-                  <Icons.Link className="mr-2 h-4 w-4" aria-hidden="true" />
-                  {t("spending:transactions.linkTransfer")}
-                </DropdownMenuItem>
-              ) : null
-            ) : null}
-            {canLinkInvestecCardLifecycle ? (
-              <DropdownMenuItem onClick={() => onLinkInvestecCardLifecycle?.(row)}>
-                <Icons.Link className="mr-2 h-4 w-4" aria-hidden="true" />
+            </button>
+            {isTransfer && transferLinkStatus === "linked" && onUnlinkTransfer && (
+              <button
+                type="button"
+                className={SHEET_ACTION}
+                onClick={act(() => onUnlinkTransfer(row))}
+              >
+                {t("spending:transactions.unlinkTransfer")}
+              </button>
+            )}
+            {isTransfer && transferLinkStatus !== "linked" && onLinkTransfer && (
+              <button
+                type="button"
+                className={SHEET_ACTION}
+                onClick={act(() => onLinkTransfer(row))}
+              >
+                {t("spending:transactions.linkTransfer")}
+              </button>
+            )}
+            {canLinkInvestecCardLifecycle && (
+              <button
+                type="button"
+                className={SHEET_ACTION}
+                onClick={act(() => onLinkInvestecCardLifecycle?.(row))}
+              >
                 {t("activity:operations.link_card_lifecycle")}
-              </DropdownMenuItem>
-            ) : null}
-            <DropdownMenuItem className="text-destructive" onClick={() => onDelete(row)}>
-              <Icons.Trash className="mr-2 h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
+            <button
+              type="button"
+              className={cn(SHEET_ACTION, "text-destructive")}
+              onClick={act(() => onDelete(row))}
+            >
               {t("common:delete")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
+            </button>
+          </div>
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
 

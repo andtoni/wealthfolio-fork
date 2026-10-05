@@ -296,7 +296,7 @@ export default function SpendingRulesPage() {
           </EmptyPlaceholder>
         ) : totalRulesCount === 0 ? (
           <div className="space-y-6">
-            <div className="bg-muted/30 rounded-lg border p-4">
+            <div className="">
               <RulePresetPicker />
             </div>
             <EmptyPlaceholder>
@@ -315,7 +315,7 @@ export default function SpendingRulesPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="bg-muted/30 rounded-md border p-3">
+            <div className="py-2">
               <RulePresetPicker compact />
             </div>
 
@@ -363,7 +363,7 @@ export default function SpendingRulesPage() {
             </div>
 
             {filteredRules.length === 0 ? (
-              <div className="text-muted-foreground rounded-md border border-dashed py-8 text-center text-sm">
+              <div className="text-muted-foreground py-8 text-center text-[15px]">
                 {searchQuery
                   ? t("settings:spending.rules.no_match_query", { query: searchQuery })
                   : t("settings:spending.rules.no_match_filter")}{" "}
@@ -380,7 +380,7 @@ export default function SpendingRulesPage() {
                 .
               </div>
             ) : (
-              <div className="divide-border divide-y rounded-md border">
+              <div className="">
                 {filteredRules.map((rule) => (
                   <RuleItem
                     key={rule.id}

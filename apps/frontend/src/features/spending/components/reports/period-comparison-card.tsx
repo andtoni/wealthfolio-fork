@@ -84,7 +84,7 @@ export function PeriodComparisonCard({
 
   if (isLoading) {
     return (
-      <div className="border-border bg-card shadow-xs grid grid-cols-2 gap-4 rounded-xl border p-4 md:grid-cols-4 md:p-5">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} className="h-16 w-full rounded-md" />
         ))}
@@ -93,9 +93,9 @@ export function PeriodComparisonCard({
   }
 
   return (
-    <div className="border-border bg-card shadow-xs rounded-xl border p-4 md:p-5">
+    <div className="">
       <div className="mb-3 flex items-baseline justify-between">
-        <h3 className="text-foreground text-sm font-semibold">
+        <h3 className="text-foreground text-sm font-medium">
           {t("spending:comparison.versus", {
             label: t(`spending:comparison.mode.${comparison}`).toLowerCase(),
           })}
@@ -129,8 +129,8 @@ function ComparisonMetric({ row, currency }: { row: MetricRow; currency: string 
 
   return (
     <div className="flex flex-col">
-      <span className="text-muted-foreground text-[11px] font-light tracking-wide">{label}</span>
-      <span className="text-foreground text-base font-semibold tabular-nums">
+      <span className="text-muted-foreground text-[11px] font-light">{label}</span>
+      <span className="text-foreground text-base font-medium tabular-nums">
         {isBalanceHidden ? "••••" : formatMetric(currentValue, currency, isRate)}
       </span>
       {!isBalanceHidden && pct != null && (

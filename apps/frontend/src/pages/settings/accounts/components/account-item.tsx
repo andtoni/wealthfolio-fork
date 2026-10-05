@@ -59,10 +59,10 @@ export function AccountItem({
   const IconComponent = typeConfig.icon;
 
   return (
-    <div className="flex items-center justify-between p-4">
+    <div className="flex items-center justify-between py-2.5">
       <div className="flex items-center gap-3">
         {/* Avatar with platform logo or account type icon */}
-        <Avatar className="h-10 w-10 rounded-lg">
+        <Avatar className="h-10 w-10 rounded-full">
           {isSynced && platform?.logoUrl ? (
             <AvatarImage
               src={platform.logoUrl}
@@ -70,16 +70,16 @@ export function AccountItem({
               className="bg-white object-contain p-1"
             />
           ) : null}
-          <AvatarFallback className={`rounded-lg ${typeConfig.bgClass}`}>
+          <AvatarFallback className={`rounded-full ${typeConfig.bgClass}`}>
             <IconComponent className={`h-5 w-5 ${typeConfig.iconClass}`} />
           </AvatarFallback>
         </Avatar>
 
-        <div className="grid gap-1">
+        <div className="grid">
           <div className="flex items-center gap-2">
             <Link
               to={`/accounts/${account.id}`}
-              className={`font-semibold hover:underline ${
+              className={`text-[17px] leading-snug hover:underline ${
                 !account.isActive ? "text-muted-foreground" : ""
               }`}
             >
@@ -87,15 +87,9 @@ export function AccountItem({
             </Link>
             {isSynced && <Icons.CloudSync2 className="text-muted-foreground h-3.5 w-3.5" />}
           </div>
-          <div className="text-muted-foreground flex items-center gap-1.5 text-sm">
+          <div className="text-muted-foreground flex items-center gap-2 text-[15px] leading-snug">
             <span>{account.currency}</span>
-            {account.group && (
-              <>
-                <span>·</span>
-                <span>{account.group}</span>
-              </>
-            )}
-            <span>·</span>
+            {account.group && <span>{account.group}</span>}
             <TooltipProvider>
               <Tooltip delayDuration={300}>
                 <TooltipTrigger asChild>

@@ -58,7 +58,7 @@
 
 @theme {
   /* Font families */
-  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-serif: "Merriweather", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
@@ -385,17 +385,17 @@
   /* Font size - desktop default */
   --font-size-base: 0.875rem; /* text-sm */
 
-  /* Flexoki Light Theme (HSL numeric components) */
-  --flexoki-bg: 48 100% 97%;
-  --flexoki-bg-2: 51 59% 95%;
-  --flexoki-ui: 51 21% 88%;
-  --flexoki-ui-2: 50 14% 83%;
-  --flexoki-ui-3: 55 10% 79%;
-  --flexoki-tx: 0 3% 6%;
-  --flexoki-tx-2: 50 3% 42%;
-  --flexoki-tx-3: 49 7% 70%;
-  --flexoki-re: 3 62% 42%;
-  --flexoki-gr: 73 84% 27%;
+  /* Light theme, after Mercury: lavender-grey canvas, white cards (HSL numeric components) */
+  --flexoki-bg: 240 20% 94%;
+  --flexoki-bg-2: 0 0% 100%;
+  --flexoki-ui: 240 16% 90%;
+  --flexoki-ui-2: 240 14% 86%;
+  --flexoki-ui-3: 240 12% 80%;
+  --flexoki-tx: 240 17% 14%;
+  --flexoki-tx-2: 240 5% 46%;
+  --flexoki-tx-3: 240 8% 67%;
+  --flexoki-re: 332 77% 39%;
+  --flexoki-gr: 156 95% 22%;
   --flexoki-ye: 45 99% 34%;
 
   /* Shadcn tokens as full HSL colors */
@@ -480,17 +480,17 @@
 }
 
 .dark {
-  /* Flexoki Dark Theme (HSL numeric components) */
-  --flexoki-bg: 0 3% 6%;
-  --flexoki-bg-2: 30 4% 11%;
-  --flexoki-ui: 30 3% 15%;
-  --flexoki-ui-2: 40 3% 20%;
-  --flexoki-ui-3: 30 3% 24%;
-  --flexoki-tx: 55 10% 79%;
-  --flexoki-tx-2: 43 3% 52%;
-  --flexoki-tx-3: 45 2% 33%;
-  --flexoki-re: 5 61% 54%;
-  --flexoki-gr: 72 46% 41%;
+  /* Dark theme, after Mercury: deep navy canvas and cards (HSL numeric components) */
+  --flexoki-bg: 240 24% 8%;
+  --flexoki-bg-2: 240 18% 11%;
+  --flexoki-ui: 240 19% 17%;
+  --flexoki-ui-2: 240 18% 21%;
+  --flexoki-ui-3: 240 16% 26%;
+  --flexoki-tx: 240 19% 92%;
+  --flexoki-tx-2: 240 10% 61%;
+  --flexoki-tx-3: 240 9% 40%;
+  --flexoki-re: 336 69% 61%;
+  --flexoki-gr: 154 58% 44%;
   --flexoki-ye: 45 82% 45%;
 
   /* Dark chart palette — same semantic hues as light (forest / sage / sand /
@@ -1052,11 +1052,14 @@ summary {
    budget" amber (was #C28B47); --bar-stripe is the diagonal-stripe overlay on
    budget meters; --chart-cursor is the Recharts hover-cursor tint. */
 :root {
+  /* Net Worth has its own graph colour, Mercury's indigo, so it reads apart from Investments. */
+  --net-worth-accent: #5266eb;
   --status-warn: oklch(0.66 0.11 60);
   --bar-stripe: rgba(255, 255, 255, 0.25);
   --chart-cursor: rgba(0, 0, 0, 0.04);
 }
 .dark {
+  --net-worth-accent: #8492ff;
   --status-warn: oklch(0.78 0.13 70);
   --bar-stripe: rgba(0, 0, 0, 0.25);
   --chart-cursor: rgba(255, 255, 255, 0.06);
@@ -1071,4 +1074,26 @@ summary {
 .dark {
   --event-default: oklch(0.78 0.13 150);
   --event-today: oklch(0.85 0.16 90);
+}
+
+/* Every page inside the app shell: cards lose their box and line up with the
+ * page's headings, and a card title reads as a section heading. Dialogs, sheets
+ * and menus render outside the shell and keep their surface. */
+.plain-cards [data-slot="card"] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.plain-cards [data-slot="card-header"],
+.plain-cards [data-slot="card-content"],
+.plain-cards [data-slot="card-footer"] {
+  padding-inline: 0;
+}
+.plain-cards [data-slot="card-title"] {
+  color: var(--foreground);
+  font-size: 1.25rem;
+  font-weight: 500;
+  line-height: 1.75rem;
+  letter-spacing: -0.025em;
 }

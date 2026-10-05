@@ -838,7 +838,7 @@ export function MobileDetailsStep({ accounts, activityType, isEditing }: MobileD
                 <div className="bg-muted/50 border-border rounded-lg border p-3">
                   <div className="flex items-center justify-between">
                     <div className="min-w-0 flex-1">
-                      <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                      <span className="text-muted-foreground text-xs font-medium">
                         {activityType === ActivityType.BUY
                           ? t("activity:form.total_debit")
                           : t("activity:form.total_credit")}
@@ -860,7 +860,7 @@ export function MobileDetailsStep({ accounts, activityType, isEditing }: MobileD
                         )}
                       </p>
                     </div>
-                    <span className="text-lg font-semibold tabular-nums">
+                    <span className="text-lg font-medium tabular-nums">
                       {new Intl.NumberFormat("en-US", {
                         style: currency ? "currency" : "decimal",
                         currency: currency || undefined,

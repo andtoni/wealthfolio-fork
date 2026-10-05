@@ -109,9 +109,9 @@ export function DataTable<TData, TValue>({
           actions={toolbarActions}
         />
       </div>
-      <div className={`min-h-0 flex-1 rounded-md border ${scrollable ? "overflow-auto" : ""}`}>
+      <div className={`min-h-0 flex-1 ${scrollable ? "overflow-auto" : ""}`}>
         <Table>
-          <TableHeader className="bg-muted/50 sticky top-0 z-10">
+          <TableHeader className="bg-background sticky top-0 z-10">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {

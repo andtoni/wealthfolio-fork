@@ -45,7 +45,7 @@ export function ContributionLimitOperations({
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger className="hover:bg-muted flex h-8 w-8 items-center justify-center rounded-md border transition-colors">
+        <DropdownMenuTrigger className="hover:bg-foreground/5 text-muted-foreground flex h-8 w-8 items-center justify-center rounded-full transition-colors">
           <Icons.MoreVertical className="h-4 w-4" />
           <span className="sr-only">{t("settings:limits_operations_open")}</span>
         </DropdownMenuTrigger>

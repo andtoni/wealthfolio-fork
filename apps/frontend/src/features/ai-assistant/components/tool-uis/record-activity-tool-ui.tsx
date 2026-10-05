@@ -606,7 +606,7 @@ function ReviewField({ label, value, className }: ReviewFieldProps) {
   return (
     <div className={className}>
       <div className="text-muted-foreground text-xs font-medium">{label}</div>
-      <div className="mt-1 truncate text-sm font-semibold">{value}</div>
+      <div className="mt-1 truncate text-sm font-medium">{value}</div>
     </div>
   );
 }
@@ -645,7 +645,7 @@ function DraftReview({
             <Icons.ReceiptText className="text-muted-foreground size-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-base font-semibold">{assetSummary.primary}</div>
+            <div className="truncate text-base font-medium">{assetSummary.primary}</div>
             {assetSummary.secondary && (
               <div className="text-muted-foreground mt-0.5 truncate text-xs font-medium">
                 {assetSummary.secondary}
@@ -882,7 +882,7 @@ function DraftForm({
               <div className="text-muted-foreground text-xs font-medium">
                 {t("ai:recordActivity.estimatedTotal")}
               </div>
-              <div className="text-lg font-semibold tabular-nums">{headerAmountLabel}</div>
+              <div className="text-lg font-medium tabular-nums">{headerAmountLabel}</div>
             </div>
           )}
         </div>

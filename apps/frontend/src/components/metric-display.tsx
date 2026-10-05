@@ -215,7 +215,7 @@ function renderWarningText(text: string, boldTerms: string[]): React.ReactNode {
   const parts = text.split(new RegExp(`(${escaped.join("|")})`, "g"));
   return parts.map((part, index) =>
     terms.includes(part) ? (
-      <strong key={index} className="text-foreground font-semibold">
+      <strong key={index} className="text-foreground font-medium">
         {part}
       </strong>
     ) : (

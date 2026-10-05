@@ -103,7 +103,7 @@ export function CategoryDetailSheet({
             <div className="flex-1 space-y-6 overflow-y-auto py-4">
               {/* Current value + change over range */}
               <div>
-                <div className="text-2xl font-bold tabular-nums">
+                <div className="text-2xl font-medium tabular-nums">
                   {selected.isLiability && selected.value !== 0 ? "-" : ""}
                   <CompactAmount value={selected.value} currency={currency} />
                 </div>

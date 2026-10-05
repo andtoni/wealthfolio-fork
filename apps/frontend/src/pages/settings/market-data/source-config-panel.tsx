@@ -94,13 +94,13 @@ function StepHeader({
     <div className="mb-3 flex items-center gap-2.5">
       <div
         className={cn(
-          "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors",
+          "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium transition-colors",
           done ? "bg-foreground text-background" : "bg-muted text-muted-foreground",
         )}
       >
         {done ? <Icons.Check className="h-3.5 w-3.5" /> : number}
       </div>
-      <h3 className="text-sm font-semibold">{title}</h3>
+      <h3 className="text-sm font-medium">{title}</h3>
       {badge && <div className="ml-auto">{badge}</div>}
     </div>
   );
@@ -120,7 +120,7 @@ function PlaceholderChip({
       // inside the URL input is still readable when the click fires.
       onMouseDown={(e) => e.preventDefault()}
       onClick={() => onInsert(token)}
-      className="border-border bg-muted/50 hover:border-foreground/30 hover:bg-accent rounded border px-1.5 py-0.5 font-mono text-[11px] transition-colors"
+      className="border-border bg-muted/50 hover:border-foreground/30 hover:bg-accent rounded border px-1.5 py-0.5 text-[11px] transition-colors"
     >
       {token}
     </button>
@@ -205,9 +205,7 @@ function MappingChip({
       <span className={cn("h-2 w-2 rounded-sm", color)} />
       <span className="font-medium">{label}</span>
       {required && !assigned && <span className="text-destructive">*</span>}
-      <span className="text-muted-foreground font-mono">
-        {assigned && value ? truncate(value, 18) : "—"}
-      </span>
+      <span className="text-muted-foreground">{assigned && value ? truncate(value, 18) : "—"}</span>
     </button>
   );
 }
@@ -275,7 +273,7 @@ function MappingInputRow({
           <FormControl>
             <Input
               placeholder={placeholder}
-              className="bg-background flex-1 font-mono text-xs"
+              className="bg-background flex-1 text-xs"
               {...f}
               onFocus={() => {
                 if (!armed) onArm();
@@ -367,7 +365,7 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
   return (
     <div className="space-y-3">
       {/* ── Step 1 — Configure endpoint ── */}
-      <div className="bg-background rounded-xl border p-4">
+      <div className="p-4">
         <StepHeader
           number={1}
           title={
@@ -377,7 +375,7 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
           }
           done={endpointConfigured}
           badge={
-            <span className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wide">
+            <span className="text-muted-foreground text-[10px] font-medium">
               {t("settings:market_data_page.required")}
             </span>
           }
@@ -390,7 +388,7 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
             name={`${prefix}.format`}
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+                <FormLabel className="text-muted-foreground text-[11px] font-medium">
                   {t("settings:market_data_page.source_type")}
                 </FormLabel>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -429,7 +427,7 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
           {/* Quick start templates */}
           {templates.length > 0 && (
             <div>
-              <Label className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+              <Label className="text-muted-foreground text-[11px] font-medium">
                 {t("settings:market_data_page.quick_start")}
               </Label>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -458,7 +456,7 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
             render={({ field }) => (
               <FormItem>
                 <div className="flex items-center justify-between">
-                  <FormLabel className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+                  <FormLabel className="text-muted-foreground text-[11px] font-medium">
                     {t("settings:market_data_page.url_template")}
                   </FormLabel>
                   <span className="text-muted-foreground text-[11px]">
@@ -501,13 +499,13 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
               name={`${prefix}.pricePath`}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+                  <FormLabel className="text-muted-foreground text-[11px] font-medium">
                     {t("settings:market_data_page.css_selector")}
                   </FormLabel>
                   <FormControl>
                     <Input
                       placeholder={t("settings:market_data_page.css_selector_placeholder")}
-                      className="font-mono text-xs"
+                      className="text-xs"
                       {...field}
                     />
                   </FormControl>
@@ -559,16 +557,12 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
       </div>
 
       {/* ── Step 2 — Map response fields ── */}
-      <div className="bg-background rounded-xl border p-4">
+      <div className="p-4">
         <StepHeader
           number={2}
           title={t("settings:market_data_page.map_response_fields")}
           done={mappingDone}
-          badge={
-            <span className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wide">
-              {mapHint}
-            </span>
-          }
+          badge={<span className="text-muted-foreground text-[10px] font-medium">{mapHint}</span>}
         />
 
         <p className="text-muted-foreground mb-3 text-xs">{mapHelper}</p>
@@ -673,7 +667,7 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
                   <FormControl>
                     <Input
                       placeholder={t("settings:market_data_page.date_format_placeholder")}
-                      className="font-mono text-xs"
+                      className="text-xs"
                       {...field}
                     />
                   </FormControl>
@@ -695,7 +689,7 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
                       <FormControl>
                         <Input
                           placeholder={format === "csv" ? "Open" : "$.open"}
-                          className="font-mono text-xs"
+                          className="text-xs"
                           {...field}
                         />
                       </FormControl>
@@ -714,7 +708,7 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
                       <FormControl>
                         <Input
                           placeholder={format === "csv" ? "High" : "$.high"}
-                          className="font-mono text-xs"
+                          className="text-xs"
                           {...field}
                         />
                       </FormControl>
@@ -733,7 +727,7 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
                       <FormControl>
                         <Input
                           placeholder={format === "csv" ? "Low" : "$.low"}
-                          className="font-mono text-xs"
+                          className="text-xs"
                           {...field}
                         />
                       </FormControl>
@@ -752,7 +746,7 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
                       <FormControl>
                         <Input
                           placeholder={format === "csv" ? "Volume" : "$.volume"}
-                          className="font-mono text-xs"
+                          className="text-xs"
                           {...field}
                         />
                       </FormControl>
@@ -774,7 +768,7 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
                   <FormControl>
                     <Input
                       placeholder={t("settings:market_data_page.currency_path_placeholder")}
-                      className="font-mono text-xs"
+                      className="text-xs"
                       {...field}
                     />
                   </FormControl>

@@ -186,7 +186,7 @@ export function ExchangeRatesSettings() {
         ) : (
           <div className="flex flex-col items-center justify-center py-10 text-center">
             <Icons.DollarSign className="text-muted-foreground h-12 w-12" />
-            <h3 className="mt-4 text-lg font-semibold">{t("settings:fx_empty")}</h3>
+            <h3 className="mt-4 text-lg font-medium">{t("settings:fx_empty")}</h3>
 
             <Button className="mt-4" onClick={() => setIsAddDialogOpen(true)}>
               <Icons.PlusCircle className="mr-2 h-4 w-4" />

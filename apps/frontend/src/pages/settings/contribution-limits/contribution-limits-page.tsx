@@ -76,9 +76,8 @@ const SettingsContributionLimitPage = () => {
             </Button>
           </>
         </SettingsHeader>
-        <Separator />
         <div className="w-full pt-8">
-          <h2 className="text-md text-muted-foreground mb-3 font-semibold">
+          <h2 className="text-md text-muted-foreground mb-3 font-medium">
             {t("settings:limits_current_year", { year: currentYear })}
           </h2>
           {currentYearLimits.length ? (

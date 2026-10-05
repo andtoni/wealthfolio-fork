@@ -1,6 +1,6 @@
+import { LIST_ROW, SECTION_HEADING } from "@/components/dashboard-card";
 import { ApplicationShell } from "@wealthfolio/ui";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
-import { Separator } from "@wealthfolio/ui/components/ui/separator";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -149,46 +149,41 @@ export default function SettingsLayout() {
         {isMainSettingsPage ? (
           // Mobile Settings List View (carded list with dividers)
           <div className="scan-hide-target w-full max-w-full overflow-x-hidden">
-            <div className="bg-background/95 supports-backdrop-filter:bg-background/60 pt-safe sticky top-0 z-10 border-b backdrop-blur">
-              <div className="flex min-h-[60px] items-center justify-center px-4">
-                <h1 className="text-lg font-semibold">{t("settings:title")}</h1>
-              </div>
+            <div className="pt-safe px-4">
+              <h1 className="pt-4 text-[32px] font-medium leading-tight tracking-tight">
+                {t("settings:title")}
+              </h1>
             </div>
-            <div className="space-y-6 p-3 pb-[var(--mobile-nav-total-offset)] lg:p-4 lg:pb-4">
+            <div className="space-y-8 px-4 pb-[var(--mobile-nav-total-offset)] pt-6 lg:pb-4">
               {sections.map((section) => {
                 const mobileItems = section.items.filter((item) => item.href !== "agent-access");
                 if (mobileItems.length === 0) return null;
 
                 return (
-                  <div key={section.title} className="space-y-3">
-                    <div className="text-muted-foreground px-2 text-xs font-semibold uppercase tracking-widest">
-                      {section.title}
-                    </div>
-                    <div className="divide-border bg-card divide-y overflow-hidden rounded-2xl border shadow-sm">
-                      {mobileItems.map((item) => (
-                        <button
-                          key={item.href}
-                          onClick={() => navigate(item.href)}
-                          className="hover:bg-muted/40 flex w-full items-center justify-between gap-3 px-4 py-4 text-left transition-colors active:opacity-90"
-                          aria-label={item.title}
-                        >
-                          <div className="flex min-w-0 flex-1 items-center gap-3">
-                            <div className="text-muted-foreground shrink-0">{item.icon}</div>
-                            <div className="min-w-0">
-                              <div className="text-foreground truncate text-base font-medium">
-                                {item.title}
-                              </div>
-                              {item?.subtitle && (
-                                <div className="text-muted-foreground truncate text-sm">
-                                  {item.subtitle}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          <Icons.ChevronRight className="text-muted-foreground h-4 w-4 shrink-0" />
-                        </button>
-                      ))}
-                    </div>
+                  <div key={section.title}>
+                    <h2 className={`${SECTION_HEADING} pb-1`}>{section.title}</h2>
+                    {mobileItems.map((item) => (
+                      <button
+                        key={item.href}
+                        onClick={() => navigate(item.href)}
+                        className={`${LIST_ROW} w-[calc(100%+1rem)] text-left`}
+                        aria-label={item.title}
+                      >
+                        <span className="bg-foreground/[0.07] flex h-10 w-10 shrink-0 items-center justify-center rounded-full">
+                          {item.icon}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[17px] leading-snug">
+                            {item.title}
+                          </span>
+                          {item?.subtitle && (
+                            <span className="text-muted-foreground block truncate text-[15px] leading-snug">
+                              {item.subtitle}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    ))}
                   </div>
                 );
               })}
@@ -197,7 +192,7 @@ export default function SettingsLayout() {
         ) : (
           <div className="scan-hide-target pt-safe w-full max-w-full overflow-x-hidden">
             <div className="w-full max-w-full overflow-x-hidden scroll-smooth">
-              <div className="p-2 pb-[var(--mobile-nav-total-offset)] lg:p-4 lg:pb-4">
+              <div className="px-4 py-2 pb-[var(--mobile-nav-total-offset)] lg:p-4 lg:pb-4">
                 <Outlet />
               </div>
             </div>
@@ -208,18 +203,15 @@ export default function SettingsLayout() {
       {/* Desktop Layout */}
       <div className="hidden lg:flex lg:w-full lg:justify-start">
         <div className="flex w-full max-w-6xl flex-col px-2 py-8">
-          <div className="space-y-0.5">
-            <h2 className="text-2xl font-bold tracking-tight">{t("settings:title")}</h2>
-          </div>
-          <Separator className="my-6" />
+          <h2 className="pb-8 text-[32px] font-medium leading-tight tracking-tight">
+            {t("settings:title")}
+          </h2>
           <div className="flex gap-10">
             <aside className="hidden w-[240px] shrink-0 lg:sticky lg:top-24 lg:flex lg:flex-col lg:self-start">
               <div className="space-y-6">
                 {sections.map((section) => (
                   <div key={section.title} className="space-y-2">
-                    <div className="text-muted-foreground pl-2 text-sm font-light uppercase tracking-widest">
-                      {section.title}
-                    </div>
+                    <div className="text-muted-foreground pl-2 text-sm">{section.title}</div>
                     <SidebarNav items={section.items} />
                   </div>
                 ))}

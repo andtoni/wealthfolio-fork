@@ -20,7 +20,7 @@ export function SASVerification({ sas, onConfirm, onReject, isLoading }: SASVeri
   return (
     <div className="flex flex-col items-center gap-5 py-10">
       <div className="bg-muted rounded-xl px-8 py-5">
-        <span className="font-mono text-4xl font-bold tracking-widest">{formattedSAS}</span>
+        <span className="font-mono text-4xl font-medium tracking-widest">{formattedSAS}</span>
       </div>
 
       <p className="text-muted-foreground text-sm">{t("sync:sas.sameCodeQuestion")}</p>

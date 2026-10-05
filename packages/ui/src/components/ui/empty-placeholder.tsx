@@ -19,7 +19,9 @@ export function EmptyPlaceholder({ className, children, icon, title, description
       {...props}
     >
       <div className="mx-auto flex max-w-[420px] flex-col items-center justify-center text-center">
-        {icon && <div className="bg-muted flex size-20 items-center justify-center rounded-full">{icon}</div>}
+        {icon && (
+          <div className="bg-foreground/[0.07] flex size-16 items-center justify-center rounded-full">{icon}</div>
+        )}
         {title && <EmptyPlaceholder.Title>{title}</EmptyPlaceholder.Title>}
         {description && <EmptyPlaceholder.Description>{description}</EmptyPlaceholder.Description>}
         {children}
@@ -43,8 +45,8 @@ EmptyPlaceholder.Icon = function EmptyPlaceHolderIcon({ name, className, ...prop
   const { children: _children, dominantBaseline: _dominantBaseline, ...validProps } = props;
 
   return (
-    <div className="bg-muted flex h-20 w-20 items-center justify-center rounded-full">
-      <Icon className={cn("h-10 w-10", className)} {...validProps} />
+    <div className="bg-foreground/[0.07] flex h-16 w-16 items-center justify-center rounded-full">
+      <Icon className={cn("h-7 w-7", className)} {...validProps} />
     </div>
   );
 };
@@ -52,7 +54,7 @@ EmptyPlaceholder.Icon = function EmptyPlaceHolderIcon({ name, className, ...prop
 type EmptyPlacholderTitleProps = React.HTMLAttributes<HTMLHeadingElement>;
 
 EmptyPlaceholder.Title = function EmptyPlaceholderTitle({ className, ...props }: EmptyPlacholderTitleProps) {
-  return <h2 className={cn("mt-6 text-xl font-semibold", className)} {...props} />;
+  return <h2 className={cn("mt-5 text-xl font-medium tracking-tight", className)} {...props} />;
 };
 
 type EmptyPlacholderDescriptionProps = React.HTMLAttributes<HTMLParagraphElement>;
@@ -63,7 +65,7 @@ EmptyPlaceholder.Description = function EmptyPlaceholderDescription({
 }: EmptyPlacholderDescriptionProps) {
   return (
     <p
-      className={cn("text-muted-foreground mb-8 mt-2 text-center text-sm font-normal leading-6", className)}
+      className={cn("text-muted-foreground mb-6 mt-1.5 text-center text-[15px] font-normal leading-snug", className)}
       {...props}
     />
   );

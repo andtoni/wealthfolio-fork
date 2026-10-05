@@ -56,6 +56,7 @@ mod historical_import;
 mod holdings;
 mod limits;
 mod market_data;
+mod merchant_logos;
 mod net_worth;
 mod performance;
 mod portfolio;
@@ -170,6 +171,7 @@ pub fn app_router(state: Arc<AppState>, config: &Config) -> Router {
         .merge(secrets::router())
         .merge(addon_network::router())
         .merge(limits::router())
+        .merge(merchant_logos::router())
         .merge(addons::router())
         .merge(taxonomies::router())
         .merge(net_worth::router())

@@ -40,7 +40,7 @@ export function AccountSelection({ limit, accounts, deposits, isLoading }: Accou
 
   return (
     <div className="space-y-4">
-      <h3 className="font-semibold">{t("settings:limits_select_accounts")}</h3>
+      <h3 className="font-medium">{t("settings:limits_select_accounts")}</h3>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
         {accounts
           ?.filter(

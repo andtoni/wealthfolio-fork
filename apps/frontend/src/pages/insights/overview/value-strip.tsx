@@ -13,19 +13,11 @@ interface ValueStripProps {
 }
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wider">
-      {children}
-    </div>
-  );
+  return <div className="text-muted-foreground text-[10px] font-medium">{children}</div>;
 }
 
 function MobileEyebrow({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-muted-foreground text-[9px] font-semibold uppercase leading-3 tracking-[0.18em]">
-      {children}
-    </div>
-  );
+  return <div className="text-muted-foreground text-[9px] font-medium leading-3">{children}</div>;
 }
 
 function CurrencyExposurePill({
@@ -41,7 +33,7 @@ function CurrencyExposurePill({
     <span className="bg-muted/45 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5">
       <span className="h-2 w-1 rounded-sm" style={{ background: color }} />
       <span className="text-muted-foreground">{currency}</span>
-      <span className="text-foreground font-semibold tabular-nums">
+      <span className="text-foreground font-medium tabular-nums">
         {formatPercent(percentage / 100)}
       </span>
     </span>
@@ -68,7 +60,7 @@ function CurrencyValuePill({
         currency={currency}
         displayCurrency={false}
         isHidden={isHidden}
-        className="text-foreground font-semibold tabular-nums"
+        className="text-foreground font-medium tabular-nums"
       />
     </span>
   );
@@ -126,7 +118,7 @@ export function ValueStrip({ data, currency, isLoading, compact }: ValueStripPro
       <Card className="overflow-hidden sm:hidden">
         <div className="from-muted/60 space-y-1.5 bg-gradient-to-b to-transparent to-[65%] px-4 py-3.5">
           <MobileEyebrow>{t("insights:insights.value_strip.portfolio_value")}</MobileEyebrow>
-          <div className="text-foreground text-[24px] font-bold leading-7 tracking-tight">
+          <div className="text-foreground text-[24px] font-medium leading-7 tracking-tight">
             <AmountDisplay value={data.total} currency={currency} isHidden={isBalanceHidden} />
           </div>
           <div className="text-muted-foreground leading-3.5 text-[10px] tabular-nums">
@@ -137,7 +129,7 @@ export function ValueStrip({ data, currency, isLoading, compact }: ValueStripPro
         <div className="grid grid-cols-3 divide-x border-t">
           <div className="space-y-1.5 px-4 py-3.5">
             <MobileEyebrow>{t("insights:insights.value_strip.cash_balance")}</MobileEyebrow>
-            <div className="text-foreground text-[15px] font-bold leading-5 tracking-tight">
+            <div className="text-foreground text-[15px] font-medium leading-5 tracking-tight">
               <AmountDisplay value={data.cash} currency={currency} isHidden={isBalanceHidden} />
             </div>
             {data.cashCurrencySplit.length === 0 ? (
@@ -155,7 +147,7 @@ export function ValueStrip({ data, currency, isLoading, compact }: ValueStripPro
 
           <div className="space-y-1.5 px-4 py-3.5">
             <MobileEyebrow>{t("insights:insights.value_strip.invested")}</MobileEyebrow>
-            <div className="text-foreground text-[15px] font-bold leading-5 tracking-tight">
+            <div className="text-foreground text-[15px] font-medium leading-5 tracking-tight">
               <AmountDisplay value={data.invested} currency={currency} isHidden={isBalanceHidden} />
             </div>
             <div className="text-muted-foreground leading-3.5 text-[10px] tabular-nums">
@@ -167,7 +159,7 @@ export function ValueStrip({ data, currency, isLoading, compact }: ValueStripPro
 
           <div className="space-y-1.5 px-4 py-3.5">
             <MobileEyebrow>{t("insights:insights.value_strip.book_cost")}</MobileEyebrow>
-            <div className="text-foreground text-[15px] font-bold leading-5 tracking-tight">
+            <div className="text-foreground text-[15px] font-medium leading-5 tracking-tight">
               <AmountDisplay value={data.bookCost} currency={currency} isHidden={isBalanceHidden} />
             </div>
             <div className="text-muted-foreground leading-3.5 text-[10px] tabular-nums">
@@ -183,7 +175,7 @@ export function ValueStrip({ data, currency, isLoading, compact }: ValueStripPro
         {/* Portfolio value — hero cell with a slight top-to-center gradient wash */}
         <div className={cn(gap, pad, "from-muted/60 bg-gradient-to-b to-transparent to-[60%]")}>
           <Eyebrow>{t("insights:insights.value_strip.portfolio_value")}</Eyebrow>
-          <div className={cn("text-foreground font-bold tabular-nums tracking-tight", totalSize)}>
+          <div className={cn("text-foreground font-medium tabular-nums tracking-tight", totalSize)}>
             <AmountDisplay value={data.total} currency={currency} isHidden={isBalanceHidden} />
           </div>
           <div className={cn("flex flex-wrap items-center gap-x-2 gap-y-1", subSize)}>
@@ -205,7 +197,7 @@ export function ValueStrip({ data, currency, isLoading, compact }: ValueStripPro
         {/* Cash balance */}
         <div className={cn(gap, pad)}>
           <Eyebrow>{t("insights:insights.value_strip.cash_balance")}</Eyebrow>
-          <div className={cn("text-foreground font-bold tabular-nums tracking-tight", secSize)}>
+          <div className={cn("text-foreground font-medium tabular-nums tracking-tight", secSize)}>
             <AmountDisplay value={data.cash} currency={currency} isHidden={isBalanceHidden} />
           </div>
           {data.cashCurrencySplit.length > 1 ? (
@@ -234,7 +226,7 @@ export function ValueStrip({ data, currency, isLoading, compact }: ValueStripPro
         {/* Invested */}
         <div className={cn(gap, pad)}>
           <Eyebrow>{t("insights:insights.value_strip.invested")}</Eyebrow>
-          <div className={cn("text-foreground font-bold tabular-nums tracking-tight", secSize)}>
+          <div className={cn("text-foreground font-medium tabular-nums tracking-tight", secSize)}>
             <AmountDisplay value={data.invested} currency={currency} isHidden={isBalanceHidden} />
           </div>
           <div className={cn("text-muted-foreground tabular-nums", subSize)}>
@@ -247,7 +239,7 @@ export function ValueStrip({ data, currency, isLoading, compact }: ValueStripPro
         {/* Book cost — total cost basis of invested (non-cash) holdings */}
         <div className={cn(gap, pad)}>
           <Eyebrow>{t("insights:insights.value_strip.book_cost")}</Eyebrow>
-          <div className={cn("text-foreground font-bold tabular-nums tracking-tight", secSize)}>
+          <div className={cn("text-foreground font-medium tabular-nums tracking-tight", secSize)}>
             <AmountDisplay value={data.bookCost} currency={currency} isHidden={isBalanceHidden} />
           </div>
           {data.bookCostCurrencySplit.length > 1 ? (

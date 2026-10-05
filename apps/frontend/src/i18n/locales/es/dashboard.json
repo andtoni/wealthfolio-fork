@@ -70,7 +70,8 @@
   "tabs": {
     "investments": "Inversiones",
     "net_worth": "Patrimonio neto",
-    "spending": "Gastos"
+    "spending": "Gastos",
+    "transactions": "Transacciones"
   },
   "holdings": {
     "title": "Posiciones",

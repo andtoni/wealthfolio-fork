@@ -1,3 +1,4 @@
+import { BlockBar } from "@/components/block-bar";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -391,7 +392,7 @@ function KpiCell({
 }) {
   return (
     <div className={cn("bg-card flex flex-col gap-1.5 px-4 py-5 tabular-nums", className)}>
-      <span className="text-muted-foreground text-[11px] uppercase tracking-[0.1em]">{label}</span>
+      <span className="text-muted-foreground text-[11px]">{label}</span>
       {children}
     </div>
   );
@@ -419,16 +420,14 @@ function AllocationBar({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="bg-muted flex h-1.5 w-full overflow-hidden rounded-full">
-        {segments.map((segment) => (
-          <div
-            key={segment.accountId}
-            className="h-full"
-            style={{ width: `${segment.pct * 100}%`, backgroundColor: segment.color }}
-            title={`${segment.accountName}: ${formatPercent(segment.pct)}`}
-          />
-        ))}
-      </div>
+      <BlockBar
+        className="h-2.5"
+        segments={segments.map((segment) => ({
+          value: segment.pct,
+          color: segment.color,
+          label: `${segment.accountName}: ${formatPercent(segment.pct)}`,
+        }))}
+      />
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
         {segments.map((segment) => (
           <div
@@ -486,7 +485,7 @@ function AccountLotGroup({
           />
           <span className="text-foreground truncate text-sm font-medium">{group.accountName}</span>
           {group.allSnapshot && (
-            <Badge variant="secondary" className="ml-1 text-[10px] uppercase tracking-wider">
+            <Badge variant="secondary" className="ml-1 text-[10px]">
               {t("asset:lots.from_snapshot")}
             </Badge>
           )}
@@ -498,7 +497,7 @@ function AccountLotGroup({
 
         <div className="text-muted-foreground flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs">
           <span className="inline-flex items-center gap-1.5">
-            <span className="text-[10px] uppercase tracking-wider">{t("asset:lots.basis")}</span>
+            <span className="text-[10px]">{t("asset:lots.basis")}</span>
             <PrivacyAmount
               value={group.costBasis}
               currency={currency}
@@ -507,7 +506,7 @@ function AccountLotGroup({
           </span>
           <span className="bg-border hidden h-3 w-px sm:block" aria-hidden />
           <span className="inline-flex items-center gap-1.5">
-            <span className="text-[10px] uppercase tracking-wider">{t("asset:lots.value")}</span>
+            <span className="text-[10px]">{t("asset:lots.value")}</span>
             <PrivacyAmount
               value={group.marketValue}
               currency={currency}
@@ -529,7 +528,7 @@ function AccountLotGroup({
 
       {expanded && (
         <div className="px-2 pb-2 md:px-3 md:pb-3">
-          <div className="bg-card overflow-hidden rounded-lg border">
+          <div className="overflow-hidden">
             <div className="hidden overflow-x-auto md:block">
               <Table className="table-fixed">
                 <colgroup>
@@ -542,22 +541,18 @@ function AccountLotGroup({
                 </colgroup>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="text-[10px] uppercase tracking-[0.1em]">
-                      {t("asset:lots.date")}
-                    </TableHead>
-                    <TableHead className="text-right text-[10px] uppercase tracking-[0.1em]">
-                      {t("asset:lots.qty")}
-                    </TableHead>
-                    <TableHead className="text-right text-[10px] uppercase tracking-[0.1em]">
+                    <TableHead className="text-[10px]">{t("asset:lots.date")}</TableHead>
+                    <TableHead className="text-right text-[10px]">{t("asset:lots.qty")}</TableHead>
+                    <TableHead className="text-right text-[10px]">
                       {t("asset:lots.unit_cost")}
                     </TableHead>
-                    <TableHead className="text-right text-[10px] uppercase tracking-[0.1em]">
+                    <TableHead className="text-right text-[10px]">
                       {t("asset:lots.cost_basis_col")}
                     </TableHead>
-                    <TableHead className="text-right text-[10px] uppercase tracking-[0.1em]">
+                    <TableHead className="text-right text-[10px]">
                       {t("asset:lots.market_value_col")}
                     </TableHead>
-                    <TableHead className="text-right text-[10px] uppercase tracking-[0.1em]">
+                    <TableHead className="text-right text-[10px]">
                       {t("asset:lots.unrealized")}
                     </TableHead>
                   </TableRow>

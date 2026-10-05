@@ -51,7 +51,7 @@ export const OnboardingConnect: React.FC = () => {
           <Icons.Sparkles className="h-3.5 w-3.5" />
           {t("onboarding:connect.optional")}
         </div>
-        <h2 className="mb-2 text-xl font-semibold">{t("onboarding:connect.title")}</h2>
+        <h2 className="mb-2 text-xl font-medium">{t("onboarding:connect.title")}</h2>
         <p className="text-muted-foreground text-sm">{t("onboarding:connect.subtitle")}</p>
       </div>
 
@@ -68,7 +68,7 @@ export const OnboardingConnect: React.FC = () => {
                   <feature.icon className={`h-5 w-5 sm:h-6 sm:w-6 ${colors.icon}`} />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold sm:mb-2 sm:text-base">{feature.title}</h3>
+                  <h3 className="text-sm font-medium sm:mb-2 sm:text-base">{feature.title}</h3>
                   <p className="text-muted-foreground text-xs leading-relaxed sm:text-sm">
                     {feature.description}
                   </p>

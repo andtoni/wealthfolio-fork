@@ -156,7 +156,7 @@ export function EnterCode({ onSubmit, onCancel, isLoading, error }: EnterCodePro
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="font-semibold">
+            <p className="font-medium">
               {isScanning ? t("sync:enterCode.openingCamera") : t("sync:enterCode.scanQrCode")}
             </p>
             <p className="text-muted-foreground text-sm">{t("sync:enterCode.quickAndEasy")}</p>
@@ -169,7 +169,7 @@ export function EnterCode({ onSubmit, onCancel, isLoading, error }: EnterCodePro
       {canScan && (
         <div className="flex items-center gap-4">
           <div className="bg-border h-px flex-1" />
-          <span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+          <span className="text-muted-foreground text-xs font-medium">
             {t("sync:enterCode.or")}
           </span>
           <div className="bg-border h-px flex-1" />

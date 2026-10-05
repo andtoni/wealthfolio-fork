@@ -75,7 +75,7 @@ describe("EventsCard", () => {
     renderEventsCard("2026-03-05T05:00:00.000Z", "2026-06-05T03:59:59.999Z");
 
     expect(screen.getByText("Sister Wedding")).toBeInTheDocument();
-    expect(screen.getByText("PERIOD")).toBeInTheDocument();
+    expect(screen.getByText("Period")).toBeInTheDocument();
     expect(screen.queryByText("No events in this period")).not.toBeInTheDocument();
   });
 
@@ -127,7 +127,7 @@ describe("EventsCard", () => {
     renderEventsCard("2026-06-01T04:00:00.000Z", "2026-06-30T03:59:59.999Z");
 
     expect(screen.getByText("Summer Trip")).toBeInTheDocument();
-    expect(screen.getByText("SOON")).toBeInTheDocument();
+    expect(screen.getByText("Soon")).toBeInTheDocument();
     expect(screen.getByText(/spent so far/)).toHaveTextContent("1 transaction");
     expect(screen.queryByText(/planned/)).not.toBeInTheDocument();
   });

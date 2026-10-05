@@ -583,7 +583,7 @@ export function BuyForm({
                     )}
                   </p>
                 </div>
-                <span className="text-lg font-semibold tabular-nums">
+                <span className="text-lg font-medium tabular-nums">
                   {new Intl.NumberFormat("en-US", {
                     style: currency ? "currency" : "decimal",
                     currency: currency || undefined,

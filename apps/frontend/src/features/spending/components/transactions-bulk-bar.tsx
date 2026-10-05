@@ -48,7 +48,7 @@ export function TransactionsBulkBar({
     <div
       role="region"
       aria-label={t("spending:transactions.bulkActions")}
-      className="bg-muted/40 ring-border flex flex-wrap items-center justify-between gap-2 rounded-md px-3 py-2 ring-1"
+      className="border-border/40 flex flex-wrap items-center justify-between gap-2 border-y py-2"
     >
       <div className="text-foreground flex items-center gap-2 text-sm">
         <Icons.Check className="h-4 w-4" aria-hidden="true" />

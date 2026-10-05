@@ -105,7 +105,7 @@ export function incomeStreamMonthlyAmount(plan: RetirementPlan, stream: Retireme
 }
 
 export function incomeAgeRangeLabel(stream: RetirementIncomeStream, horizonAge: number) {
-  return `Age ${stream.startAge} → ${horizonAge}`;
+  return `Age ${stream.startAge}–${horizonAge}`;
 }
 
 export function isIncomeActiveAtAge(stream: RetirementIncomeStream, age: number) {

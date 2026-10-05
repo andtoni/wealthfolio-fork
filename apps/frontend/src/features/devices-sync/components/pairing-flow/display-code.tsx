@@ -57,7 +57,7 @@ export function DisplayCode({ code, expiresAt, onCancel }: DisplayCodeProps) {
         onClick={handleCopy}
         className="bg-muted hover:bg-muted/80 flex items-center gap-3 rounded-xl px-4 py-3 transition-colors"
       >
-        <code className="font-mono text-base font-semibold tracking-[0.16em]">{formattedCode}</code>
+        <code className="font-mono text-base font-medium tracking-[0.16em]">{formattedCode}</code>
         {copied ? (
           <Icons.Check className="h-4 w-4 text-green-500" />
         ) : (

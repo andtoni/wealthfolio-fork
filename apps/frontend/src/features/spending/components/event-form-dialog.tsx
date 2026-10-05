@@ -464,7 +464,7 @@ export function EventFormDialog({
                   ) : (
                     <div className="border-input bg-muted/20 space-y-3 rounded-md border p-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-foreground text-xs font-semibold">
+                        <span className="text-foreground text-xs font-medium">
                           {t("spending:eventForm.newEventType")}
                         </span>
                         <button
@@ -637,7 +637,7 @@ function SuggestedTransactions({
   if (candidates.length === 0) {
     return (
       <div className="border-input bg-muted/10 rounded-md border p-3">
-        <p className="text-foreground text-xs font-semibold">{t("spending:eventForm.tagTx")}</p>
+        <p className="text-foreground text-xs font-medium">{t("spending:eventForm.tagTx")}</p>
         <p className="text-muted-foreground mt-1 text-xs">{t("spending:eventForm.noTxInRange")}</p>
       </div>
     );
@@ -647,7 +647,7 @@ function SuggestedTransactions({
     <div className="border-input rounded-md border">
       <div className="flex items-center justify-between border-b px-3 py-2">
         <div className="min-w-0">
-          <p className="text-foreground text-xs font-semibold">
+          <p className="text-foreground text-xs font-medium">
             {t("spending:eventForm.tagTxInRange")}
           </p>
           <p className="text-muted-foreground text-[11px]">
@@ -697,12 +697,12 @@ function SuggestedTransactions({
                       {c.notes || c.activityType}
                     </span>
                     {c.eventId && checked && (
-                      <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/15 px-1 py-px text-[9px] uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                      <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/15 px-1 py-px text-xs text-amber-700 dark:text-amber-300">
                         {t("spending:eventForm.willReplaceTag")}
                       </span>
                     )}
                     {c.eventId && !checked && (
-                      <span className="text-muted-foreground/80 border-muted-foreground/30 shrink-0 rounded border px-1 py-px text-[9px] uppercase tracking-wide">
+                      <span className="text-muted-foreground/80 border-muted-foreground/30 shrink-0 rounded border px-1 py-px text-xs">
                         {t("spending:eventForm.alreadyTagged")}
                       </span>
                     )}

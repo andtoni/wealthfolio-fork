@@ -103,7 +103,7 @@ export function MobileActivityTypeStep() {
   return (
     <div className="flex h-full flex-col">
       <div className="mb-4">
-        <h3 className="text-lg font-semibold">{t("activity:mobile_select_transaction_type")}</h3>
+        <h3 className="text-lg font-medium">{t("activity:mobile_select_transaction_type")}</h3>
       </div>
 
       <ScrollArea>

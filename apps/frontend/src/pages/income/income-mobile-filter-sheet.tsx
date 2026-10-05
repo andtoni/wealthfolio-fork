@@ -50,9 +50,7 @@ export const IncomeMobileFilterSheet = ({
         </SheetHeader>
         <ScrollArea className="flex-1 py-4">
           <div className="space-y-3">
-            <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
-              {t("common:account")}
-            </h4>
+            <h4 className="text-muted-foreground text-xs font-medium">{t("common:account")}</h4>
             <div className="overflow-hidden rounded-lg border">
               <div
                 className={cn(

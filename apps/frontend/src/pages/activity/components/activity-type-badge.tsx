@@ -1,4 +1,3 @@
-import { Badge } from "@wealthfolio/ui/components/ui/badge";
 import { ActivityType, ActivityTypeNames, SUBTYPE_DISPLAY_NAMES } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
@@ -8,31 +7,20 @@ interface ActivityTypeBadgeProps {
   className?: string;
 }
 
-function getActivityBadgeVariant(type: ActivityType) {
+function activityTone(type: ActivityType) {
   switch (type) {
     case ActivityType.DIVIDEND:
     case ActivityType.INTEREST:
-    case ActivityType.BUY:
     case ActivityType.DEPOSIT:
     case ActivityType.TRANSFER_IN:
-      return "success";
-    case ActivityType.SELL:
-    case ActivityType.WITHDRAWAL:
-    case ActivityType.TRANSFER_OUT:
-    case ActivityType.FEE:
-    case ActivityType.TAX:
-      return "destructive";
-    case ActivityType.SPLIT:
-      return "warning";
-    case ActivityType.ADJUSTMENT:
-      return "secondary";
+      return "text-success";
     default:
-      return "default";
+      return "text-foreground";
   }
 }
 
+/** An activity's type as plain text; money coming in is green. */
 export function ActivityTypeBadge({ type, subtype, className }: ActivityTypeBadgeProps) {
-  const variant = getActivityBadgeVariant(type);
   const normalizedSubtype = subtype?.trim().toUpperCase();
   const subtypeLabel = normalizedSubtype
     ? (SUBTYPE_DISPLAY_NAMES[normalizedSubtype] ?? subtype)
@@ -40,9 +28,9 @@ export function ActivityTypeBadge({ type, subtype, className }: ActivityTypeBadg
 
   return (
     <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden">
-      <Badge variant={variant} className={cn("rounded-sm", className)}>
+      <span className={cn("text-sm", activityTone(type), className)}>
         {ActivityTypeNames[type]}
-      </Badge>
+      </span>
       {subtypeLabel && (
         <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs font-normal">
           {subtypeLabel}

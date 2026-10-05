@@ -10,8 +10,8 @@ import { useMonthCalendar } from "../../../hooks/use-month-calendar";
 import type { EventSpendingSummary } from "../../../types/event";
 import { getEventColors } from "./event-colors";
 
-const CARD_CLASS = "border-border/60 bg-card/40 rounded-2xl border p-4 backdrop-blur-xl";
-const LABEL_CLASS = "text-muted-foreground/70 text-[10px] font-normal uppercase tracking-[0.12em]";
+const CARD_CLASS = "";
+const LABEL_CLASS = "text-muted-foreground/70 text-xs font-normal";
 
 const DAY_NAME_KEYS = [
   "spending:calendar.dayMon",
@@ -44,7 +44,7 @@ export const EventsCalendarCard: FC<Props> = ({ events, currency, selectedId, on
       {/* Header */}
       <div className="mb-3">
         <div className="flex items-center justify-between gap-2">
-          <div className="text-foreground text-base font-semibold tracking-tight">
+          <div className="text-foreground text-xl font-medium tracking-tight">
             {t("spending:eventsCard.title")}
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -118,7 +118,7 @@ export const EventsCalendarCard: FC<Props> = ({ events, currency, selectedId, on
                     "flex h-7 items-center justify-center text-[11px] tabular-nums",
                     !inMonth && "text-muted-foreground/40",
                     inMonth && "text-foreground/80",
-                    isToday && "font-semibold",
+                    isToday && "font-medium",
                   )}
                   style={{ gridColumn: di + 1, gridRow: 1 }}
                 >
@@ -142,12 +142,12 @@ export const EventsCalendarCard: FC<Props> = ({ events, currency, selectedId, on
                   type="button"
                   key={`bar-${bar.event.eventId}`}
                   onClick={() => onSelect(bar.event.eventId)}
-                  title={`${bar.event.eventName} · ${
+                  title={`${bar.event.eventName}, ${
                     isBalanceHidden ? "••••" : formatAmount(bar.event.totalSpending, currency)
                   }`}
                   className={cn(
                     "min-h-[16px] truncate rounded-sm px-1 text-left text-[10px] leading-[16px]",
-                    isSel ? "font-semibold" : "hover:brightness-95",
+                    isSel ? "font-medium" : "hover:brightness-95",
                   )}
                   style={{
                     gridColumn: `${bar.startCol + 1} / ${bar.endCol + 2}`,

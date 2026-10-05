@@ -12,7 +12,7 @@ export default function NotFoundPage() {
         <h1 className="text-muted-foreground/10 select-none text-9xl font-black tracking-tighter">
           404
         </h1>
-        <h2 className="text-3xl font-bold tracking-tight">{t("common:notFound.title")}</h2>
+        <h2 className="text-3xl font-medium tracking-tight">{t("common:notFound.title")}</h2>
         <p className="text-muted-foreground mx-auto max-w-[450px] text-lg">
           {t("common:notFound.description")}
         </p>

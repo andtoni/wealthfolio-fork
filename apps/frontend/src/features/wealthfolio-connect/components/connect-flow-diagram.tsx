@@ -1,4 +1,4 @@
-import appLogo from "@/assets/logo-rounded.png";
+const appLogo = "/brand-mark-v5.png";
 import { useTranslation } from "react-i18next";
 
 export function ConnectFlowDiagram() {

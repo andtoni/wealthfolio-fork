@@ -106,7 +106,7 @@ function SharePercentInput({
   };
 
   return (
-    <div className="bg-muted/70 flex h-8 w-20 shrink-0 items-center gap-1 rounded-md border px-2">
+    <div className="bg-muted/70 flex h-8 w-20 shrink-0 items-center gap-1 px-2">
       <input
         type="text"
         inputMode="decimal"
@@ -433,7 +433,7 @@ export function GoalFundingEditor({
             /* ── Edit mode ── */
             <div className="space-y-3">
               {!isRetirement && (
-                <p className="text-muted-foreground text-[10px]">
+                <p className="text-muted-foreground text-[13px]">
                   {t("goals:funding.reserved_share_note")}
                 </p>
               )}
@@ -458,7 +458,7 @@ export function GoalFundingEditor({
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium">
                             {a.name}
                           </span>
 
@@ -466,7 +466,7 @@ export function GoalFundingEditor({
                           {isRetirement && !isDcLinked && (
                             <button
                               onClick={() => cycleTaxBucket(a.id)}
-                              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                              className={`shrink-0 rounded-full px-2 py-0.5 text-[13px] font-medium transition-colors ${
                                 tb
                                   ? (TAX_BUCKET_COLORS[tb] ?? "")
                                   : "bg-muted text-muted-foreground"
@@ -481,7 +481,7 @@ export function GoalFundingEditor({
 
                           {!isDcLinked && allocation && (
                             <span
-                              className={`w-16 shrink-0 text-right text-[11px] font-medium tabular-nums ${allocationLabelClass(allocation)}`}
+                              className={`w-16 shrink-0 text-right text-[13px] font-medium tabular-nums ${allocationLabelClass(allocation)}`}
                             >
                               {allocationLabel(allocation, t)}
                             </span>
@@ -499,7 +499,7 @@ export function GoalFundingEditor({
                           {isDcLinked && (
                             <Tooltip>
                               <TooltipTrigger>
-                                <span className="text-muted-foreground flex items-center gap-0.5 text-[10px]">
+                                <span className="text-muted-foreground flex items-center gap-0.5 text-[13px]">
                                   <Icons.ShieldCheck className="h-3 w-3" />{" "}
                                   {t("goals:funding.pension")}
                                 </span>
@@ -525,7 +525,7 @@ export function GoalFundingEditor({
                         {allocation && !isDcLinked && (
                           <div className="mt-2">
                             {(otherTotal > SHARE_EPSILON || hasOverage) && (
-                              <div className="text-muted-foreground flex items-center justify-between gap-3 text-[10px]">
+                              <div className="text-muted-foreground flex items-center justify-between gap-3 text-[13px]">
                                 <span className="truncate">
                                   {otherTotal > SHARE_EPSILON
                                     ? t("goals:funding.used_by_other_goals", {
@@ -549,7 +549,7 @@ export function GoalFundingEditor({
                               </div>
                             )}
                             {hasOverage && (
-                              <p className="text-destructive mt-1 text-[10px]">
+                              <p className="text-destructive mt-1 text-[13px]">
                                 {t("goals:funding.overallocated", {
                                   percent: formatShare(overBy),
                                 })}
@@ -566,7 +566,7 @@ export function GoalFundingEditor({
               {/* Available accounts to add */}
               {availableAccounts.length > 0 && (
                 <div className="space-y-1">
-                  <p className="text-muted-foreground px-1 text-[10px] uppercase tracking-wider">
+                  <p className="text-muted-foreground px-1 text-[13px]">
                     {t("goals:funding.add_accounts")}
                   </p>
                   {availableAccounts.map((a) => (
@@ -577,7 +577,7 @@ export function GoalFundingEditor({
                     >
                       <Icons.Plus className="text-muted-foreground h-3 w-3 shrink-0" />
                       <span className="min-w-0 flex-1 truncate text-xs">{a.name}</span>
-                      <span className="text-muted-foreground text-[10px]">{a.accountType}</span>
+                      <span className="text-muted-foreground text-[13px]">{a.accountType}</span>
                     </button>
                   ))}
                 </div>
@@ -590,7 +590,7 @@ export function GoalFundingEditor({
               )}
 
               {hasInvalidAllocations && (
-                <div className="text-destructive bg-destructive/5 rounded-lg px-3 py-2 text-[11px]">
+                <div className="text-destructive bg-destructive/5 rounded-lg px-3 py-2 text-[13px]">
                   {t("goals:funding.accounts_exceed_share", {
                     count: invalidAllocationRows.length,
                   })}
@@ -611,7 +611,7 @@ export function GoalFundingEditor({
                   </button>
                 </p>
               ) : (
-                <div className="divide-border divide-y">
+                <div className="">
                   {includedAccounts.map((a, i) => {
                     const percent = sharePercents.get(a.id) ?? 0;
                     const tb = taxBuckets.get(a.id);
@@ -630,12 +630,12 @@ export function GoalFundingEditor({
                         </span>
                         {isRetirement && tbLabel && (
                           <span
-                            className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${tb ? (TAX_BUCKET_COLORS[tb] ?? "") : ""}`}
+                            className={`shrink-0 rounded-full px-1.5 py-0.5 text-[13px] font-medium ${tb ? (TAX_BUCKET_COLORS[tb] ?? "") : ""}`}
                           >
                             {tbLabel}
                           </span>
                         )}
-                        <span className="text-sm font-semibold tabular-nums">{percent}%</span>
+                        <span className="text-sm font-medium tabular-nums">{percent}%</span>
                       </div>
                     );
                   })}
@@ -673,7 +673,7 @@ function AllocationDetailsSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="flex h-full w-full flex-col p-0 sm:max-w-3xl">
-        <SheetHeader className="border-border border-b px-6 py-5">
+        <SheetHeader className="px-6 py-5">
           <SheetTitle>{t("goals:funding.allocation_details")}</SheetTitle>
           <SheetDescription>{t("goals:funding.allocation_details_description")}</SheetDescription>
         </SheetHeader>
@@ -685,24 +685,15 @@ function AllocationDetailsSheet({
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px] border-separate border-spacing-0 text-sm">
                 <thead>
-                  <tr className="text-muted-foreground text-left text-[10px] uppercase tracking-[0.18em]">
-                    <th className="border-border border-b py-2 pr-4 font-medium">
-                      {t("common:account")}
-                    </th>
+                  <tr className="text-muted-foreground text-left text-[13px]">
+                    <th className="py-2 pr-4 font-medium">{t("common:account")}</th>
                     {goalColumns.map((goal) => (
-                      <th
-                        key={goal.id}
-                        className="border-border border-b px-3 py-2 text-right font-medium"
-                      >
+                      <th key={goal.id} className="px-3 py-2 text-right font-medium">
                         {goal.id === currentGoalId ? t("goals:funding.this_goal") : goal.title}
                       </th>
                     ))}
-                    <th className="border-border border-b px-3 py-2 text-right font-medium">
-                      {t("goals:funding.free")}
-                    </th>
-                    <th className="border-border border-b py-2 pl-3 text-right font-medium">
-                      {t("common:total")}
-                    </th>
+                    <th className="px-3 py-2 text-right font-medium">{t("goals:funding.free")}</th>
+                    <th className="py-2 pl-3 text-right font-medium">{t("common:total")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -710,25 +701,22 @@ function AllocationDetailsSheet({
                     const isOver = row.overBy > SHARE_EPSILON;
                     return (
                       <tr key={row.account.id}>
-                        <td className="border-border border-b py-3 pr-4">
+                        <td className="py-3 pr-4">
                           <div className="font-medium">{row.account.name}</div>
                           <div className="text-muted-foreground text-xs">
                             {row.account.accountType}
                           </div>
                         </td>
                         {goalColumns.map((goal) => (
-                          <td
-                            key={goal.id}
-                            className="border-border border-b px-3 py-3 text-right tabular-nums"
-                          >
+                          <td key={goal.id} className="px-3 py-3 text-right tabular-nums">
                             {formatShare(shareForGoal(row, goal.id, currentGoalId))}%
                           </td>
                         ))}
-                        <td className="border-border border-b px-3 py-3 text-right tabular-nums">
+                        <td className="px-3 py-3 text-right tabular-nums">
                           {formatShare(row.left)}%
                         </td>
                         <td
-                          className={`border-border border-b py-3 pl-3 text-right font-semibold tabular-nums ${
+                          className={`py-3 pl-3 text-right font-medium tabular-nums ${
                             isOver ? "text-destructive" : ""
                           }`}
                         >

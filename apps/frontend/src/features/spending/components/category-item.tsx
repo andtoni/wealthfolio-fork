@@ -85,7 +85,7 @@ export function CategoryItem({
   ];
 
   return (
-    <div className={isSubcategory ? "ml-6 border-l pl-4" : ""}>
+    <div className={isSubcategory ? "ml-10" : ""}>
       <div className="flex items-center justify-between gap-2 py-2.5">
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           {hasChildren && !isSubcategory && (
@@ -104,8 +104,8 @@ export function CategoryItem({
           )}
           {!hasChildren && !isSubcategory && <div className="w-6 shrink-0" />}
           <span
-            className={`flex shrink-0 items-center justify-center rounded-md ${
-              isSubcategory ? "h-6 w-6" : "h-7 w-7"
+            className={`flex shrink-0 items-center justify-center rounded-full ${
+              isSubcategory ? "h-7 w-7" : "h-9 w-9"
             }`}
             style={{
               backgroundColor: category.color ? `${category.color}1F` : "var(--muted)",

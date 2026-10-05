@@ -1,3 +1,4 @@
+import { BlockBar } from "@/components/block-bar";
 import { useMemo, type FC } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -12,9 +13,9 @@ import type { CategoryBreakdownRow, MonthBucket } from "../../types/report";
 
 // ─── shared chrome ────────────────────────────────────────────────────────
 
-const CARD_CLASS = "border-border bg-card shadow-xs rounded-xl border p-4 md:p-5";
+const CARD_CLASS = "";
 
-const LABEL_CLASS = "text-muted-foreground/70 text-[10px] font-semibold uppercase tracking-wide";
+const LABEL_CLASS = "text-muted-foreground/70 text-xs";
 
 function HeroSection({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -84,12 +85,12 @@ export const PeriodSummaryHero: FC<PeriodSummaryHeroProps> = ({
 
   return (
     <HeroSection label={t("spending:hero.periodSummary", { subtitle: periodSubtitle })}>
-      <div className="text-foreground text-3xl font-bold tabular-nums tracking-tight">
+      <div className="text-foreground text-3xl font-medium tabular-nums tracking-tight">
         <PrivacyAmount value={spent} currency={currency} />
       </div>
       <div className="text-muted-foreground/80 text-xs">
-        {t("spending:hero.totalSpent")} ·{" "}
-        <span className="text-foreground/90 font-semibold">
+        {t("spending:hero.totalSpent")},{" "}
+        <span className="text-foreground/90 font-medium">
           {isBalanceHidden ? "••••" : formatCompactAmount(dailyAvg, currency)}
         </span>{" "}
         {t("spending:hero.perDayAvg")}
@@ -98,23 +99,16 @@ export const PeriodSummaryHero: FC<PeriodSummaryHeroProps> = ({
       {/* Stacked share bar */}
       {segments.length > 0 ? (
         <>
-          <div className="bg-muted/40 relative mt-4 flex h-2 w-full overflow-hidden rounded-full">
-            {segments.map((s, i) => (
-              <div
-                key={s.id}
-                className="h-full"
-                style={{
-                  width: `${s.share}%`,
-                  backgroundColor: s.color,
-                  opacity: 0.9,
-                  borderRight: i < segments.length - 1 ? "1px solid var(--card)" : undefined,
-                }}
-                title={`${s.name} · ${
-                  isBalanceHidden ? "••••" : formatAmount(s.amount, currency)
-                } (${s.share.toFixed(1)}%)`}
-              />
-            ))}
-          </div>
+          <BlockBar
+            className="mt-4"
+            segments={segments.map((s) => ({
+              value: s.share,
+              color: s.color,
+              label: `${s.name}, ${
+                isBalanceHidden ? "••••" : formatAmount(s.amount, currency)
+              } (${s.share.toFixed(1)}%)`,
+            }))}
+          />
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
             {segments.slice(0, 4).map((s) => (
               <span key={s.id} className="flex items-center gap-1.5 text-[11px]">
@@ -280,13 +274,10 @@ export const BudgetStatusHero: FC<BudgetStatusHeroProps> = ({
   return (
     <HeroSection label={t("spending:hero.budgetStatusWith", { label: monthsLabel })}>
       <div className="flex items-baseline justify-between gap-2">
-        <div className="text-foreground text-3xl font-bold tabular-nums tracking-tight">
+        <div className="text-foreground text-3xl font-medium tabular-nums tracking-tight">
           {Math.round(pct * 100)}%
         </div>
-        <span
-          className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-          style={{ backgroundColor: `${fillColor}1F`, color: fillColor }}
-        >
+        <span className="text-[13px]" style={{ color: fillColor }}>
           {statusLabel}
         </span>
       </div>
@@ -296,9 +287,9 @@ export const BudgetStatusHero: FC<BudgetStatusHeroProps> = ({
       </div>
 
       {/* Horizontal progress with pace marker */}
-      <div className="bg-foreground/10 relative mt-4 h-2 w-full overflow-hidden rounded-full">
+      <div className="bg-foreground/10 relative mt-4 h-2.5 w-full overflow-hidden rounded-[4px]">
         <div
-          className="h-full rounded-full transition-all"
+          className="h-full rounded-[4px] transition-all"
           style={{
             width: `${fillPct * 100}%`,
             backgroundColor: fillColor,
@@ -317,7 +308,7 @@ export const BudgetStatusHero: FC<BudgetStatusHeroProps> = ({
       <div className="text-muted-foreground/80 mt-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-[11px]">
         <span className={cn("tabular-nums", isOver ? "text-destructive" : "text-success")}>
           {isOver ? t("spending:hero.overBy") : t("spending:hero.remaining")}{" "}
-          <span className="font-semibold">
+          <span className="font-medium">
             {isBalanceHidden
               ? "••••"
               : formatCompactAmount(Math.abs(isOver ? overBy : remaining), currency)}
@@ -327,7 +318,7 @@ export const BudgetStatusHero: FC<BudgetStatusHeroProps> = ({
           className={cn("tabular-nums", forecast > target ? "text-destructive" : "text-success")}
         >
           {t("spending:hero.forecast")}{" "}
-          <span className="font-semibold">
+          <span className="font-medium">
             {isBalanceHidden ? "••••" : formatCompactAmount(forecast, currency)}
           </span>
           {forecast > 0 && (
@@ -396,16 +387,13 @@ export const CashflowHero: FC<CashflowHeroProps> = ({ months, currency, isLoadin
   return (
     <HeroSection label={t("spending:hero.cashflowWith", { label: periodLabel })}>
       <div className="flex items-baseline justify-between gap-2">
-        <div className={cn("text-3xl font-bold tabular-nums tracking-tight", netToneClass)}>
+        <div className={cn("text-3xl font-medium tabular-nums tracking-tight", netToneClass)}>
           {totals.net >= 0 ? "+" : "−"}
           {isBalanceHidden ? "••••" : formatCompactAmount(Math.abs(totals.net), currency)}
         </div>
         {totals.income > 0 && (
           <span
-            className={cn(
-              "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-              totals.net >= 0 ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive",
-            )}
+            className={cn("text-[13px]", totals.net >= 0 ? "text-success" : "text-destructive")}
           >
             {netLabel} {Math.round(Math.abs(totals.savingsRate) * 100)}%
           </span>
@@ -418,23 +406,23 @@ export const CashflowHero: FC<CashflowHeroProps> = ({ months, currency, isLoadin
       {/* Income / Spent proportion bars */}
       <div className="mt-4 space-y-1.5">
         <div className="flex items-center gap-2">
-          <span className="text-success w-20 shrink-0 text-[11px] font-semibold tabular-nums">
+          <span className="text-success w-20 shrink-0 text-[11px] font-medium tabular-nums">
             +{isBalanceHidden ? "••••" : formatCompactAmount(totals.income, currency)}
           </span>
-          <div className="bg-foreground/10 h-1.5 flex-1 overflow-hidden rounded-full">
+          <div className="bg-foreground/10 h-2.5 flex-1 overflow-hidden rounded-[4px]">
             <div
-              className="bg-success/65 h-full rounded-full transition-all"
+              className="bg-success/65 h-full rounded-[4px] transition-all"
               style={{ width: `${incomePct}%` }}
             />
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-destructive w-20 shrink-0 text-[11px] font-semibold tabular-nums">
+          <span className="text-destructive w-20 shrink-0 text-[11px] font-medium tabular-nums">
             −{isBalanceHidden ? "••••" : formatCompactAmount(totals.spent, currency)}
           </span>
-          <div className="bg-foreground/10 h-1.5 flex-1 overflow-hidden rounded-full">
+          <div className="bg-foreground/10 h-2.5 flex-1 overflow-hidden rounded-[4px]">
             <div
-              className="bg-destructive/65 h-full rounded-full transition-all"
+              className="bg-destructive/65 h-full rounded-[4px] transition-all"
               style={{ width: `${spentPct}%` }}
             />
           </div>
@@ -442,10 +430,10 @@ export const CashflowHero: FC<CashflowHeroProps> = ({ months, currency, isLoadin
       </div>
 
       <div className="text-muted-foreground/80 mt-3 text-[11px]">
-        {t("spending:hero.avgNet")} ·{" "}
+        {t("spending:hero.avgNet")},{" "}
         <span
           className={cn(
-            "font-semibold tabular-nums",
+            "font-medium tabular-nums",
             monthlyAvgNet >= 0 ? "text-success" : "text-destructive",
           )}
         >

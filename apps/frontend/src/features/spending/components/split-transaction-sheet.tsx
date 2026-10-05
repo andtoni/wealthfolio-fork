@@ -288,7 +288,7 @@ export function SplitTransactionSheet({
               </span>
               <span
                 className={cn(
-                  "font-mono text-lg font-semibold tabular-nums",
+                  "font-mono text-lg font-medium tabular-nums",
                   remainingCents === 0
                     ? "text-success"
                     : remainingCents < 0

@@ -73,7 +73,7 @@ export function QuotePreviewTable({ quotes, maxRows = 10 }: QuotePreviewTablePro
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="rounded-md border">
+        <div className="">
           <Table>
             <TableHeader>
               <TableRow>

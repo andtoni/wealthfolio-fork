@@ -21,6 +21,7 @@ import {
   TooltipTrigger,
   formatCompactAmount,
 } from "@wealthfolio/ui";
+import { BlockBar } from "@/components/block-bar";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import { useIsMobileViewport } from "@/hooks/use-platform";
 import type { Activity, TaxonomyCategory } from "@/lib/types";
@@ -141,7 +142,7 @@ export const EventDetailPanel: FC<EventDetailPanelProps> = ({
               className="inline-block h-2.5 w-2.5 shrink-0 rounded-[2px]"
               style={{ background: `${tagColor}26`, border: `1.5px solid ${tagColor}` }}
             />
-            <div className="text-foreground truncate text-base font-semibold tracking-tight">
+            <div className="text-foreground truncate text-xl font-medium tracking-tight">
               {event.eventName}
             </div>
           </div>
@@ -208,14 +209,14 @@ export const EventDetailPanel: FC<EventDetailPanelProps> = ({
           </div>
         </div>
         <div className="text-muted-foreground/80 mt-1 text-[11px]">
-          {formatRange(startDate, endDate)} · {t("spending:eventDetail.daysCount", { count: days })}{" "}
-          · {t("spending:eventDetail.transactionCount", { count: event.transactionCount })}
-          {event.eventTypeName ? ` · ${event.eventTypeName.toLowerCase()}` : ""}
+          {formatRange(startDate, endDate)}, {t("spending:eventDetail.daysCount", { count: days })},{" "}
+          {t("spending:eventDetail.transactionCount", { count: event.transactionCount })}
+          {event.eventTypeName ? `, ${event.eventTypeName.toLowerCase()}` : ""}
         </div>
       </div>
 
       {outOfRange.length > 0 && (
-        <div className="bg-warning/10 border-warning/40 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-[11px]">
+        <div className="bg-warning/10 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2 text-[13px]">
           <span className="text-foreground/90">
             {t("spending:eventDetail.taggedOutside", { count: outOfRange.length })}
             <span className="text-muted-foreground/80 ml-1 tabular-nums">
@@ -242,7 +243,7 @@ export const EventDetailPanel: FC<EventDetailPanelProps> = ({
       {/* STAT BLOCK */}
       <div className="mt-2 grid grid-cols-2 gap-y-3 md:grid-cols-4 md:gap-x-0 md:gap-y-4">
         <StatCell label={t("spending:eventDetail.eventTotal")}>
-          <div className="text-foreground text-sm font-semibold tabular-nums tracking-tight md:text-base">
+          <div className="text-foreground text-sm font-medium tabular-nums tracking-tight md:text-base">
             <PrivacyAmount value={event.totalSpending} currency={currency} />
           </div>
           <div className="text-muted-foreground/80 mt-1 text-[10px]">
@@ -257,7 +258,7 @@ export const EventDetailPanel: FC<EventDetailPanelProps> = ({
         >
           <div
             className={cn(
-              "text-sm font-semibold tabular-nums tracking-tight md:text-base",
+              "text-sm font-medium tabular-nums tracking-tight md:text-base",
               lift >= 0 ? "text-destructive" : "text-success",
             )}
           >
@@ -276,7 +277,7 @@ export const EventDetailPanel: FC<EventDetailPanelProps> = ({
           }
           divided
         >
-          <div className="text-foreground text-sm font-semibold tabular-nums tracking-tight md:text-base">
+          <div className="text-foreground text-sm font-medium tabular-nums tracking-tight md:text-base">
             <PrivacyAmount value={dailyDuring} currency={currency} />
           </div>
           <div className="text-muted-foreground/80 mt-1 text-[10px]">
@@ -290,7 +291,7 @@ export const EventDetailPanel: FC<EventDetailPanelProps> = ({
           </div>
         </StatCell>
         <StatCell label={t("spending:eventDetail.peakDay")} divided>
-          <div className="text-foreground text-sm font-semibold tabular-nums tracking-tight md:text-base">
+          <div className="text-foreground text-sm font-medium tabular-nums tracking-tight md:text-base">
             {peak ? <PrivacyAmount value={peak.amount} currency={currency} /> : "—"}
           </div>
           <div className="text-muted-foreground/80 mt-1 text-[10px]">
@@ -301,9 +302,7 @@ export const EventDetailPanel: FC<EventDetailPanelProps> = ({
 
       {/* TAKEAWAY */}
       <p className="text-foreground/90 mt-6 text-[13px] leading-relaxed">
-        <span className="text-primary mr-2 text-[10px] font-semibold uppercase tracking-[0.12em]">
-          {t("spending:eventDetail.takeaway")}
-        </span>
+        <span className="text-primary mr-2 text-xs">{t("spending:eventDetail.takeaway")}</span>
         {caption}
       </p>
 
@@ -315,11 +314,11 @@ export const EventDetailPanel: FC<EventDetailPanelProps> = ({
             <div className={LABEL_CLASS}>{t("spending:eventDetail.dayByDay")}</div>
             <div className={cn(LABEL_CLASS, "text-right")}>
               {isBalanceHidden
-                ? `${t("spending:eventDetail.baseline")} ••••${peak ? ` · ${t("spending:eventDetail.peak")} ••••` : ""}`
+                ? `${t("spending:eventDetail.baseline")} ••••${peak ? `, ${t("spending:eventDetail.peak")} ••••` : ""}`
                 : isPhone
                   ? `${t("spending:eventDetail.baseline")} ${formatCompactAmount(baseline, currency)}`
                   : peak
-                    ? `${t("spending:eventDetail.peak")} ${formatAmount(peak.amount, currency)} · ${t("spending:eventDetail.baseline")} ${formatAmount(baseline, currency)}`
+                    ? `${t("spending:eventDetail.peak")} ${formatAmount(peak.amount, currency)}, ${t("spending:eventDetail.baseline")} ${formatAmount(baseline, currency)}`
                     : `${t("spending:eventDetail.baseline")} ${formatAmount(baseline, currency)}`}
             </div>
           </div>
@@ -347,27 +346,20 @@ export const EventDetailPanel: FC<EventDetailPanelProps> = ({
           </div>
           {categories.length > 0 && (
             <>
-              <div className="mt-3 flex h-1.5 items-stretch gap-0.5">
-                {categories.map((c) => (
-                  <div
-                    key={c.id}
-                    className="rounded-full"
-                    title={`${c.name} · ${
-                      isBalanceHidden ? "••••" : formatAmount(c.amount, currency)
-                    }`}
-                    style={{ flex: `${c.amount} 0 0`, background: c.color }}
-                  />
-                ))}
-              </div>
+              <BlockBar
+                className="mt-3"
+                segments={categories.map((c) => ({
+                  value: c.amount,
+                  color: c.color,
+                  label: `${c.name} ${isBalanceHidden ? "••••" : formatAmount(c.amount, currency)}`,
+                }))}
+              />
               <div className="mt-2">
                 {categories.map((c) => {
                   const pct =
                     categoriesTotal > 0 ? Math.round((c.amount / categoriesTotal) * 1000) / 10 : 0;
                   return (
-                    <div
-                      key={c.id}
-                      className="border-border/30 flex items-center gap-3 border-b py-1.5 last:border-b-0"
-                    >
+                    <div key={c.id} className="flex items-center gap-3 py-2 text-[15px]">
                       <span
                         className="inline-block h-2 w-2 shrink-0 rounded-full"
                         style={{ background: c.color }}
@@ -441,24 +433,16 @@ export const EventDetailPanel: FC<EventDetailPanelProps> = ({
               type="button"
               onClick={() => onSelect(ev.eventId)}
               className={cn(
-                "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] transition-colors",
-                isSel
-                  ? "text-foreground"
-                  : "text-muted-foreground hover:bg-muted/30 hover:text-foreground",
+                "inline-flex h-9 items-center gap-2 rounded-full px-3.5 text-sm transition-colors",
+                isSel ? "bg-foreground text-background" : "bg-foreground/[0.07]",
               )}
-              style={{
-                background: isSel ? c.fill : "transparent",
-                borderColor: isSel ? c.stroke : "transparent",
-              }}
             >
               <span
                 className="inline-block h-2 w-2 rounded-[2px]"
                 style={{ background: c.fill, border: `1.5px solid ${c.stroke}` }}
               />
               {ev.eventName}
-              <span className="text-muted-foreground/80 ml-1">
-                · {formatChipDate(parseLocalDate(ev.startDate))}
-              </span>
+              <span className="opacity-60">{formatChipDate(parseLocalDate(ev.startDate))}</span>
             </button>
           );
         })}
@@ -479,7 +463,7 @@ function StatCell({
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn(divided && "md:border-border/40 md:border-l md:pl-4")}>
+    <div className={cn(divided && "")}>
       <div className={LABEL_CLASS}>{label}</div>
       <div className="mt-1.5">{children}</div>
     </div>
@@ -496,7 +480,7 @@ function SubLabel({ children, right }: { children: React.ReactNode; right?: stri
 }
 
 function Hr() {
-  return <div className="bg-border/40 my-5 h-px" />;
+  return <div className="h-8" />;
 }
 
 function DailyBars({
@@ -530,7 +514,7 @@ function DailyBars({
       <div className={cn("relative flex items-end gap-[3px]", compact ? "h-20" : "h-28")}>
         {baseline > 0 && (
           <div
-            className="border-foreground/30 pointer-events-none absolute left-0 right-0 border-t border-dashed"
+            className="border-foreground/30 pointer-events-none absolute left-0 right-0 border-t"
             style={{ bottom: `${(baseline / max) * 100}%` }}
           />
         )}
@@ -547,7 +531,7 @@ function DailyBars({
               style={{ height: `${(Math.max(v, 0) / max) * 100}%` }}
               title={
                 (isBalanceHidden ? "••••" : formatAmount(v, currency)) +
-                (isOut ? ` · ${t("spending:eventDetail.outsideWindow")}` : "")
+                (isOut ? `, ${t("spending:eventDetail.outsideWindow")}` : "")
               }
             />
           );
@@ -562,11 +546,11 @@ function DailyBars({
           ];
         })}
       </div>
-      <div className="text-muted-foreground/80 mt-2 flex items-center justify-between text-[10px] tracking-wide">
+      <div className="text-muted-foreground/80 mt-2 flex items-center justify-between text-[10px]">
         <span className="tabular-nums">{formatPeakDay(chartStartDate, t)}</span>
         <span className="text-muted-foreground/60">
           {t("spending:eventDetail.daysCount", { count: eventDays })}
-          {hasOutOfWindow ? ` · ${t("spending:eventDetail.inclOutside")}` : ""}
+          {hasOutOfWindow ? `, ${t("spending:eventDetail.inclOutside")}` : ""}
         </span>
         <span className="tabular-nums">{formatPeakDay(chartEndDate, t)}</span>
       </div>
@@ -594,41 +578,30 @@ function RhythmCard({
   const { t } = useTranslation();
   const palette = {
     muted: {
-      bg: "bg-muted/20",
-      border: "border-border/40",
       stroke: "var(--muted-foreground)",
       fill: null as string | null,
     },
     during: {
-      bg: "bg-success/10",
-      border: "border-success/30",
       stroke: "var(--success)",
       fill: "var(--success)",
     },
     warn: {
-      bg: "bg-destructive/10",
-      border: "border-destructive/30",
       stroke: "var(--destructive)",
       fill: null as string | null,
     },
     good: {
-      bg: "bg-success/10",
-      border: "border-success/30",
       stroke: "var(--success)",
       fill: null as string | null,
     },
   }[accent];
 
   return (
-    <div className={cn("rounded-md border px-3 py-2", palette.bg, palette.border)}>
+    <div>
       <div className="flex items-baseline justify-between gap-2">
         <div className={LABEL_CLASS}>{label}</div>
         {typeof hangoverPct === "number" && Math.abs(hangoverPct) > 5 && (
           <span
-            className={cn(
-              "rounded-sm px-1 py-0.5 text-[9px] tracking-wider",
-              hangoverPct > 0 ? "bg-destructive/15 text-destructive" : "bg-success/15 text-success",
-            )}
+            className={cn("text-[13px]", hangoverPct > 0 ? "text-destructive" : "text-success")}
           >
             {hangoverPct > 0
               ? t("spending:eventDetail.hangover", { pct: hangoverPct })
@@ -637,7 +610,7 @@ function RhythmCard({
         )}
       </div>
       <div className="mt-1 flex items-center justify-between gap-2">
-        <span className="text-foreground text-[13px] font-medium tabular-nums">
+        <span className="text-foreground text-[17px] tabular-nums">
           {series.length === 0 ? (
             "—"
           ) : (
@@ -747,8 +720,8 @@ function formatRange(start: Date, end: Date): string {
   const sameMonth =
     start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
   return sameMonth
-    ? `${formatMonthDay(start)}–${end.getDate()}`.toUpperCase()
-    : `${formatMonthDay(start)} – ${formatMonthDay(end)}`.toUpperCase();
+    ? `${formatMonthDay(start)}–${end.getDate()}`
+    : `${formatMonthDay(start)} – ${formatMonthDay(end)}`;
 }
 
 /** "2026-05-08" → "May 8" (parsed at noon to avoid UTC drift). */

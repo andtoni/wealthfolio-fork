@@ -162,7 +162,7 @@ export function NewAccountsFoundModal({
               {accounts.map((acc) => {
                 const setup = accountSetups[acc.id];
                 return (
-                  <div key={acc.id} className="space-y-4 rounded-lg border p-4">
+                  <div key={acc.id} className="space-y-4 p-4">
                     <div className="flex items-start justify-between">
                       <div>
                         <p className="font-medium">{acc.name}</p>

@@ -52,7 +52,7 @@ export function SettingsHeader({
         className,
       )}
     >
-      <div className="flex min-w-0 items-center gap-1.5 sm:items-start sm:gap-2">
+      <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
         {showBackOnMobile && (
           <Button
             type="button"
@@ -66,13 +66,11 @@ export function SettingsHeader({
           </Button>
         )}
         <div className="grid min-w-0 gap-1">
-          <h1 className="font-heading break-words text-base font-bold sm:text-lg lg:text-xl">
+          <h1 className="break-words text-2xl font-medium tracking-tight lg:text-[28px]">
             {heading}
           </h1>
           {text && (
-            <p className="text-muted-foreground lg:text-md hidden break-words text-sm font-light sm:block">
-              {text}
-            </p>
+            <p className="text-muted-foreground hidden break-words text-[15px] sm:block">{text}</p>
           )}
         </div>
       </div>

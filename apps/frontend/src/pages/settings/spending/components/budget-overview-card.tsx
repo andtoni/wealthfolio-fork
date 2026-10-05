@@ -1,3 +1,4 @@
+import { BlockBar } from "@/components/block-bar";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
@@ -32,7 +33,6 @@ export function BudgetOverviewCard() {
 
   const fundedGroups = groups.filter((g) => g.planned > 0);
   const unfundedGroups = groups.filter((g) => g.planned <= 0);
-  const totalPlanned = fundedGroups.reduce((sum, g) => sum + g.planned, 0) || 1;
 
   const pctOfIncome =
     incomePlanned > 0 ? Math.round((spendingPlanned / incomePlanned) * 100) : null;
@@ -46,10 +46,10 @@ export function BudgetOverviewCard() {
 
   if (isEmpty) {
     return (
-      <div className="bg-card rounded-lg border p-6">
+      <div className="py-2">
         <div className="space-y-3">
           <div>
-            <h3 className="text-base font-semibold">
+            <h3 className="text-base font-medium">
               {t("settings:spending.budget_overview.title")}
             </h3>
             <p className="text-muted-foreground mt-1 text-xs">
@@ -71,11 +71,11 @@ export function BudgetOverviewCard() {
     <Link
       to="/settings/spending/setup"
       aria-label={t("settings:spending.budget_overview.open_aria")}
-      className="bg-card hover:border-foreground/20 group flex flex-col items-stretch overflow-hidden rounded-lg border transition-all hover:shadow-md sm:flex-row"
+      className="group flex flex-col items-stretch sm:flex-row"
     >
       <div className="min-w-0 flex-1 p-6">
         <div className="mb-4">
-          <h3 className="text-base font-semibold tracking-tight">
+          <h3 className="text-base font-medium tracking-tight">
             {t("settings:spending.budget_overview.title")}
           </h3>
           <p className="text-muted-foreground mt-1 text-xs">
@@ -86,7 +86,7 @@ export function BudgetOverviewCard() {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <div>
             <div className="tabular-nums leading-none">
-              <span className="text-foreground text-xl font-semibold tracking-tight sm:text-2xl">
+              <span className="text-foreground text-xl font-medium tracking-tight sm:text-2xl">
                 {fmt(spendingPlanned, currency)}
               </span>
               {incomePlanned > 0 && (
@@ -95,7 +95,7 @@ export function BudgetOverviewCard() {
                 </span>
               )}
             </div>
-            <div className="text-muted-foreground mt-1.5 text-[10px] font-medium uppercase tracking-widest">
+            <div className="text-muted-foreground mt-1.5 text-xs font-medium">
               {incomePlanned > 0
                 ? t("settings:spending.budget_overview.planned_vs_income")
                 : t("settings:spending.budget_overview.planned_spending")}
@@ -115,18 +115,14 @@ export function BudgetOverviewCard() {
         </div>
 
         {fundedGroups.length > 0 && (
-          <div className="mb-3.5 flex h-2 w-full gap-0.5 overflow-hidden rounded">
-            {fundedGroups.map((g) => (
-              <span
-                key={g.id}
-                className="block h-full"
-                style={{
-                  width: `${(g.planned / totalPlanned) * 100}%`,
-                  background: g.color ?? "var(--muted-foreground)",
-                }}
-              />
-            ))}
-          </div>
+          <BlockBar
+            className="mb-3.5"
+            segments={fundedGroups.map((g) => ({
+              value: g.planned,
+              color: g.color ?? "var(--muted-foreground)",
+              label: g.name,
+            }))}
+          />
         )}
 
         <div className="flex flex-wrap gap-x-3.5 gap-y-1 text-xs">
@@ -157,7 +153,7 @@ export function BudgetOverviewCard() {
       </div>
 
       {/* CTA — bottom bar on mobile, right rail on desktop */}
-      <div className="bg-muted/30 group-hover:bg-foreground group-hover:text-background text-muted-foreground flex shrink-0 items-center justify-center gap-1.5 border-t px-4 py-3 text-xs font-medium uppercase tracking-widest transition-colors sm:w-24 sm:flex-col sm:gap-2 sm:border-l sm:border-t-0 sm:px-0 sm:py-0">
+      <div className="bg-muted/30 group-hover:bg-foreground group-hover:text-background text-muted-foreground flex shrink-0 items-center justify-center gap-1.5 border-t px-4 py-3 text-xs font-medium transition-colors sm:w-24 sm:flex-col sm:gap-2 sm:border-l sm:border-t-0 sm:px-0 sm:py-0">
         <span>{t("settings:spending.budget_overview.open")}</span>
         <Icons.ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
       </div>

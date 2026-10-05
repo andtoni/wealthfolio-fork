@@ -42,7 +42,7 @@ function HoldingAvatar({
     return (
       <span
         className={cn(
-          "bg-primary/80 dark:bg-primary/20 flex shrink-0 items-center justify-center rounded-full text-[9px] font-semibold text-white",
+          "bg-primary/80 dark:bg-primary/20 flex shrink-0 items-center justify-center rounded-full text-[9px] font-medium text-white",
           className,
         )}
       >
@@ -153,7 +153,7 @@ export function HoldingsTable({ report }: HoldingsTableProps) {
                   </div>
 
                   <div className="flex min-w-0 items-baseline gap-1.5">
-                    <span className="text-foreground shrink-0 text-[12px] font-semibold">
+                    <span className="text-foreground shrink-0 text-[12px] font-medium">
                       {row.symbol}
                     </span>
                     <span className="text-muted-foreground truncate text-[12px]">{row.name}</span>
@@ -188,7 +188,7 @@ export function HoldingsTable({ report }: HoldingsTableProps) {
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-[13px]">
             <thead>
-              <tr className="text-muted-foreground border-b text-[10px] uppercase tracking-wider">
+              <tr className="text-muted-foreground border-b text-[10px]">
                 <th className="py-2.5 pl-6 pr-3 text-left font-medium">
                   {t("allocation:holdings.colHolding")}
                 </th>
@@ -240,7 +240,7 @@ export function HoldingsTable({ report }: HoldingsTableProps) {
                       <div className="flex min-w-[280px] items-center gap-2">
                         <HoldingAvatar isCash={row.isCash} symbol={row.symbol} />
                         <div className="flex min-w-0 items-baseline gap-2">
-                          <span className="text-foreground shrink-0 text-[12px] font-semibold">
+                          <span className="text-foreground shrink-0 text-[12px] font-medium">
                             {row.symbol}
                           </span>
                           <span className="text-muted-foreground max-w-[330px] truncate text-[12px]">

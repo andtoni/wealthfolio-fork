@@ -11,7 +11,6 @@ import {
   getActivitySplits,
   listCashActivities,
   replaceActivitySplits,
-  searchCashActivities,
   setActivityBudgetPeriod,
   setActivityEvent,
   unassignActivityCategory,
@@ -36,23 +35,6 @@ export function useCashActivities(filter?: CashActivityFilter) {
   return useQuery<CashActivity[], Error>({
     queryKey: [QueryKeys.SPENDING_TRANSACTIONS, filter ?? null],
     queryFn: () => listCashActivities(filter),
-  });
-}
-
-export function useUncategorizedCount(startDate?: string, endDate?: string) {
-  return useQuery<number, Error>({
-    queryKey: [QueryKeys.SPENDING_TRANSACTIONS, "uncategorized-count", startDate, endDate],
-    queryFn: async () => {
-      const res = await searchCashActivities({
-        status: "uncategorized",
-        startDate,
-        endDate,
-        limit: 1,
-        offset: 0,
-      });
-      return res.totalCount;
-    },
-    enabled: !!startDate && !!endDate,
   });
 }
 

@@ -22,7 +22,7 @@ import { useNavigationMode } from "@/pages/layouts/navigation/navigation-mode-co
 
 interface AppearanceFormValues {
   theme: "light" | "dark" | "system";
-  font: "font-mono" | "font-sans" | "font-serif";
+  font: "" | "font-sans" | "font-serif";
   menuBarVisible: boolean;
 }
 
@@ -35,7 +35,7 @@ export function AppearanceForm() {
     theme: z.enum(["light", "dark", "system"], {
       required_error: t("settings:appearance_theme_required"),
     }),
-    font: z.enum(["font-mono", "font-sans", "font-serif"], {
+    font: z.enum(["", "font-sans", "font-serif"], {
       invalid_type_error: t("settings:appearance_font_error"),
       required_error: t("settings:appearance_font_required"),
     }),

@@ -326,7 +326,7 @@ export function AlternativeAssetQuickAddModal({
         {/* Header with progress indicator */}
         <DialogHeader className="border-b px-6 py-4">
           <div className="flex flex-col items-center space-y-2 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-            <DialogTitle className="text-foreground text-lg font-semibold">
+            <DialogTitle className="text-foreground text-lg font-medium">
               {step === 1
                 ? t("asset:quickAdd.add_new_asset")
                 : selectedAssetType

@@ -70,7 +70,8 @@
   "tabs": {
     "investments": "Anlagen",
     "net_worth": "Nettovermögen",
-    "spending": "Ausgaben"
+    "spending": "Ausgaben",
+    "transactions": "Transaktionen"
   },
   "holdings": {
     "title": "Bestände",

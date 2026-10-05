@@ -3,7 +3,6 @@ import { Badge } from "@wealthfolio/ui/components/ui/badge";
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@wealthfolio/ui/components/ui/popover";
-import { Separator } from "@wealthfolio/ui/components/ui/separator";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@wealthfolio/ui/components/ui/tabs";
 import { useMemo, useEffect, useState } from "react";
@@ -24,7 +23,6 @@ import {
 } from "@/hooks/use-custom-providers";
 import { QueryKeys } from "@/lib/query-keys";
 import type { CustomProviderWithSources } from "@/lib/types/custom-provider";
-import { cn } from "@/lib/utils";
 import { ActionConfirm } from "@wealthfolio/ui";
 import {
   Collapsible,
@@ -48,7 +46,6 @@ interface ProviderSettingsProps {
   onUpdate: (settings: { priority?: number; enabled?: boolean }) => void;
   onPriorityChange: (value: string) => void;
   onPrioritySave: () => void;
-  isLast?: boolean;
 }
 
 function ProviderSettings({
@@ -57,7 +54,6 @@ function ProviderSettings({
   onUpdate,
   onPriorityChange,
   onPrioritySave,
-  isLast = false,
 }: ProviderSettingsProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -144,19 +140,19 @@ function ProviderSettings({
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <div className={cn("hover:bg-accent/30 transition-colors", !isLast && "border-b")}>
+      <div>
         {/* Main row */}
-        <div className="flex items-center gap-4 px-4 py-3">
+        <div className="flex items-center gap-3 py-2.5">
           {/* Logo */}
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center">
             {provider.logoFilename ? (
               <img
                 src={`/market-data/${provider.logoFilename}`}
                 alt=""
-                className="h-9 w-9 rounded-lg object-contain"
+                className="h-10 w-10 rounded-full object-contain"
               />
             ) : (
-              <div className="bg-muted flex h-9 w-9 items-center justify-center rounded-lg">
+              <div className="bg-foreground/[0.07] flex h-10 w-10 items-center justify-center rounded-full">
                 <Icons.Globe className="text-muted-foreground h-5 w-5" />
               </div>
             )}
@@ -165,7 +161,7 @@ function ProviderSettings({
           {/* Name, description and capabilities */}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="font-medium">{provider.name}</span>
+              <span className="text-[17px] leading-snug">{provider.name}</span>
               {provider.capabilities?.coverage && (
                 <Badge variant="secondary" className="h-5 px-1.5 text-[10px] font-normal">
                   {provider.capabilities.coverage}
@@ -197,7 +193,7 @@ function ProviderSettings({
                     </Badge>
                   </PopoverTrigger>
                   <PopoverContent className="w-80 p-0" align="start">
-                    <div className="border-b px-3 py-2">
+                    <div className="py-2">
                       <h4 className="text-sm font-medium">
                         {t("settings:market_data_page.sync_errors")}
                       </h4>
@@ -278,7 +274,7 @@ function ProviderSettings({
             <div className="grid gap-6 md:grid-cols-2">
               {/* Left column - Capabilities */}
               <div className="space-y-4">
-                <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                <h4 className="text-muted-foreground text-xs font-medium">
                   {t("settings:market_data_page.capabilities")}
                 </h4>
                 <div className="space-y-3">
@@ -352,7 +348,7 @@ function ProviderSettings({
 
               {/* Right column - Settings */}
               <div className="space-y-4">
-                <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                <h4 className="text-muted-foreground text-xs font-medium">
                   {t("settings:market_data_page.settings")}
                 </h4>
                 <div className="space-y-4">
@@ -378,7 +374,7 @@ function ProviderSettings({
                               ? ""
                               : t("settings:market_data_page.api_key_placeholder")
                           }
-                          className="grow font-mono text-xs"
+                          className="grow text-xs"
                           readOnly={!hasLoadedKey && provider.hasApiKey}
                         />
                         <Button
@@ -516,7 +512,6 @@ function CustomProviderCard({
   onToggleEnabled,
   isDeleting = false,
   isToggling = false,
-  isLast = false,
 }: {
   provider: CustomProviderWithSources;
   onEdit: () => void;
@@ -524,22 +519,21 @@ function CustomProviderCard({
   onToggleEnabled: (enabled: boolean) => void;
   isDeleting?: boolean;
   isToggling?: boolean;
-  isLast?: boolean;
 }) {
   const { t } = useTranslation();
   const latestSource = provider.sources.find((s) => s.kind === "latest");
   const historicalSource = provider.sources.find((s) => s.kind === "historical");
 
   return (
-    <div className={cn("hover:bg-accent/30 transition-colors", !isLast && "border-b")}>
-      <div className="flex items-center gap-4 px-4 py-3">
+    <div>
+      <div className="flex items-center gap-3 py-2.5">
         <div className="bg-muted flex h-9 w-9 shrink-0 items-center justify-center rounded-lg">
           <Icons.Globe className="text-muted-foreground h-5 w-5" />
         </div>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="font-medium">{provider.name}</span>
+            <span className="text-[17px] leading-snug">{provider.name}</span>
             {!provider.enabled && (
               <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-normal">
                 {t("settings:market_data_page.disabled")}
@@ -689,10 +683,9 @@ export default function MarketDataSettingsPage() {
           heading={t("settings:market_data_page.heading")}
           text={t("settings:market_data_page.subtitle")}
         />
-        <Separator />
-        <div className="overflow-hidden rounded-lg border">
+        <div className="overflow-hidden">
           {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-            <div key={i} className="flex items-center gap-4 border-b px-4 py-3 last:border-b-0">
+            <div key={i} className="flex items-center gap-4 py-3">
               <Skeleton className="h-9 w-9 rounded-lg" />
               <div className="flex-1 space-y-2">
                 <div className="flex items-center gap-2">
@@ -724,7 +717,6 @@ export default function MarketDataSettingsPage() {
           heading={t("settings:market_data_page.heading")}
           text={t("settings:market_data_page.subtitle")}
         />
-        <Separator />
         <div className="border-destructive/20 bg-destructive/5 rounded-lg border p-6">
           <div className="flex items-start gap-3">
             <Icons.XCircle className="text-destructive mt-0.5 h-5 w-5 shrink-0" />
@@ -861,9 +853,8 @@ export default function MarketDataSettingsPage() {
           </Button>
         </div>
       </SettingsHeader>
-      <Separator />
       {showHealthBanner && (
-        <div className="border-border bg-muted/30 flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+        <div className="flex items-center justify-between gap-3 px-3 py-2">
           <div className="flex min-w-0 items-center gap-2">
             <Icons.Info className="text-muted-foreground h-4 w-4 shrink-0" />
             <p className="text-sm">{t("settings:health_banner_market_data")}</p>
@@ -913,8 +904,8 @@ export default function MarketDataSettingsPage() {
               {t("settings:market_data_page.no_builtin")}
             </p>
           ) : (
-            <div className="overflow-hidden rounded-lg border">
-              {builtinProviders.map((provider, index, arr) => (
+            <div className="overflow-hidden">
+              {builtinProviders.map((provider) => (
                 <ProviderSettings
                   key={provider.id}
                   provider={provider}
@@ -922,7 +913,6 @@ export default function MarketDataSettingsPage() {
                   onUpdate={(settings) => handleUpdateSetting(provider.id, settings)}
                   onPriorityChange={(value) => handlePriorityInputChange(provider.id, value)}
                   onPrioritySave={() => handlePrioritySave(provider.id)}
-                  isLast={index === arr.length - 1}
                 />
               ))}
             </div>
@@ -991,8 +981,8 @@ export default function MarketDataSettingsPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-lg border">
-              {customProviders.map((cp, index) => (
+            <div className="overflow-hidden">
+              {customProviders.map((cp) => (
                 <CustomProviderCard
                   key={cp.id}
                   provider={cp}
@@ -1015,7 +1005,6 @@ export default function MarketDataSettingsPage() {
                   }}
                   isDeleting={deletingId === cp.id}
                   isToggling={togglingId === cp.id}
-                  isLast={index === customProviders.length - 1}
                 />
               ))}
             </div>

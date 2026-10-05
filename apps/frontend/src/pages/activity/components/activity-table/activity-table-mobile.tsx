@@ -1,5 +1,6 @@
+import { LIST_ROW } from "@/components/dashboard-card";
 import { TickerAvatar } from "@/components/ticker-avatar";
-import { Card } from "@wealthfolio/ui/components/ui/card";
+import { SplitAmount } from "@/features/spending/components/split-amount";
 import {
   calculateActivityValue,
   formatSplitRatio,
@@ -15,8 +16,9 @@ import { ActivityType, ActivityTypeNames } from "@/lib/constants";
 import { parseOccSymbol } from "@/lib/occ-symbol";
 import { useSettingsContext } from "@/lib/settings-provider";
 import { ActivityDetails } from "@/lib/types";
-import { formatDateTime } from "@/lib/utils";
-import { Button, EmptyPlaceholder, formatAmount, Icons, Separator } from "@wealthfolio/ui";
+import { cn, formatDateTime } from "@/lib/utils";
+import { Button, EmptyPlaceholder, formatAmount, Icons } from "@wealthfolio/ui";
+import { Fragment } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ActivityOperations } from "../activity-operations";
@@ -89,8 +91,10 @@ export const ActivityTableMobile = ({
     );
   }
 
+  let lastDay = "";
+
   return (
-    <div className="min-h-0 flex-1 space-y-2 overflow-auto">
+    <div className={cn("min-h-0 flex-1 overflow-auto", !isCompactView && "space-y-6")}>
       {activities.map((activity) => {
         const symbol = activity.assetSymbol;
         const activityType = activity.activityType;
@@ -125,60 +129,57 @@ export const ActivityTableMobile = ({
 
         // Compact View
         if (isCompactView) {
-          const activityTypeLabel = ActivityTypeNames[activity.activityType];
+          const heading = formattedDate.date === lastDay ? null : formattedDate.date;
+          lastDay = formattedDate.date;
+          const showsQuantity =
+            !isCash &&
+            !(isIncomeActivity(activity.activityType) && !isAssetBackedIncome) &&
+            !isSplitActivity(activity.activityType) &&
+            !isFeeActivity(activity.activityType) &&
+            activity.quantity;
+          const inner = (
+            <>
+              <TickerAvatar symbol={avatarSymbol} className="h-10 w-10 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[17px] leading-snug">{displaySymbol}</p>
+                <p className="text-muted-foreground flex gap-1.5 truncate text-[15px] leading-snug">
+                  <span>{ActivityTypeNames[activity.activityType]}</span>
+                  {optionSubtitle && <span>{optionSubtitle}</span>}
+                  {showsQuantity && (
+                    <span>
+                      {activity.quantity}{" "}
+                      {isOptionActivity
+                        ? t("activity:date_list.contracts")
+                        : t("activity:date_list.shares")}
+                    </span>
+                  )}
+                </p>
+              </div>
+              {activity.activityType !== "SPLIT" && (
+                <span className="shrink-0 text-[19px]">
+                  <SplitAmount value={displayValue} currency={activity.currency} />
+                </span>
+              )}
+            </>
+          );
           return (
-            <Card key={activity.id} className="p-3">
-              <div className="flex items-center gap-3">
-                {(() => {
-                  const inner = (
-                    <>
-                      <TickerAvatar symbol={avatarSymbol} className="h-10 w-10 flex-shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline justify-between gap-2">
-                          <p className="truncate font-semibold">{displaySymbol}</p>
-                          {activity.activityType !== "SPLIT" && (
-                            <span className="shrink-0 text-sm font-semibold">
-                              {formatAmount(displayValue, activity.currency)}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-muted-foreground text-xs">
-                          {optionSubtitle
-                            ? `${activityTypeLabel} · ${optionSubtitle}`
-                            : activityTypeLabel}
-                        </p>
-                        <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
-                          <span>{formattedDate.date}</span>
-                          {!isCash &&
-                            !(isIncomeActivity(activity.activityType) && !isAssetBackedIncome) &&
-                            !isSplitActivity(activity.activityType) &&
-                            !isFeeActivity(activity.activityType) &&
-                            activity.quantity && (
-                              <>
-                                <span>•</span>
-                                <span>
-                                  {activity.quantity}{" "}
-                                  {isOptionActivity
-                                    ? t("activity:date_list.contracts")
-                                    : t("activity:date_list.shares")}
-                                </span>
-                              </>
-                            )}
-                        </div>
-                      </div>
-                    </>
-                  );
-                  return isCash || !hasAsset ? (
-                    <div className="flex min-w-0 flex-1 items-center gap-3">{inner}</div>
-                  ) : (
-                    <Link
-                      to={`/holdings/${encodeURIComponent(activity.assetId)}`}
-                      className="flex min-w-0 flex-1 items-center gap-3"
-                    >
-                      {inner}
-                    </Link>
-                  );
-                })()}
+            <Fragment key={activity.id}>
+              {heading && (
+                <h3 className="pb-1 pt-6 text-xl font-medium tracking-tight first:pt-0">
+                  {heading}
+                </h3>
+              )}
+              <div className={LIST_ROW}>
+                {isCash || !hasAsset ? (
+                  <div className="flex min-w-0 flex-1 items-center gap-3">{inner}</div>
+                ) : (
+                  <Link
+                    to={`/holdings/${encodeURIComponent(activity.assetId)}`}
+                    className="flex min-w-0 flex-1 items-center gap-3"
+                  >
+                    {inner}
+                  </Link>
+                )}
                 <ActivityOperations
                   activity={activity}
                   onEdit={handleEdit}
@@ -189,13 +190,13 @@ export const ActivityTableMobile = ({
                   onLinkInvestecCardLifecycle={onLinkInvestecCardLifecycle}
                 />
               </div>
-            </Card>
+            </Fragment>
           );
         }
 
         // Detailed View
         return (
-          <Card key={activity.id} className="p-3">
+          <div key={activity.id}>
             <div className="space-y-2">
               {/* Header: Symbol and Date */}
               <div className="flex items-start justify-between">
@@ -204,7 +205,7 @@ export const ActivityTableMobile = ({
                     <>
                       <TickerAvatar symbol={avatarSymbol} className="h-10 w-10" />
                       <div>
-                        <p className="font-semibold">{displaySymbol}</p>
+                        <p className="text-[17px] leading-snug">{displaySymbol}</p>
                         <p className="text-muted-foreground text-xs">
                           {isCash ? activity.currency : (optionSubtitle ?? activity.assetName)}
                         </p>
@@ -232,8 +233,6 @@ export const ActivityTableMobile = ({
                   onLinkInvestecCardLifecycle={onLinkInvestecCardLifecycle}
                 />
               </div>
-
-              <Separator />
 
               {/* Activity Details Grid */}
               <div className="space-y-1.5 text-sm">
@@ -329,11 +328,11 @@ export const ActivityTableMobile = ({
 
                 {/* Total Value */}
                 {activity.activityType !== "SPLIT" && (
-                  <div className="flex items-center justify-between border-t pt-1.5">
+                  <div className="flex items-center justify-between">
                     <span className="text-muted-foreground font-medium">
                       {t("activity:table.total_value")}
                     </span>
-                    <span className="font-semibold">
+                    <span className="font-medium">
                       {formatAmount(displayValue, activity.currency)}
                     </span>
                   </div>
@@ -349,7 +348,7 @@ export const ActivityTableMobile = ({
                 </div>
               </div>
             </div>
-          </Card>
+          </div>
         );
       })}
     </div>

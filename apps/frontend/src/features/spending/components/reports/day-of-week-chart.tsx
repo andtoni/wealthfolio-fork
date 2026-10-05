@@ -70,14 +70,14 @@ export function DayOfWeekChart({
               const d = payload[0].payload as DayDatum;
               return (
                 <div className="bg-background rounded-md border px-3 py-2 text-xs shadow-sm">
-                  <div className="text-foreground font-semibold">{d.day}</div>
+                  <div className="text-foreground font-medium">{d.day}</div>
                   <div className="text-muted-foreground">
                     {t("spending:dayOfWeek.total")}:{" "}
                     {isBalanceHidden ? "••••" : formatAmount(d.total, currency)}
                   </div>
                   <div className="text-muted-foreground">
                     {t("spending:dayOfWeek.avg")}:{" "}
-                    {isBalanceHidden ? "••••" : formatAmount(d.avg, currency)} ·{" "}
+                    {isBalanceHidden ? "••••" : formatAmount(d.avg, currency)},{" "}
                     {t("spending:dayOfWeek.transactionCount", { count: d.count })}
                   </div>
                 </div>

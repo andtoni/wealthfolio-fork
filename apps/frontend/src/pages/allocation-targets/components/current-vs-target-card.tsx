@@ -64,7 +64,7 @@ export function CurrentVsTargetCard({
 
           <div className="min-w-0">
             {/* Column headers */}
-            <div className="text-muted-foreground hidden grid-cols-[minmax(7.5rem,1fr)_minmax(10rem,1.25fr)_3.5rem_3.5rem_5rem] gap-x-3 px-2 pb-2 text-[10px] font-medium uppercase tracking-wider md:grid">
+            <div className="text-muted-foreground hidden grid-cols-[minmax(7.5rem,1fr)_minmax(10rem,1.25fr)_3.5rem_3.5rem_5rem] gap-x-3 px-2 pb-2 text-[10px] font-medium md:grid">
               <span>{t("allocation:vsTarget.category")}</span>
               <span>{t("allocation:vsTarget.currentAllocation")}</span>
               <span className="text-right">{t("allocation:vsTarget.current")}</span>
@@ -92,15 +92,15 @@ export function CurrentVsTargetCard({
                         className="h-2.5 w-2.5 shrink-0 rounded-sm"
                         style={{ background: rowColor }}
                       />
-                      <span className="text-foreground truncate text-[12.5px] font-semibold">
+                      <span className="text-foreground truncate text-[12.5px] font-medium">
                         {row.categoryName}
                       </span>
                     </div>
 
                     <div className="col-span-2 h-2 md:col-span-1 md:col-start-2 md:row-start-1">
-                      <div className="bg-muted relative h-2 rounded-full">
+                      <div className="bg-foreground/10 relative h-2.5 rounded-[4px]">
                         <span
-                          className="absolute top-0 h-full rounded-full opacity-60"
+                          className="absolute top-0 h-full rounded-[4px] opacity-60"
                           style={{
                             width: `${(current / maxScale) * 100}%`,
                             background: rowColor,
@@ -113,7 +113,7 @@ export function CurrentVsTargetCard({
                       </div>
                     </div>
 
-                    <span className="text-foreground hidden text-right text-[12px] font-semibold tabular-nums md:block">
+                    <span className="text-foreground hidden text-right text-[12px] font-medium tabular-nums md:block">
                       {current.toFixed(1)}%
                     </span>
                     <span className="text-muted-foreground hidden text-right text-[12px] font-medium tabular-nums md:block">
@@ -121,7 +121,7 @@ export function CurrentVsTargetCard({
                     </span>
                     <span
                       className={cn(
-                        "col-start-2 row-start-1 text-right text-[12px] font-semibold tabular-nums md:col-start-auto md:row-start-auto",
+                        "col-start-2 row-start-1 text-right text-[12px] font-medium tabular-nums md:col-start-auto md:row-start-auto",
                         driftColor(row),
                       )}
                     >

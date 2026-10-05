@@ -622,7 +622,7 @@ export function DeviceSyncSection() {
             <div className="bg-muted flex h-8 w-8 shrink-0 items-center justify-center rounded-lg">
               <Icons.Smartphone className="text-muted-foreground h-4 w-4" />
             </div>
-            <h3 className="text-base font-semibold">{t("sync:section.deviceSync")}</h3>
+            <h3 className="text-base font-medium">{t("sync:section.deviceSync")}</h3>
           </div>
           <OrphanedKeysPrompt
             onReinitialize={async () => {
@@ -644,7 +644,7 @@ export function DeviceSyncSection() {
             <div className="bg-muted flex h-8 w-8 shrink-0 items-center justify-center rounded-lg">
               <Icons.Smartphone className="text-muted-foreground h-4 w-4" />
             </div>
-            <h3 className="text-base font-semibold">{t("sync:section.connectedDevices")}</h3>
+            <h3 className="text-base font-medium">{t("sync:section.connectedDevices")}</h3>
           </div>
 
           <div className="mt-4">
@@ -693,7 +693,7 @@ export function DeviceSyncSection() {
             <div className="bg-muted flex h-8 w-8 shrink-0 items-center justify-center rounded-lg">
               <Icons.Smartphone className="text-muted-foreground h-4 w-4" />
             </div>
-            <h3 className="text-base font-semibold">{t("sync:section.deviceSync")}</h3>
+            <h3 className="text-base font-medium">{t("sync:section.deviceSync")}</h3>
           </div>
 
           <div className="flex flex-col items-center justify-center py-4 text-center sm:py-6">
@@ -765,7 +765,7 @@ export function DeviceSyncSection() {
               <div className="bg-muted flex h-8 w-8 shrink-0 items-center justify-center rounded-lg">
                 <Icons.Smartphone className="text-muted-foreground h-4 w-4" />
               </div>
-              <h3 className="text-base font-semibold">{t("sync:section.connectedDevices")}</h3>
+              <h3 className="text-base font-medium">{t("sync:section.connectedDevices")}</h3>
               <SyncStatusDot engineStatus={status.engineStatus} />
             </div>
             <div className="flex items-center gap-1">
@@ -972,7 +972,7 @@ export function DeviceSyncSection() {
                   <Icons.XCircle className="h-10 w-10 text-red-600 dark:text-red-500" />
                 </div>
                 <div className="mb-6 text-center">
-                  <p className="text-foreground text-base font-semibold">
+                  <p className="text-foreground text-base font-medium">
                     {t("sync:pairing.prepareFailed")}
                   </p>
                   <p className="text-muted-foreground mt-2 max-w-[240px] text-sm">{prepareError}</p>

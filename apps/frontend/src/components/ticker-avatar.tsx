@@ -57,8 +57,8 @@ export const TickerAvatar = ({
 
   if (cashAvatarLabel) {
     return (
-      <Avatar className={cn("border-white/20 font-semibold backdrop-blur-md", className)}>
-        <AvatarFallback className="bg-primary/80 dark:bg-primary/20 text-xs font-semibold text-white">
+      <Avatar className={cn("border-white/20 font-medium backdrop-blur-md", className)}>
+        <AvatarFallback className="bg-primary/80 dark:bg-primary/20 text-xs font-medium text-white">
           <span className="p-1" title={fullSymbol}>
             {cashAvatarLabel}
           </span>

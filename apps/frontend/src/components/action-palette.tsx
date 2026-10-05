@@ -78,7 +78,7 @@ export function ActionPalette({
         {/* Header - only show if title provided */}
         {title && (
           <div className="flex items-center justify-between px-5 pb-3 pt-5">
-            <h3 className="text-foreground text-lg font-bold">{title}</h3>
+            <h3 className="text-foreground text-lg font-medium">{title}</h3>
             <button
               onClick={handleClose}
               className={cn(
@@ -100,7 +100,7 @@ export function ActionPalette({
           {groups.map((group, groupIndex) => (
             <div key={groupIndex}>
               {group.title && (
-                <div className="text-muted-foreground px-2 py-1.5 text-xs font-medium uppercase tracking-wider">
+                <div className="text-muted-foreground px-2 py-1.5 text-xs font-medium">
                   {group.title}
                 </div>
               )}

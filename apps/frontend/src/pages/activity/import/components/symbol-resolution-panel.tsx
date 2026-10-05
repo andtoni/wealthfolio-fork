@@ -80,7 +80,7 @@ export function SymbolResolutionPanel({
       <div className="space-y-2">
         {unresolvedSymbols.map(({ csvSymbol, affectedCount }) => (
           <div key={csvSymbol} className="flex items-center gap-3">
-            <code className="bg-muted w-28 shrink-0 truncate rounded px-1.5 py-0.5 text-xs font-semibold">
+            <code className="bg-muted w-28 shrink-0 truncate rounded px-1.5 py-0.5 text-xs font-medium">
               {csvSymbol}
             </code>
             {affectedCount != null && (

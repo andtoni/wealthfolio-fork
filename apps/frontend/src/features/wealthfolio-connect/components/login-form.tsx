@@ -82,7 +82,7 @@ function FeaturesSection({ t }: { t: TFunction }) {
         return (
           <div
             key={feature.title}
-            className="bg-muted/30 flex items-center gap-3 rounded-lg border p-3 sm:flex-col sm:gap-2 sm:text-center"
+            className="flex items-center gap-3 p-3 sm:flex-col sm:gap-2 sm:text-center"
           >
             <div
               className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${colors.bg}`}

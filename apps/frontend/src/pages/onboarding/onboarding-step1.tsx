@@ -21,7 +21,7 @@ export const OnboardingStep1: React.FC = () => {
               <Icons.Holdings className="h-5 w-5 text-green-600 dark:text-green-400" />
             </div>
             <div>
-              <h3 className="text-lg font-bold md:text-xl">
+              <h3 className="text-lg font-medium md:text-xl">
                 {t("onboarding:steps.chooseMode.holdings.title")}
               </h3>
               <p className="text-muted-foreground text-sm">
@@ -81,7 +81,7 @@ export const OnboardingStep1: React.FC = () => {
               <Icons.Activity className="h-5 w-5 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <h3 className="text-lg font-bold md:text-xl">
+              <h3 className="text-lg font-medium md:text-xl">
                 {t("onboarding:steps.chooseMode.transactions.title")}
               </h3>
               <p className="text-muted-foreground text-sm">

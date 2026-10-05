@@ -1,5 +1,5 @@
 import { getGoals } from "@/adapters";
-import { DashboardCard } from "@/components/dashboard-card";
+import { DashboardCard, LIST_ROW } from "@/components/dashboard-card";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
@@ -37,11 +37,40 @@ function sortDashboardGoals(a: Goal, b: Goal) {
   return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
 }
 
-function statusDotClass(status: Goal["statusHealth"]) {
-  if (status === "off_track") return "bg-destructive";
-  if (status === "at_risk") return "bg-amber-500";
-  if (status === "on_track") return "bg-success";
-  return "bg-muted-foreground/35";
+function statusRingClass(status: Goal["statusHealth"]) {
+  if (status === "off_track") return "text-destructive";
+  if (status === "at_risk") return "text-amber-500";
+  if (status === "on_track") return "text-success";
+  return "text-muted-foreground";
+}
+
+const RING_RADIUS = 17;
+const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
+
+/** Progress towards a goal as a ring, in the place a row's avatar takes. */
+function ProgressRing({ fraction, className }: { fraction: number; className: string }) {
+  return (
+    <svg viewBox="0 0 40 40" className={cn("h-10 w-10 shrink-0 -rotate-90", className)} aria-hidden>
+      <circle
+        cx="20"
+        cy="20"
+        r={RING_RADIUS}
+        fill="none"
+        strokeWidth="3"
+        className="stroke-foreground/10"
+      />
+      <circle
+        cx="20"
+        cy="20"
+        r={RING_RADIUS}
+        fill="none"
+        strokeWidth="3"
+        strokeLinecap="round"
+        stroke="currentColor"
+        strokeDasharray={`${fraction * RING_LENGTH} ${RING_LENGTH}`}
+      />
+    </svg>
+  );
 }
 
 function formatTimeRemaining(t: (key: string) => string, targetDate?: string): string {
@@ -67,7 +96,7 @@ function ViewAllLink() {
   return (
     <Link
       to="/goals"
-      className="text-muted-foreground hover:bg-success/10 inline-flex h-8 items-center rounded-md px-3 text-xs font-medium transition-colors"
+      className="text-muted-foreground hover:bg-foreground/5 inline-flex h-8 items-center rounded-md px-3 text-sm transition-colors"
     >
       {t("dashboard:view_all")}
       <Icons.ChevronRight className="ml-1 h-3 w-3" />
@@ -86,7 +115,7 @@ export function SavingGoals() {
 
   if (isLoading) {
     return (
-      <DashboardCard title={t("common:goals")} elevated>
+      <DashboardCard title={t("common:goals")}>
         <div className="space-y-6">
           {[0, 1, 2].map((i) => (
             <div key={i} className="space-y-2">
@@ -108,23 +137,19 @@ export function SavingGoals() {
 
   if (activeGoals.length === 0) {
     return (
-      <DashboardCard title={t("common:goals")} elevated action={<ViewAllLink />}>
-        <div className="py-2 text-center">
-          <p className="text-sm">{t("dashboard:goals.no_goals_set")}</p>
-          <Link
-            to="/goals/new"
-            className="text-muted-foreground hover:text-foreground mt-2 inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline"
-          >
+      <DashboardCard title={t("common:goals")} action={<ViewAllLink />}>
+        <p className="text-muted-foreground text-[15px]">
+          {t("dashboard:goals.no_goals_set")}{" "}
+          <Link to="/goals/new" className="text-foreground hover:underline">
             {t("dashboard:goals.create_first_goal")}
-            <Icons.ChevronRight className="h-3 w-3" />
           </Link>
-        </div>
+        </p>
       </DashboardCard>
     );
   }
 
   return (
-    <DashboardCard title={t("common:goals")} elevated action={<ViewAllLink />}>
+    <DashboardCard title={t("common:goals")} action={<ViewAllLink />}>
       {visibleGoals.map((goal) => {
         const progress = goal.summaryProgress ?? 0;
         const pct = Math.max(0, Math.min(1, progress));
@@ -145,51 +170,17 @@ export function SavingGoals() {
             : "—";
 
         return (
-          <Link
-            key={goal.id}
-            to={`/goals/${goal.id}`}
-            className="border-border hover:bg-muted/30 group block border-b py-3 transition-colors last:border-0"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                {/* Title row with status dot */}
-                <div className="flex items-center gap-2">
-                  <h3 className="truncate text-sm font-semibold leading-tight">{goal.title}</h3>
-                  <span
-                    className={cn(
-                      "h-1.5 w-1.5 shrink-0 rounded-full",
-                      statusDotClass(goal.statusHealth),
-                    )}
-                  />
-                  {progress >= 1 ? (
-                    <Icons.CheckCircle className="text-success h-3.5 w-3.5 shrink-0" />
-                  ) : null}
-                </div>
-
-                {/* Amounts directly under title */}
-                <div className="text-muted-foreground mt-0.5 text-[11px] tabular-nums">
-                  {currentDisplay} / {targetDisplay}
-                </div>
-              </div>
-
-              {/* Right: big % + time */}
-              <div className="shrink-0 text-right">
-                <div className="text-base font-semibold tabular-nums leading-none">
-                  {pctDisplay}
-                  <span className="text-[9px] font-medium">%</span>
-                </div>
-                <div className="text-muted-foreground mt-1 text-[10px] tracking-[0.1em]">
-                  {timeStr}
-                </div>
+          <Link key={goal.id} to={`/goals/${goal.id}`} className={LIST_ROW}>
+            <ProgressRing fraction={pct} className={statusRingClass(goal.statusHealth)} />
+            <div className="min-w-0 flex-1">
+              <h3 className="truncate text-[17px] leading-snug">{goal.title}</h3>
+              <div className="text-muted-foreground text-[15px] tabular-nums leading-snug">
+                {currentDisplay} / {targetDisplay}
               </div>
             </div>
-
-            {/* Full-width progress bar at row bottom */}
-            <div className="bg-muted/60 relative mt-2.5 h-1.5 w-full overflow-hidden rounded-full">
-              <div
-                className="bg-success h-full rounded-full transition-all"
-                style={{ width: `${pct * 100}%` }}
-              />
+            <div className="shrink-0 text-right">
+              <div className="text-[19px] tabular-nums leading-snug">{pctDisplay}%</div>
+              <div className="text-muted-foreground text-[13px]">{timeStr}</div>
             </div>
           </Link>
         );
@@ -197,7 +188,7 @@ export function SavingGoals() {
       {hiddenGoalsCount > 0 && (
         <Link
           to="/goals"
-          className="text-muted-foreground hover:text-foreground flex items-center justify-between pt-3 text-xs transition-colors"
+          className="text-muted-foreground hover:text-foreground flex items-center justify-between py-2.5 text-[15px] transition-colors"
         >
           <span>{t("dashboard:goals.more_goals", { count: hiddenGoalsCount })}</span>
           <Icons.ChevronRight className="h-4 w-4" />

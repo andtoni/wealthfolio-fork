@@ -179,23 +179,17 @@ function BudgetRow({ row, currency }: { row: BudgetRow; currency: string }) {
           style={{ backgroundColor: row.color ?? "var(--muted-foreground)" }}
         />
         <span className="text-foreground truncate text-sm font-medium">{row.name}</span>
-        <span
-          className={cn(
-            "ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-            statusPillBg(row.status),
-            STATUS_TONE[row.status],
-          )}
-        >
+        <span className={cn("ml-auto shrink-0 text-[13px]", STATUS_TONE[row.status])}>
           {t(STATUS_LABEL_KEYS[row.status])}
         </span>
       </div>
 
       {/* Progress + amount strip */}
       <div className="flex items-center gap-3">
-        <div className="bg-muted/40 relative h-2 flex-1 overflow-hidden rounded-full">
+        <div className="bg-foreground/10 relative h-2.5 flex-1 overflow-hidden rounded-[4px]">
           {/* Filled portion (clamped to 100%) */}
           <div
-            className="h-full rounded-full transition-all"
+            className="h-full rounded-[4px] transition-all"
             style={{
               width: `${fillPct}%`,
               backgroundColor: STATUS_FILL[row.status],
@@ -217,7 +211,7 @@ function BudgetRow({ row, currency }: { row: BudgetRow; currency: string }) {
           )}
         </div>
         <div className="text-foreground/90 shrink-0 tabular-nums" style={{ minWidth: "5.5rem" }}>
-          <span className="text-xs font-semibold">
+          <span className="text-xs font-medium">
             <PrivacyAmount value={row.spent} currency={currency} />
           </span>
           <span className="text-muted-foreground/70 text-[11px]">
@@ -230,7 +224,6 @@ function BudgetRow({ row, currency }: { row: BudgetRow; currency: string }) {
       {/* Subline: remaining or overage */}
       <div className="text-muted-foreground/70 mt-1 flex items-center gap-1.5 pl-4 text-[11px] tabular-nums">
         <span className={cn(STATUS_TONE[row.status])}>{Math.round(row.pct * 100)}%</span>
-        <span className="text-muted-foreground/40">·</span>
         {row.status === "over" ? (
           <span className="text-destructive font-medium">
             <PrivacyAmount value={overage} currency={currency} />{" "}
@@ -267,23 +260,10 @@ function SummaryStat({
   return (
     <span className="flex items-center gap-1.5 text-xs">
       <span className={cn("inline-block h-1.5 w-1.5 rounded-full", dot)} />
-      <span className="text-foreground font-semibold tabular-nums">{count}</span>
+      <span className="text-foreground font-medium tabular-nums">{count}</span>
       <span className="text-muted-foreground">{label}</span>
     </span>
   );
-}
-
-function statusPillBg(status: Status): string {
-  switch (status) {
-    case "over":
-      return "bg-destructive/10";
-    case "approaching":
-      return "bg-[var(--status-warn)]/15";
-    case "comfortable":
-      return "bg-success/10";
-    case "underused":
-      return "bg-muted/60";
-  }
 }
 
 function statusOf(pct: number): Status {

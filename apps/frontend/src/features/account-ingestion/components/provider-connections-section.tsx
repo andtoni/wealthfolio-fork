@@ -9,6 +9,7 @@ import {
   startProviderConnection,
   type ProviderConnectionStatus,
 } from "@/adapters";
+import { SECTION_HEADING } from "@/components/dashboard-card";
 import type { Account } from "@/lib/types";
 import { Card, CardContent, Icons } from "@wealthfolio/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -253,48 +254,46 @@ function ProviderCard({
   const connectLabel = plaidConnectionConfigured && isConnected ? "Add accounts" : "Connect";
 
   return (
-    <Card className="border">
-      <CardContent className="flex flex-col gap-3 p-4">
-        <div className="flex items-center gap-3">
-          <div className="bg-muted flex h-10 w-10 shrink-0 items-center justify-center rounded-lg">
+    <Card>
+      <CardContent className="flex flex-col gap-2 p-0">
+        <div className="flex items-center gap-3 py-2.5">
+          <div className="bg-foreground/[0.07] flex h-10 w-10 shrink-0 items-center justify-center rounded-full">
             {icon}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium leading-tight">{name}</p>
-            <p className="text-muted-foreground mt-0.5 truncate text-xs leading-tight">
+            <p className="truncate text-[17px] leading-snug">{name}</p>
+            <p className="text-muted-foreground text-[15px] leading-snug">
+              <span className="inline-block first-letter:uppercase">{stateLabel}</span>
+            </p>
+            <p className="text-muted-foreground hidden text-[13px] leading-snug sm:block">
               {status.message}
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="bg-muted text-muted-foreground inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider">
-              {stateLabel}
-            </span>
-            {supportsConnect && (
-              <button
-                type="button"
-                disabled={!canConnect || startMutation.isPending}
-                onClick={() => {
-                  setErrorMsg(null);
-                  startMutation.mutate();
-                }}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-8 items-center rounded-md px-3 text-xs font-medium transition-colors disabled:opacity-50"
-              >
-                {startMutation.isPending ? "Connecting..." : connectLabel}
-              </button>
-            )}
-          </div>
+          {supportsConnect && (
+            <button
+              type="button"
+              disabled={!canConnect || startMutation.isPending}
+              onClick={() => {
+                setErrorMsg(null);
+                startMutation.mutate();
+              }}
+              className="bg-foreground text-background inline-flex h-9 shrink-0 items-center rounded-full px-4 text-sm transition-opacity disabled:opacity-40"
+            >
+              {startMutation.isPending ? "Connecting..." : connectLabel}
+            </button>
+          )}
         </div>
         {reauthConnections.length > 0 && (
-          <div className="space-y-2 border-t pt-3">
-            <p className="text-muted-foreground text-xs font-medium">Bank logins to reconnect</p>
+          <div className="space-y-1 pl-[52px]">
+            <p className="text-muted-foreground text-[13px]">Bank logins to reconnect</p>
             {reauthConnections.map((connection) => (
               <div
                 key={connection.connectionId}
                 className="border-warning/30 bg-warning/10 flex items-center gap-2 rounded-md border px-3 py-2"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium">{connection.label}</p>
-                  <p className="text-muted-foreground text-[11px]">
+                  <p className="truncate text-[15px] leading-snug">{connection.label}</p>
+                  <p className="text-muted-foreground text-[13px] leading-snug">
                     {reconnectReason(connection.reason)}
                   </p>
                 </div>
@@ -305,7 +304,7 @@ function ProviderCard({
                     setErrorMsg(null);
                     reconnectMutation.mutate(connection.connectionId);
                   }}
-                  className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-8 items-center rounded-md px-3 text-xs font-medium disabled:opacity-50"
+                  className="bg-foreground text-background inline-flex h-8 items-center rounded-full px-3.5 text-sm disabled:opacity-40"
                 >
                   {reconnectMutation.isPending &&
                   reconnectMutation.variables === connection.connectionId
@@ -317,34 +316,32 @@ function ProviderCard({
           </div>
         )}
         {visibleConnectedAccounts.length > 0 && (
-          <div className="space-y-2 border-t pt-3">
-            <p className="text-muted-foreground text-xs font-medium">Connected accounts</p>
+          <div className="space-y-1 pl-[52px]">
+            <p className="text-muted-foreground text-[13px]">Connected accounts</p>
             {visibleConnectedAccounts.map((account) => (
-              <div key={account.id} className="flex items-center gap-2 rounded-md border px-3 py-2">
+              <div key={account.id} className="flex items-center gap-2 py-1.5">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium">{account.name}</p>
-                  <p className="text-muted-foreground text-[11px]">
-                    {account.accountType.replaceAll("_", " ")} · {account.currency}
+                  <p className="truncate text-[15px] leading-snug">{account.name}</p>
+                  <p className="text-muted-foreground text-[13px] leading-snug">
+                    {account.accountType.replaceAll("_", " ").toLowerCase()}, {account.currency}
                   </p>
                 </div>
-                <span className="bg-success/10 text-success rounded-full px-2 py-0.5 text-[10px] font-medium">
-                  Connected
-                </span>
+                <span className="text-success text-[13px]">Connected</span>
               </div>
             ))}
           </div>
         )}
         {discovered.length > 0 && (
-          <div className="space-y-2 border-t pt-3">
-            <p className="text-muted-foreground text-xs font-medium">Choose accounts to add</p>
+          <div className="space-y-1 pl-[52px]">
+            <p className="text-muted-foreground text-[13px]">Choose accounts to add</p>
             {discovered.map((account) => (
               <div
                 key={`${account.connectionId}:${account.providerAccountId}`}
-                className="flex items-center gap-2 rounded-md border px-3 py-2"
+                className="flex items-center gap-2 py-1.5"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium">{account.name}</p>
-                  <p className="text-muted-foreground text-[11px]">
+                  <p className="truncate text-[15px] leading-snug">{account.name}</p>
+                  <p className="text-muted-foreground text-[13px] leading-snug">
                     {account.type} · {account.currency}
                     {account.mask ? ` · •••• ${account.mask}` : ""}
                     {status.provider === "snaptrade"
@@ -361,7 +358,7 @@ function ProviderCard({
                     setErrorMsg(null);
                     admitMutation.mutate(account);
                   }}
-                  className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-8 items-center rounded-md px-3 text-xs font-medium disabled:opacity-50"
+                  className="bg-foreground text-background inline-flex h-8 items-center rounded-full px-3.5 text-sm disabled:opacity-40"
                 >
                   {admitMutation.isPending ? "Adding..." : "Add"}
                 </button>
@@ -410,7 +407,7 @@ export function ProviderConnectionsSection() {
   if (isPending) {
     return (
       <div className="space-y-2" aria-live="polite">
-        <h3 className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">
+        <h3 className={SECTION_HEADING}>
           {t("connect:directProviders", "Direct Provider Connections")}
         </h3>
         <div className="bg-muted h-24 animate-pulse rounded-lg" />
@@ -420,10 +417,10 @@ export function ProviderConnectionsSection() {
 
   return (
     <div className="space-y-3">
-      <h3 className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">
+      <h3 className={SECTION_HEADING}>
         {t("connect:directProviders", "Direct Provider Connections")}
       </h3>
-      <p className="text-muted-foreground -mt-2 text-xs">
+      <p className="text-muted-foreground -mt-2 text-[15px]">
         {t(
           "connect:directProvidersDescription",
           "Connect your bank or brokerage directly for automatic syncing. Each provider requires separate setup.",
@@ -435,7 +432,7 @@ export function ProviderConnectionsSection() {
           accounts remain available below.
         </p>
       )}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
         {providers.map((provider) => (
           <ProviderCard
             key={provider.provider}

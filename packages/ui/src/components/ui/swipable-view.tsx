@@ -183,7 +183,12 @@ export function SwipableView({
           }}
         >
           {items.map((item, index) => (
-            <div key={index} className={cn("relative h-full min-w-0 shrink-0 grow-0 basis-full", bounded && "min-h-0")}>
+            <div
+              key={index}
+              className={cn("relative h-full min-w-0 shrink-0 grow-0 basis-full", bounded && "min-h-0")}
+              // A tab that is not showing must not stretch the page to its own length.
+              style={!bounded && index !== selectedIndex ? { maxHeight: "100dvh", overflow: "hidden" } : undefined}
+            >
               {/*
                  SCROLL ARCHITECTURE:
                  1. We use a nested div for scrolling.

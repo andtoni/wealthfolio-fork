@@ -170,7 +170,7 @@ export function CategoryForm({
             className="h-4 w-4 shrink-0 rounded-full"
             style={{ backgroundColor: currentColor }}
           />
-          <h3 className="text-lg font-semibold">
+          <h3 className="text-lg font-medium">
             {isCreateMode ? t("settings:tax_new_category") : category?.name}
           </h3>
         </div>
@@ -209,7 +209,7 @@ export function CategoryForm({
                       onChange={field.onChange}
                       className="h-9 w-12 cursor-pointer rounded border p-1"
                     />
-                    <Input {...field} className="flex-1 font-mono" placeholder="#808080" />
+                    <Input {...field} className="flex-1" placeholder="#808080" />
                   </div>
                 </FormControl>
                 <FormMessage />

@@ -102,7 +102,7 @@ function MetricCard({ label, value, subValue, isPositive, isPrivate }: MetricCar
   return (
     <div className="bg-background/60 flex flex-col gap-1 rounded-lg border p-3">
       <span className="text-muted-foreground text-xs">{label}</span>
-      <span className={cn("text-sm font-semibold tabular-nums", isPrivate ? "" : colorClass)}>
+      <span className={cn("text-sm font-medium tabular-nums", isPrivate ? "" : colorClass)}>
         {value}
       </span>
       {subValue && <span className="text-muted-foreground text-xs tabular-nums">{subValue}</span>}
@@ -253,7 +253,7 @@ function PerformanceToolUIContentImpl({ args, result, status }: PerformanceToolU
             )}
             <span
               className={cn(
-                "text-3xl font-bold tabular-nums",
+                "text-3xl font-medium tabular-nums",
                 summaryReturnValue == null
                   ? "text-muted-foreground"
                   : isPositiveReturn

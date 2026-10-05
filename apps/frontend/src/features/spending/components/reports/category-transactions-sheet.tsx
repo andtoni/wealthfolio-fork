@@ -217,7 +217,7 @@ export function CategoryTransactionsSheet({
             backgroundImage: `linear-gradient(to bottom, ${headerFill} 0%, ${headerFillMid} 55%, transparent 100%)`,
           }}
         >
-          <div className="text-muted-foreground/80 text-[10px] font-semibold uppercase tracking-[0.14em]">
+          <div className="text-muted-foreground/80 text-xs">
             {t("spending:categorySheet.eyebrow")}
           </div>
           <div className="mt-2 flex items-start gap-3">
@@ -232,11 +232,11 @@ export function CategoryTransactionsSheet({
               />
             </span>
             <div className="min-w-0 flex-1">
-              <SheetTitle className="text-foreground truncate text-2xl font-semibold tracking-tight">
+              <SheetTitle className="text-foreground truncate text-2xl font-medium tracking-tight">
                 {category?.name ?? t("spending:categorySheet.categoryFallback")}
               </SheetTitle>
               <p className="text-muted-foreground mt-0.5 text-xs">
-                {formatRangeLabel(rangeStart, rangeEnd)} ·{" "}
+                {formatRangeLabel(rangeStart, rangeEnd)},{" "}
                 {t("spending:categorySheet.daysCount", { count: stats.days })}
               </p>
             </div>
@@ -299,7 +299,7 @@ export function CategoryTransactionsSheet({
           {/* Subcategory composition */}
           {isTopLevel && (subBreakdown.length > 0 || isLoading) && (
             <section className="mb-6">
-              <h3 className="text-foreground text-sm font-semibold">
+              <h3 className="text-foreground text-sm font-medium">
                 {t("spending:categorySheet.subcategoryMix")}
               </h3>
               <p className="text-muted-foreground mt-0.5 text-xs">
@@ -322,9 +322,9 @@ export function CategoryTransactionsSheet({
                         />
                         <span className="text-foreground/90 truncate font-medium">{row.name}</span>
                       </span>
-                      <div className="bg-foreground/5 h-1.5 w-32 overflow-hidden rounded-full sm:w-44">
+                      <div className="bg-foreground/10 h-2.5 w-32 overflow-hidden rounded-[4px] sm:w-44">
                         <div
-                          className="h-full rounded-full"
+                          className="h-full rounded-[4px]"
                           style={{
                             width: `${Math.min(100, row.share)}%`,
                             backgroundColor: row.color,
@@ -335,7 +335,7 @@ export function CategoryTransactionsSheet({
                       <span className="text-muted-foreground/80 w-10 shrink-0 text-right text-[11px] tabular-nums">
                         {row.share.toFixed(0)}%
                       </span>
-                      <span className="text-foreground/90 w-16 shrink-0 text-right text-xs font-semibold tabular-nums">
+                      <span className="text-foreground/90 w-16 shrink-0 text-right text-xs font-medium tabular-nums">
                         {isBalanceHidden ? "••••" : formatCompactAmount(row.amount, currency)}
                       </span>
                     </div>
@@ -348,7 +348,7 @@ export function CategoryTransactionsSheet({
           {/* Transactions list */}
           <section>
             <div className="mb-3 flex items-baseline justify-between">
-              <h3 className="text-foreground text-sm font-semibold">
+              <h3 className="text-foreground text-sm font-medium">
                 {t("spending:categorySheet.transactions")}
               </h3>
               <span className="text-muted-foreground text-[11px] tabular-nums">
@@ -365,12 +365,12 @@ export function CategoryTransactionsSheet({
                 ))}
               </div>
             ) : isError ? (
-              <div className="text-destructive border-border/60 flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed py-10 text-center text-sm">
+              <div className="text-destructive flex flex-col items-center justify-center gap-2 py-10 text-center text-sm">
                 <Icons.AlertTriangle className="h-6 w-6 opacity-70" aria-hidden />
                 <div>{error?.message ?? t("spending:categorySheet.loadError")}</div>
               </div>
             ) : items.length === 0 ? (
-              <div className="text-muted-foreground border-border/60 flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed py-10 text-center text-sm">
+              <div className="text-muted-foreground flex flex-col items-center justify-center gap-2 py-10 text-center text-sm">
                 <Icons.Activity className="h-6 w-6 opacity-50" aria-hidden />
                 <div>{t("spending:categorySheet.noTransactions")}</div>
               </div>
@@ -399,20 +399,19 @@ export function CategoryTransactionsSheet({
                         </div>
                         <div className="text-muted-foreground/80 mt-0.5 flex items-center gap-1 text-[10px] leading-tight">
                           <span>{formatDate(it.activityDate)}</span>
-                          <span aria-hidden>·</span>
                           <span className="truncate">{account?.name ?? it.accountId}</span>
                         </div>
                       </div>
                       <div
                         className={cn(
-                          "shrink-0 text-right text-[13px] font-semibold tabular-nums leading-tight",
+                          "shrink-0 text-right text-[13px] font-medium tabular-nums leading-tight",
                           isOutflow ? "text-foreground" : "text-success",
                         )}
                       >
                         {isOutflow ? "−" : "+"}
                         <PrivacyAmount value={displayAmount} currency={it.currency} />
                         {it.currency !== currency && (
-                          <span className="text-muted-foreground/70 ml-1 text-[9px] uppercase tracking-wide">
+                          <span className="text-muted-foreground/70 ml-1 text-xs">
                             {it.currency}
                           </span>
                         )}
@@ -472,10 +471,8 @@ function Stat({
 }) {
   return (
     <div>
-      <div className="text-muted-foreground/70 text-[10px] font-semibold uppercase tracking-[0.12em]">
-        {label}
-      </div>
-      <div className="text-foreground mt-1 text-base font-semibold tabular-nums tracking-tight">
+      <div className="text-muted-foreground/70 text-xs">{label}</div>
+      <div className="text-foreground mt-1 text-base font-medium tabular-nums tracking-tight">
         {value}
       </div>
       {hint && <div className="text-muted-foreground/70 mt-0.5 truncate text-[10px]">{hint}</div>}

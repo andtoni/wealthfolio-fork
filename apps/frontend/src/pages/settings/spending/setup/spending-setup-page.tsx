@@ -33,7 +33,7 @@ export default function SpendingSetupPage() {
           <Icons.ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="min-w-0 flex-1">
-          <h1 className="text-foreground text-base font-semibold tracking-tight sm:text-lg lg:text-xl">
+          <h1 className="text-foreground text-2xl font-medium tracking-tight lg:text-[28px]">
             {t("settings:spending.setup.title")}
           </h1>
           <p className="text-muted-foreground mt-1 hidden text-sm sm:block">

@@ -89,7 +89,7 @@ export default function TaxonomiesPage() {
       />
 
       {showHealthBanner && (
-        <div className="border-border bg-muted/30 flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+        <div className="flex items-center justify-between gap-3 px-3 py-2">
           <div className="flex min-w-0 items-center gap-2">
             <Icons.Info className="text-muted-foreground h-4 w-4 shrink-0" />
             <p className="text-sm">{t("settings:health_banner_classification")}</p>
@@ -154,14 +154,14 @@ export default function TaxonomiesPage() {
       {activeTaxonomyId && taxonomyWithCategories ? (
         <Card>
           {/* Header with export button */}
-          <div className="flex items-center justify-between border-b p-4">
+          <div className="flex items-center justify-between py-4">
             <div className="flex items-center gap-3">
               <span
                 className="h-4 w-4 rounded-full"
                 style={{ backgroundColor: activeTaxonomy?.color }}
               />
               <div>
-                <h3 className="font-semibold">{activeTaxonomy?.name}</h3>
+                <h3 className="font-medium">{activeTaxonomy?.name}</h3>
                 <p className="text-muted-foreground text-xs">
                   {t("settings:tax_categories_count", {
                     count: taxonomyWithCategories.categories.length,
@@ -186,7 +186,7 @@ export default function TaxonomiesPage() {
           {/* Categories and details */}
           <div className="flex min-h-[500px] flex-col lg:flex-row">
             {/* Category tree */}
-            <div className="w-full border-b lg:w-80 lg:border-b-0 lg:border-r">
+            <div className="w-full lg:w-80">
               <ScrollArea className="h-[300px] lg:h-[500px]">
                 {isLoadingCategories ? (
                   <div className="text-muted-foreground p-4 text-center text-sm">

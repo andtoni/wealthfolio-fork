@@ -90,7 +90,7 @@ const ThreadWelcome: FC = () => {
     <div className="aui-thread-welcome-root max-w-(--thread-max-width) mx-auto my-auto flex w-full grow flex-col">
       <div className="aui-thread-welcome-center flex w-full grow flex-col items-center justify-center">
         <div className="aui-thread-welcome-message flex size-full flex-col justify-center px-8">
-          <div className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-2 animate-in text-2xl font-semibold duration-300 ease-out">
+          <div className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-2 animate-in text-2xl font-medium duration-300 ease-out">
             {t("ai:thread.welcomeHello")}
           </div>
           <div className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-2 animate-in text-muted-foreground/65 text-2xl delay-100 duration-300 ease-out">
@@ -135,7 +135,7 @@ const ThreadSuggestions: FC = () => {
             <ThreadPrimitive.Suggestion prompt={suggestion.text} asChild>
               <Button
                 variant="ghost"
-                className="text-muted-foreground hover:text-foreground dark:hover:bg-accent/60 h-auto w-full max-w-full justify-start gap-2 whitespace-normal rounded-full border px-4 py-2.5 text-left text-sm font-normal sm:w-auto sm:justify-center sm:whitespace-nowrap sm:text-center"
+                className="text-muted-foreground hover:text-foreground dark:hover:bg-accent/60 bg-foreground/[0.07] h-auto w-full max-w-full justify-start gap-2 whitespace-normal rounded-full border-0 px-4 py-2.5 text-left text-sm font-normal sm:w-auto sm:justify-center sm:whitespace-nowrap sm:text-center"
                 aria-label={suggestion.text}
               >
                 <Icon className="size-4 shrink-0 opacity-60" />
@@ -157,7 +157,7 @@ const Composer: FC<ComposerProps> = ({ composerActions }) => {
   const { t } = useTranslation();
   return (
     <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col">
-      <ComposerPrimitive.AttachmentDropzone className="aui-composer-attachment-dropzone border-input bg-background has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-ring/50 data-[dragging=true]:border-ring data-[dragging=true]:bg-accent/50 dark:bg-background shadow-xs flex w-full flex-col rounded-3xl border px-1 pt-2 outline-none transition-[color,box-shadow] has-[textarea:focus-visible]:ring-[3px] data-[dragging=true]:border-dashed">
+      <ComposerPrimitive.AttachmentDropzone className="aui-composer-attachment-dropzone bg-card data-[dragging=true]:bg-accent/50 flex w-full flex-col rounded-3xl px-1 pt-2 shadow-sm outline-none">
         <ComposerAttachments />
         <ComposerPrimitive.Input
           placeholder={t("ai:thread.composerPlaceholder")}
@@ -376,7 +376,7 @@ const UserMessage: FC = () => {
       <UserMessageAttachments />
 
       <div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
-        <div className="aui-user-message-content bg-muted text-foreground wrap-break-word rounded-3xl px-5 py-2.5 text-sm">
+        <div className="aui-user-message-content bg-foreground/[0.07] text-foreground wrap-break-word rounded-3xl px-5 py-2.5 text-[15px]">
           <MessagePrimitive.Parts
             components={{
               Reasoning: Reasoning,

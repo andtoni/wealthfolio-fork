@@ -181,7 +181,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-md">
                 <div>
-                  <p className="pt-3 text-xl font-bold">
+                  <p className="pt-3 text-xl font-medium">
                     <AmountDisplay
                       value={isLiability ? -marketValue : marketValue}
                       currency={holding.currency}
@@ -263,7 +263,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
 
         {/* Second row: About section */}
         <div className="space-y-4">
-          <h3 className="text-lg font-bold">{t("asset:altContent.about")}</h3>
+          <h3 className="text-lg font-medium">{t("asset:altContent.about")}</h3>
 
           {/* Kind and subtype badges */}
           <div className="flex flex-wrap items-center gap-2">
@@ -493,7 +493,7 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
       {/* Header: Net Equity for property/vehicle */}
       {showNetEquityHeader && (
         <CardHeader className="flex flex-row items-center justify-between pb-0">
-          <CardTitle className="flex w-full justify-between text-lg font-bold">
+          <CardTitle className="flex w-full justify-between text-lg font-medium">
             <div>
               <div className="text-muted-foreground text-sm font-normal">
                 {t("asset:altContent.net_equity")}
@@ -506,7 +506,7 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
             </div>
             <div>
               <div
-                className={`text-xl font-extrabold ${netEquity >= 0 ? "text-success" : "text-destructive"}`}
+                className={`text-xl font-medium ${netEquity >= 0 ? "text-success" : "text-destructive"}`}
               >
                 <AmountDisplay
                   value={netEquity}
@@ -525,7 +525,7 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
       {/* Header: Amount Paid for liabilities */}
       {showLiabilityHeader && liabilityProgress.amountPaid !== null && (
         <CardHeader className="flex flex-row items-center justify-between pb-0">
-          <CardTitle className="flex w-full justify-between text-lg font-bold">
+          <CardTitle className="flex w-full justify-between text-lg font-medium">
             <div>
               <div className="text-muted-foreground text-sm font-normal">
                 {t("asset:altContent.amount_paid")}
@@ -540,7 +540,7 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
             </div>
             <div>
               <div
-                className={`text-xl font-extrabold ${liabilityProgress.amountPaid >= 0 ? "text-success" : "text-destructive"}`}
+                className={`text-xl font-medium ${liabilityProgress.amountPaid >= 0 ? "text-success" : "text-destructive"}`}
               >
                 <AmountDisplay
                   value={liabilityProgress.amountPaid}

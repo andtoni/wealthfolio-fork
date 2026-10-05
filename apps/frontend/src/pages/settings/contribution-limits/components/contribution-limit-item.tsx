@@ -88,7 +88,7 @@ export function ContributionLimitItem({
             <div className="flex flex-col gap-0.5">
               <div className="flex items-baseline gap-1">
                 <span
-                  className={`text-xl font-bold ${
+                  className={`text-xl font-medium ${
                     isOverLimit ? "text-destructive" : isComplete ? "text-success" : ""
                   }`}
                 >
@@ -183,7 +183,7 @@ export function ContributionLimitItem({
               <div className="flex flex-col items-end">
                 <div className="flex items-baseline space-x-1">
                   <span
-                    className={`text-lg font-bold ${
+                    className={`text-lg font-medium ${
                       isOverLimit ? "text-destructive" : isComplete ? "text-success" : ""
                     }`}
                   >
@@ -231,7 +231,7 @@ export function ContributionLimitItem({
           />
         )}
         {isExpanded && (
-          <div className="mt-4 border-t pt-4">
+          <div className="mt-4">
             <AccountSelection
               limit={limit}
               accounts={accounts}

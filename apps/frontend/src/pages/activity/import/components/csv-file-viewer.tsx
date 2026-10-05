@@ -143,7 +143,7 @@ export function CSVFileViewer({ data, className, maxHeight = "400px" }: CSVFileV
         const isHeader = row.original.id === 0;
 
         return (
-          <div className={cn("whitespace-nowrap font-mono text-xs", isHeader && "font-semibold")}>
+          <div className={cn("whitespace-nowrap font-mono text-xs", isHeader && "font-medium")}>
             {(content as React.ReactNode) || (
               <span className="text-muted-foreground italic">
                 {t("activity:import.csvViewer.emptyLine")}
@@ -210,7 +210,7 @@ export function CSVFileViewer({ data, className, maxHeight = "400px" }: CSVFileV
                       row.getValue("isValid")
                         ? "bg-transparent"
                         : "bg-destructive/5 dark:bg-destructive/10",
-                      row.original.id === 0 && "bg-primary/5 font-semibold",
+                      row.original.id === 0 && "bg-primary/5 font-medium",
                     )}
                   >
                     {row.getVisibleCells().map((cell) => (

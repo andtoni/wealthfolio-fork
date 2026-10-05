@@ -70,7 +70,8 @@
   "tabs": {
     "investments": "投资",
     "net_worth": "净资产",
-    "spending": "支出"
+    "spending": "支出",
+    "transactions": "交易"
   },
   "holdings": {
     "title": "持仓",

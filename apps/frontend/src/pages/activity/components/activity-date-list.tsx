@@ -201,16 +201,16 @@ function ActivityDateListItem({
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <TickerAvatar symbol={avatarSymbol} className="h-10 w-10 flex-shrink-0" />
         <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] gap-x-3">
-          <p className="truncate text-base font-semibold leading-5">{displaySymbol}</p>
+          <p className="truncate text-base font-medium leading-5">{displaySymbol}</p>
           {activity.activityType !== ActivityType.SPLIT ? (
-            <p className="text-right text-base font-semibold leading-5">
+            <p className="text-right text-base font-medium leading-5">
               {formatAmount(displayValue, activity.currency)}
             </p>
           ) : (
             <span />
           )}
           <div className="flex min-w-0 items-center gap-1.5 whitespace-nowrap text-sm leading-5">
-            <span className={cn("font-semibold", activityTone.text)}>{activityTypeLabel}</span>
+            <span className={cn("font-medium", activityTone.text)}>{activityTypeLabel}</span>
             {activity.accountName ? (
               <span className="text-muted-foreground min-w-0 truncate">{activity.accountName}</span>
             ) : null}
@@ -254,7 +254,7 @@ function CashLedgerMeta({ row, currency }: { row: ActivityCashLedgerRow; currenc
         <p className="text-muted-foreground">{t("activity:date_list.cash_impact")}</p>
         <p
           className={cn(
-            "font-semibold",
+            "font-medium",
             row.cashImpact > 0 && "text-success",
             row.cashImpact < 0 && "text-destructive",
           )}
@@ -264,7 +264,7 @@ function CashLedgerMeta({ row, currency }: { row: ActivityCashLedgerRow; currenc
       </div>
       <div>
         <p className="text-muted-foreground">{t("activity:date_list.running_cash")}</p>
-        <p className={cn("font-semibold", runningBalanceIsNegative && "text-destructive")}>
+        <p className={cn("font-medium", runningBalanceIsNegative && "text-destructive")}>
           {row.runningBalance === undefined ? "—" : formatAmount(row.runningBalance, currency)}
         </p>
       </div>
@@ -392,7 +392,7 @@ function CashAuditAmount({
   return (
     <div>
       <p className="text-muted-foreground">{label}</p>
-      <p className={cn("font-semibold", value !== undefined && value < 0 && "text-destructive")}>
+      <p className={cn("font-medium", value !== undefined && value < 0 && "text-destructive")}>
         {value === undefined ? "—" : formatAmount(value, currency)}
       </p>
     </div>

@@ -90,7 +90,7 @@ export function expenseAgeRangeLabel(item: ExpenseItem, horizonAge: number) {
   const endAge = normalizeOptionalAge(item.endAge);
   const start = startAge === undefined ? "Retirement" : `Age ${startAge}`;
   const end = endAge === undefined ? horizonAge : endAge;
-  return `${start} → ${end}`;
+  return `${start}–${end}`;
 }
 
 export function totalMonthlyExpenseAtAge(expenses: ExpenseBudget, age: number) {

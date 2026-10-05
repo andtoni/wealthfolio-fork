@@ -38,7 +38,7 @@ const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
   };
 
   return (
-    <div className="aui-code-header-root bg-muted-foreground/15 text-foreground dark:bg-muted-foreground/20 not-prose mt-4 flex items-center justify-between gap-4 rounded-t-lg px-4 py-2 text-sm font-semibold">
+    <div className="aui-code-header-root bg-muted-foreground/15 text-foreground dark:bg-muted-foreground/20 not-prose mt-4 flex items-center justify-between gap-4 rounded-t-lg px-4 py-2 text-sm font-medium">
       <span className="aui-code-header-language lowercase [&>span]:text-xs">{language}</span>
       <TooltipIconButton tooltip={t("ai:codeHeader.copy")} onClick={onCopy}>
         {!isCopied && <Icons.Copy />}
@@ -151,7 +151,7 @@ const customComponents = memoizeMarkdownComponents({
   th: ({ className, ...props }) => (
     <th
       className={cn(
-        "aui-md-th bg-muted whitespace-nowrap px-3 py-2 text-left text-xs font-semibold first:rounded-tl-lg last:rounded-tr-lg",
+        "aui-md-th bg-muted whitespace-nowrap px-3 py-2 text-left text-xs font-medium first:rounded-tl-lg last:rounded-tr-lg",
         className,
       )}
       {...props}

@@ -128,7 +128,7 @@ const SearchResults = memo(
                 className="flex items-center justify-between rounded-none py-2"
               >
                 <div className="flex flex-col">
-                  <span className="font-mono text-xs font-semibold uppercase">{ticker.symbol}</span>
+                  <span className="font-mono text-xs font-medium uppercase">{ticker.symbol}</span>
                   <span className="text-muted-foreground line-clamp-1 text-xs">{displayName}</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -155,7 +155,7 @@ const SearchResults = memo(
             >
               <Icons.PlusCircle className="text-muted-foreground size-4" />
               <div className="flex flex-col">
-                <span className="font-mono text-xs font-semibold uppercase">
+                <span className="font-mono text-xs font-medium uppercase">
                   {query.trim().toUpperCase() || "..."}
                 </span>
                 <span className="text-muted-foreground text-xs">
@@ -493,7 +493,7 @@ const TickerSearchInput = forwardRef<HTMLButtonElement, SearchProps>(
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     {/* Row 1: Symbol + Name (left) — Clear (right) */}
                     <div className="flex min-w-0 items-center gap-1.5">
-                      <span className="shrink-0 text-sm font-semibold tracking-tight">
+                      <span className="shrink-0 text-sm font-medium tracking-tight">
                         {selectedTicker.symbol}
                       </span>
                       {selectedTicker.name && (

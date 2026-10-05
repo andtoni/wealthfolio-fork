@@ -31,7 +31,6 @@ import { CategoryDetailSheet } from "./components/category-detail-sheet";
 import { MomentumCard } from "./components/momentum-card";
 import {
   THEME_COLOR,
-  THEME_COLOR_LIGHT,
   averageMonthlyChange,
   computeMomentum,
   computeVelocity,
@@ -189,7 +188,7 @@ export function NetWorthContent() {
   }
 
   return (
-    <div className="flex flex-col">
+    <div className="flex min-h-screen flex-col">
       {/* Top section: Net Worth value */}
       <div className="px-4 pb-1 pt-2 md:px-6 md:pb-2 lg:px-8">
         <div className="flex items-start gap-2">
@@ -273,7 +272,7 @@ export function NetWorthContent() {
           backgroundImage:
             (parsedData?.netWorth ?? 0) < 0
               ? `linear-gradient(to top, color-mix(in srgb, var(--destructive) 30%, transparent), color-mix(in srgb, var(--destructive) 15%, transparent) 50%, transparent 100%)`
-              : `linear-gradient(to top, ${THEME_COLOR.replace(")", " / 0.30)")}, ${THEME_COLOR.replace(")", " / 0.15)")} 50%, transparent 100%)`,
+              : `linear-gradient(to top, color-mix(in srgb, ${THEME_COLOR} 30%, transparent), color-mix(in srgb, ${THEME_COLOR} 15%, transparent) 50%, transparent 100%)`,
         }}
       >
         {/* Chart section */}
@@ -326,28 +325,20 @@ export function NetWorthContent() {
                   data={parsedData}
                   history={parsedHistory}
                   currency={currency}
-                  periodLabel={periodLabel}
                   onSelect={setSelected}
                 />
               ) : (
-                <div
-                  className="rounded-xl border border-orange-200/50 p-6 text-center md:p-8 dark:border-orange-800/50"
-                  style={{ backgroundColor: THEME_COLOR_LIGHT }}
-                >
-                  <p className="text-sm">{t("insights:networth.no_assets_found")}</p>
-                  <Link
-                    to="/holdings"
-                    className="text-muted-foreground hover:text-foreground mt-2 inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline"
-                  >
+                <p className="text-muted-foreground text-[15px]">
+                  {t("insights:networth.no_assets_found")}{" "}
+                  <Link to="/holdings" className="text-foreground hover:underline">
                     {t("insights:networth.add_first_asset")}
-                    <Icons.ChevronRight className="h-3 w-3" />
                   </Link>
-                </div>
+                </p>
               )}
             </div>
 
             {/* Right column: insight cards */}
-            <div className="space-y-6 lg:col-span-1">
+            <div className="space-y-8 lg:col-span-1">
               {velocity && (
                 <VelocityCard
                   velocity={velocity}
@@ -366,7 +357,7 @@ export function NetWorthContent() {
                 <div className="border-warning/10 bg-warning/10 rounded-xl border p-4 backdrop-blur-xl md:p-5">
                   <div className="mb-2 flex items-center gap-2">
                     <Icons.AlertCircle className="text-warning h-4 w-4 shrink-0" />
-                    <h3 className="text-foreground text-sm font-semibold">
+                    <h3 className="text-foreground text-sm font-medium">
                       {t("insights:networth.update_valuations")}
                     </h3>
                     <span className="text-muted-foreground/70 ml-auto text-xs">

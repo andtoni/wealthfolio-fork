@@ -441,7 +441,7 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
             )}
           </div>
         </div>
-        <div className="rounded-md border">
+        <div className="">
           <Table>
             <TableHeader className="bg-muted">
               {table.getHeaderGroups().map((headerGroup) => (

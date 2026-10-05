@@ -141,7 +141,7 @@ export function PermissionDialog({
           </div>
 
           {networkHosts.length > 0 && (
-            <div className="space-y-3 rounded-md border p-4">
+            <div className="space-y-3 p-4">
               <div className="flex items-center gap-2">
                 <Icons.Globe className="text-muted-foreground h-4 w-4" />
                 <h3 className="text-sm font-medium">
@@ -161,7 +161,7 @@ export function PermissionDialog({
                         disabled={isViewOnly}
                         onCheckedChange={(value) => toggleNetworkHost(host, value)}
                       />
-                      <span className="min-w-0 flex-1 truncate font-mono text-xs">{host}</span>
+                      <span className="min-w-0 flex-1 truncate text-xs">{host}</span>
                       {isViewOnly && (
                         <Badge variant={checked ? "default" : "outline"} className="shrink-0">
                           {checked

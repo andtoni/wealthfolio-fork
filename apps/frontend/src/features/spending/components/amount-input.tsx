@@ -32,9 +32,9 @@ export function AmountInput({ value, onCommit, variant = "default" }: AmountInpu
       className={cn(
         "bg-background focus-within:ring-ring/40 focus-within:border-ring hover:border-foreground/30 flex h-7 w-full items-center rounded-md border px-2 transition-shadow focus-within:ring-2",
         variant === "dashed"
-          ? "border-muted-foreground/30 border-dashed"
+          ? "border-muted-foreground/30"
           : isEmpty
-            ? "border-border/70 border-dashed"
+            ? "border-border/70"
             : "border-input",
       )}
     >

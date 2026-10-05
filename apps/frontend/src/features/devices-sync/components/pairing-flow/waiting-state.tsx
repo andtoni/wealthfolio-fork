@@ -40,7 +40,7 @@ export function WaitingState({
         <div className="mb-6 flex flex-col items-center gap-4">
           {/* Security code display - matches SASVerification format */}
           <div className="bg-muted rounded-xl px-8 py-5">
-            <span className="font-mono text-4xl font-bold tracking-widest">
+            <span className="font-mono text-4xl font-medium tracking-widest">
               {securityCode.length > 3
                 ? `${securityCode.slice(0, 3)} ${securityCode.slice(3)}`
                 : securityCode}
@@ -66,7 +66,7 @@ export function WaitingState({
       )}
 
       <div className="mb-6 space-y-2">
-        <p className="text-foreground text-lg font-semibold leading-none">{title}</p>
+        <p className="text-foreground text-lg font-medium leading-none">{title}</p>
         {description ? (
           <p className="text-muted-foreground mx-auto max-w-[260px] text-sm leading-6">
             {description}

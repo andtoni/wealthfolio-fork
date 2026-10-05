@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  Fragment,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -25,22 +26,11 @@ import { useIsMobileViewport } from "@/hooks/use-platform";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useTaxonomy } from "@/hooks/use-taxonomies";
 import { QueryKeys } from "@/lib/query-keys";
-import { formatDateISO } from "@/lib/utils";
+import { formatDateISO, formatDateTime } from "@/lib/utils";
 import type { Account, ActivityDetails, TaxonomyCategory } from "@/lib/types";
 import { useSettingsContext } from "@/lib/settings-provider";
 
-import {
-  Button,
-  Checkbox,
-  EmptyPlaceholder,
-  Icons,
-  Skeleton,
-  Table,
-  TableBody,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@wealthfolio/ui";
+import { Button, Checkbox, EmptyPlaceholder, Icons, Skeleton } from "@wealthfolio/ui";
 
 import { CashActivityForm } from "./cash-activity-form";
 import { ActivityForm } from "@/pages/activity/components/activity-form";
@@ -52,7 +42,6 @@ import type { AmountRange } from "./amount-range-filter";
 import { DeleteTransactionsDialog, type DeletePreview } from "./delete-transactions-dialog";
 import type { SuggestedCategory } from "./suggested-category-button";
 import { TransactionCard } from "./transaction-card";
-import { TransactionRow } from "./transaction-row";
 import { SplitTransactionSheet } from "./split-transaction-sheet";
 import { TransactionsBulkBar } from "./transactions-bulk-bar";
 import { TransactionsFilterBar, type FilterOption } from "./transactions-filter-bar";
@@ -63,7 +52,9 @@ import {
   getEffectiveCashActivityType,
   isCreditCardAccountType,
   isSpendingAccountType,
+  type CashActivityType,
 } from "../lib/constants";
+import { resolveCashActivitySubtype } from "../lib/cash-activity-form-utils";
 import {
   isLinkedTransferCashActivity,
   isTransferCashActivity,
@@ -377,6 +368,8 @@ export const SpendingTransactionsTab = forwardRef<
   ]);
 
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  // Phone only: checkboxes and the bulk bar appear once the list is in select mode.
+  const [selectMode, setSelectMode] = useState(false);
 
   const { accounts = [] } = useAccounts({ filterActive: false });
   const { accountIds: spendingAccountIds, budgetCycle } = useSpendingSettings();
@@ -496,7 +489,6 @@ export const SpendingTransactionsTab = forwardRef<
     items,
     totalCount,
     isLoading,
-    isFetching,
     isFetchingNextPage,
     isError,
     error,
@@ -644,6 +636,35 @@ export const SpendingTransactionsTab = forwardRef<
       toast.success(t("spending:txTab.markedReimbursement"));
     },
     onError: () => toast.error(t("spending:txTab.markReimbursementFailed")),
+  });
+
+  const changeTypeMutation = useMutation({
+    mutationFn: async ({ row, type }: { row: TransactionRowVM; type: CashActivityType }) => {
+      const a = row.activity;
+      return updateActivity({
+        id: a.id,
+        accountId: a.accountId,
+        activityType: type,
+        subtype: resolveCashActivitySubtype({
+          activityType: type,
+          accountType: accountById.get(a.accountId)?.accountType,
+          existingActivityType: a.activityType,
+          existingSubtype: a.subtype,
+        }),
+        activityDate: a.activityDate,
+        activityDatePrecision: a.activityDatePrecision,
+        amount: Math.abs(Number.parseFloat(a.amount ?? "0")),
+        currency: a.currency,
+        comment: a.notes ?? null,
+      });
+    },
+    onSuccess: () => {
+      invalidateSpendingCaches(qc);
+      qc.invalidateQueries({ queryKey: [QueryKeys.ACTIVITIES] });
+      qc.invalidateQueries({ queryKey: [QueryKeys.ACTIVITY_DATA] });
+    },
+    onError: (e) =>
+      toast.error(t("spending:cashForm.saveFailed", { message: (e as Error).message ?? e })),
   });
 
   const deleteMutation = useMutation({
@@ -934,7 +955,6 @@ export const SpendingTransactionsTab = forwardRef<
 
   useImperativeHandle(ref, () => ({ openAddForm }), [openAddForm]);
 
-  const isRefreshing = isFetching && !isFetchingNextPage;
   const isMobile = useIsMobileViewport();
 
   const loadMoreButton = hasNextPage ? (
@@ -955,44 +975,64 @@ export const SpendingTransactionsTab = forwardRef<
     </Button>
   ) : null;
 
-  const renderRows = () =>
-    rows.map((r) => {
+  const dayOf = (date: string | Date, precision?: "DATE" | "INSTANT") =>
+    formatDateTime(date, appTimezone, precision).date;
+
+  const renderRows = () => {
+    const today = dayOf(new Date());
+    const yesterday = dayOf(new Date(Date.now() - 86_400_000));
+    let lastDay = "";
+    return rows.map((r) => {
       const eventId = r.activity.eventId ?? null;
       const ev = eventId ? eventsById.get(eventId) : null;
       const eventTypeColor = ev ? (eventTypeById.get(ev.eventTypeId)?.color ?? null) : null;
-      const RowComponent = isMobile ? TransactionCard : TransactionRow;
+      const rowProps = {
+        row: r,
+        account: accountById.get(r.activity.accountId),
+        event: ev ?? null,
+        eventTypeColor,
+        appTimezone,
+        isSelected: selectedRowIds.has(r.activity.id),
+        suggestedCategory: suggestedCategoryByActivity.get(r.activity.id),
+        onToggleSelect: handleToggleRow,
+        onAssignCategory: handleAssignCategory,
+        onClearCategory: handleClearCategory,
+        onSetEvent: handleSetEvent,
+        onMarkReimbursement: (row: TransactionRowVM) => markReimbursementMutation.mutate(row),
+        onEditSplits: setSplittingActivity,
+        onEdit: handleEditRow,
+        onChangeType: (row: TransactionRowVM, type: CashActivityType) =>
+          changeTypeMutation.mutate({ row, type }),
+        onDuplicate: handleDuplicate,
+        onDelete: handleDeleteRow,
+        onLinkTransfer: handleLinkTransfer,
+        onUnlinkTransfer: handleUnlinkTransfer,
+        onLinkInvestecCardLifecycle: onLinkInvestecCardLifecycle
+          ? (row: TransactionRowVM) =>
+              onLinkInvestecCardLifecycle(
+                toActivityDetails(row, accountById.get(row.activity.accountId)),
+              )
+          : undefined,
+      };
+      const day = dayOf(r.activity.activityDate, r.activity.activityDatePrecision);
+      const heading = day === lastDay ? null : day;
+      lastDay = day;
       return (
-        <RowComponent
-          key={r.activity.id}
-          row={r}
-          account={accountById.get(r.activity.accountId)}
-          event={ev ?? null}
-          eventTypeColor={eventTypeColor}
-          appTimezone={appTimezone}
-          isSelected={selectedRowIds.has(r.activity.id)}
-          suggestedCategory={suggestedCategoryByActivity.get(r.activity.id)}
-          onToggleSelect={handleToggleRow}
-          onAssignCategory={handleAssignCategory}
-          onClearCategory={handleClearCategory}
-          onSetEvent={handleSetEvent}
-          onMarkReimbursement={(row) => markReimbursementMutation.mutate(row)}
-          onEditSplits={setSplittingActivity}
-          onEdit={handleEditRow}
-          onDuplicate={handleDuplicate}
-          onDelete={handleDeleteRow}
-          onLinkTransfer={handleLinkTransfer}
-          onUnlinkTransfer={handleUnlinkTransfer}
-          onLinkInvestecCardLifecycle={
-            onLinkInvestecCardLifecycle
-              ? (row) =>
-                  onLinkInvestecCardLifecycle(
-                    toActivityDetails(row, accountById.get(row.activity.accountId)),
-                  )
-              : undefined
-          }
-        />
+        <Fragment key={r.activity.id}>
+          {heading && (
+            <h3 className="text-foreground pb-1 pt-6 text-xl font-medium tracking-tight">
+              {heading === today
+                ? t("spending:dashboard.today")
+                : heading === yesterday
+                  ? t("spending:dashboard.yesterday")
+                  : heading}
+            </h3>
+          )}
+          <TransactionCard {...rowProps} selectMode={selectMode} isMobile={isMobile} />
+        </Fragment>
       );
     });
+  };
 
   const editingActivityForForm = useMemo(() => {
     if (!editingActivity) return undefined;
@@ -1037,10 +1077,13 @@ export const SpendingTransactionsTab = forwardRef<
         hasEvents={events.length > 0}
         filtersActive={filtersActive}
         onClearAll={clearAllFilters}
-        visibleCount={rows.length}
-        totalCount={totalCount}
-        isRefreshing={isRefreshing}
         isMobile={isMobile}
+        title={t("dashboard:tabs.transactions")}
+        selectMode={selectMode}
+        onToggleSelect={() => {
+          if (selectMode) clearSelection();
+          setSelectMode(!selectMode);
+        }}
       />
 
       {selectedRowIds.size > 0 && (
@@ -1091,10 +1134,10 @@ export const SpendingTransactionsTab = forwardRef<
             </Button>
           )}
         </EmptyPlaceholder>
-      ) : isMobile ? (
-        <div className="space-y-2">
-          {rows.length > 1 && (
-            <div className="flex items-center gap-2 px-1">
+      ) : (
+        <div>
+          {selectMode && rows.length > 1 && (
+            <div className="flex min-h-8 items-center gap-2 pt-2">
               <Checkbox
                 checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
                 onCheckedChange={toggleSelectAllVisible}
@@ -1104,52 +1147,11 @@ export const SpendingTransactionsTab = forwardRef<
                     : t("spending:txTab.selectAllVisible")
                 }
               />
-              <span className="text-muted-foreground text-xs">{t("common:select_all")}</span>
+              <span className="text-muted-foreground text-sm">{t("common:select_all")}</span>
             </div>
           )}
           {renderRows()}
           {loadMoreButton && <div className="flex justify-center pt-1">{loadMoreButton}</div>}
-        </div>
-      ) : (
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10">
-                  <Checkbox
-                    checked={
-                      allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false
-                    }
-                    onCheckedChange={toggleSelectAllVisible}
-                    aria-label={
-                      allVisibleSelected
-                        ? t("spending:txTab.deselectAllVisible")
-                        : t("spending:txTab.selectAllVisible")
-                    }
-                  />
-                </TableHead>
-                <TableHead className="hidden sm:table-cell">{t("common:date")}</TableHead>
-                <TableHead className="hidden md:table-cell">{t("common:type")}</TableHead>
-                <TableHead className="hidden lg:table-cell">{t("common:account")}</TableHead>
-                <TableHead>{t("spending:txTab.nameNotes")}</TableHead>
-                <TableHead className="hidden md:table-cell">
-                  {t("spending:filters.category")}
-                </TableHead>
-                <TableHead className="hidden lg:table-cell">
-                  {t("spending:filters.event")}
-                </TableHead>
-                <TableHead className="text-right">{t("common:amount")}</TableHead>
-                <TableHead className="w-12" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>{renderRows()}</TableBody>
-          </Table>
-
-          {loadMoreButton && (
-            <div className="border-border flex items-center justify-center border-t p-3">
-              {loadMoreButton}
-            </div>
-          )}
         </div>
       )}
 

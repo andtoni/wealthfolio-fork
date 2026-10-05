@@ -70,7 +70,8 @@
   "tabs": {
     "investments": "Investissements",
     "net_worth": "Valeur nette",
-    "spending": "Dépenses"
+    "spending": "Dépenses",
+    "transactions": "Transactions"
   },
   "holdings": {
     "title": "Positions",

@@ -178,7 +178,7 @@ export function AddExchangeRateForm({ onSubmit, onCancel }: AddExchangeRateFormP
                                 searchValue === field.value ? "opacity-100" : "opacity-0",
                               )}
                             />
-                            <span className="font-semibold italic">
+                            <span className="font-medium italic">
                               {t("settings:fx_custom_search", { value: searchValue })}
                             </span>
                           </CommandItem>

@@ -100,8 +100,8 @@ function NeedsFixingRow({
         <TickerAvatar symbol={symbol} className="size-7 shrink-0" />
         <div className="flex min-w-0 flex-col">
           <div className="flex items-center gap-1.5">
-            <span className="font-mono text-sm font-bold tracking-tight">{symbol}</span>
-            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
+            <span className="font-mono text-sm font-medium tracking-tight">{symbol}</span>
+            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
               {count}×
             </span>
           </div>
@@ -202,8 +202,8 @@ function AutoResolvedRow({
         <TickerAvatar symbol={symbol} className="size-7 shrink-0" />
         <div className="flex min-w-0 flex-col">
           <div className="flex items-center gap-1.5">
-            <span className="font-mono text-sm font-bold tracking-tight">{symbol}</span>
-            <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
+            <span className="font-mono text-sm font-medium tracking-tight">{symbol}</span>
+            <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
               {count}×
             </span>
           </div>
@@ -224,7 +224,7 @@ function AutoResolvedRow({
       ) : (
         <div className="flex min-w-0 flex-wrap items-center gap-1">
           {item.resolutionSource === "mark_custom" && (
-            <span className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-300">
+            <span className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-300">
               <Icons.Tag className="h-3 w-3 shrink-0" />
               {t("activity:import.assets.custom")}
             </span>
@@ -321,8 +321,8 @@ function ReadyAssetRow({
         <TickerAvatar symbol={symbol} className="size-7 shrink-0" />
         <div className="flex min-w-0 flex-col">
           <div className="flex items-center gap-1.5">
-            <span className="font-mono text-sm font-bold tracking-tight">{symbol}</span>
-            <span className="bg-success/15 text-success rounded px-1.5 py-0.5 text-[10px] font-semibold">
+            <span className="font-mono text-sm font-medium tracking-tight">{symbol}</span>
+            <span className="bg-success/15 text-success rounded px-1.5 py-0.5 text-[10px] font-medium">
               {count}×
             </span>
           </div>
@@ -708,7 +708,7 @@ export function AssetReviewStep() {
             >
               <Icons.AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
               <div className="flex-1">
-                <span className="text-xs font-semibold uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                <span className="text-xs font-medium text-amber-800 dark:text-amber-300">
                   {t("activity:import.assets.needsFixing")}
                 </span>
                 <p className="text-muted-foreground mt-0.5 text-[11px]">
@@ -728,7 +728,7 @@ export function AssetReviewStep() {
                 <Icons.Tag className="h-3 w-3 shrink-0" />
                 {t("activity:import.assets.markAllCustom")}
               </Button>
-              <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-900 dark:bg-amber-500/20 dark:text-amber-200">
+              <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-900 dark:bg-amber-500/20 dark:text-amber-200">
                 {needsFixing.length}
               </span>
               <button type="button" onClick={() => toggleSection("needsFixing")}>
@@ -801,7 +801,7 @@ export function AssetReviewStep() {
               >
                 <Icons.Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
                 <div className="flex-1">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-blue-800 dark:text-blue-300">
+                  <span className="text-xs font-medium text-blue-800 dark:text-blue-300">
                     {t("activity:import.assets.newAssets")}
                   </span>
                   <p className="text-muted-foreground mt-0.5 text-[11px]">
@@ -810,12 +810,12 @@ export function AssetReviewStep() {
                 </div>
                 <div className="flex items-center gap-1.5">
                   {suspiciousCount > 0 && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
                       <Icons.AlertTriangle className="h-3 w-3" />
                       {suspiciousCount}
                     </span>
                   )}
-                  <span className="rounded-full bg-blue-200 px-2 py-0.5 text-[10px] font-bold text-blue-900 dark:bg-blue-500/20 dark:text-blue-200">
+                  <span className="rounded-full bg-blue-200 px-2 py-0.5 text-[10px] font-medium text-blue-900 dark:bg-blue-500/20 dark:text-blue-200">
                     {autoResolvedItems.length}
                   </span>
                 </div>
@@ -889,14 +889,14 @@ export function AssetReviewStep() {
           >
             <Icons.CheckCircle className="text-success mt-0.5 h-3.5 w-3.5 shrink-0" />
             <div className="flex-1">
-              <span className="text-success text-xs font-semibold uppercase tracking-wider">
+              <span className="text-success text-xs font-medium">
                 {t("activity:import.assets.existingAssets")}
               </span>
               <p className="text-muted-foreground mt-0.5 text-[11px]">
                 {t("activity:import.assets.existingAssetsDescription")}
               </p>
             </div>
-            <span className="bg-success/20 text-success rounded-full px-2 py-0.5 text-[10px] font-bold">
+            <span className="bg-success/20 text-success rounded-full px-2 py-0.5 text-[10px] font-medium">
               {existingItems.length}
             </span>
             <Icons.ChevronDown

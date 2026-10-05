@@ -109,7 +109,7 @@ export function DriftDriversCard({
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2.5">
                       <span
-                        className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold tabular-nums"
+                        className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-medium tabular-nums"
                         style={{
                           backgroundColor: rowColor,
                           color: markerTextColor(rowColor),
@@ -117,13 +117,13 @@ export function DriftDriversCard({
                       >
                         {index + 1}
                       </span>
-                      <p className="text-foreground truncate text-[13px] font-semibold leading-snug">
+                      <p className="text-foreground truncate text-[13px] font-medium leading-snug">
                         {driver.title}
                       </p>
                     </div>
                     <span
                       className={cn(
-                        "shrink-0 text-[12.5px] font-bold tabular-nums",
+                        "shrink-0 text-[12.5px] font-medium tabular-nums",
                         driver.isOver ? "text-destructive" : "text-blue-600 dark:text-blue-400",
                       )}
                     >

@@ -1,23 +1,16 @@
-import { DashboardCard } from "@/components/dashboard-card";
+import { DashboardCard, LIST_ROW } from "@/components/dashboard-card";
+import { SplitAmount } from "@/features/spending/components/split-amount";
 import { TickerAvatar } from "@/components/ticker-avatar";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { HoldingType, isAlternativeAssetKind } from "@/lib/constants";
 import { parseOccSymbol } from "@/lib/occ-symbol";
 import { Holding } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import {
-  AmountDisplay,
-  Button,
-  GainAmount,
-  GainPercent,
-  Icons,
-  usePersistentState,
-} from "@wealthfolio/ui";
+import { Button, GainAmount, GainPercent, Icons, usePersistentState } from "@wealthfolio/ui";
 import { Popover, PopoverContent, PopoverTrigger } from "@wealthfolio/ui/components/ui/popover";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
-import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 
 const MAX_DISPLAYED_HOLDINGS = 7;
 const MAX_STACKED_AVATARS = 5;
@@ -33,7 +26,6 @@ interface TopHoldingsProps {
 interface HoldingRowProps {
   holding: Holding;
   baseCurrency: string;
-  isHidden?: boolean;
   performanceMode: PerformanceMode;
   showName: boolean;
   onClick?: () => void;
@@ -42,7 +34,6 @@ interface HoldingRowProps {
 function HoldingRow({
   holding,
   baseCurrency,
-  isHidden,
   performanceMode,
   showName,
   onClick,
@@ -76,38 +67,29 @@ function HoldingRow({
 
   return (
     <div
-      className="border-border hover:bg-muted/30 group flex cursor-pointer items-center justify-between gap-3 border-b py-3 transition-colors last:border-0"
+      className={cn(LIST_ROW, "cursor-pointer")}
       onClick={onClick}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => e.key === "Enter" && onClick?.()}
     >
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <TickerAvatar symbol={avatarSymbol} className="size-9 shrink-0" />
-        <div className="flex min-w-0 flex-col">
-          <span className="truncate text-sm font-semibold">{title}</span>
-          <span className="text-muted-foreground text-xs">{subtitle}</span>
-        </div>
+      <TickerAvatar symbol={avatarSymbol} className="size-10 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[17px] leading-snug">{title}</div>
+        <div className="text-muted-foreground truncate text-[15px] leading-snug">{subtitle}</div>
       </div>
-      <div className="flex shrink-0 flex-col items-end gap-1">
-        <AmountDisplay
-          value={marketValue}
-          currency={baseCurrency}
-          isHidden={isHidden}
-          className="text-sm font-semibold"
-        />
+      <div className="flex shrink-0 flex-col items-end">
+        <span className="text-[19px] leading-snug">
+          <SplitAmount value={marketValue} currency={baseCurrency} />
+        </span>
         <div className="flex items-center gap-2">
           <GainAmount
             value={gainAmount}
             currency={baseCurrency}
             displayCurrency={false}
-            className="text-xs"
+            className="text-[13px]"
           />
-          <GainPercent
-            value={gainPercent}
-            variant="badge"
-            className="min-w-[60px] justify-center text-xs"
-          />
+          <GainPercent value={gainPercent} className="text-[13px]" />
         </div>
       </div>
     </div>
@@ -127,7 +109,7 @@ function StackedAvatars({ holdings, totalRemaining, onClick }: StackedAvatarsPro
 
   return (
     <div
-      className="hover:bg-muted/50 border-border flex cursor-pointer items-center gap-2 border-t py-3 transition-colors"
+      className={cn(LIST_ROW, "cursor-pointer")}
       onClick={onClick}
       role="button"
       tabIndex={0}
@@ -149,12 +131,11 @@ function StackedAvatars({ holdings, totalRemaining, onClick }: StackedAvatarsPro
           );
         })}
       </div>
-      <span className="text-muted-foreground text-xs">
+      <span className="text-muted-foreground text-[15px]">
         {extraCount > 0
           ? t("dashboard:holdings.more_holdings", { count: totalRemaining })
           : t("dashboard:holdings.more", { count: totalRemaining })}
       </span>
-      <Icons.ChevronRight className="text-muted-foreground ml-auto h-3 w-3" />
     </div>
   );
 }
@@ -162,9 +143,9 @@ function StackedAvatars({ holdings, totalRemaining, onClick }: StackedAvatarsPro
 function TopHoldingsSkeleton() {
   const { t } = useTranslation();
   return (
-    <DashboardCard title={t("dashboard:holdings.title")} elevated>
+    <DashboardCard title={t("dashboard:holdings.title")}>
       {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="border-border border-b py-3 last:border-0">
+        <div key={i} className="py-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Skeleton className="h-9 w-9 rounded-full" />
@@ -190,17 +171,13 @@ function TopHoldingsSkeleton() {
 function TopHoldingsEmptyState() {
   const { t } = useTranslation();
   return (
-    <DashboardCard title={t("dashboard:holdings.title")} elevated>
-      <div className="py-2 text-center">
-        <p className="text-sm">{t("dashboard:holdings.no_holdings")}</p>
-        <Link
-          to="/activities/manage"
-          className="text-muted-foreground hover:text-foreground mt-2 inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline"
-        >
+    <DashboardCard title={t("dashboard:holdings.title")}>
+      <p className="text-muted-foreground text-[15px]">
+        {t("dashboard:holdings.no_holdings")}{" "}
+        <Link to="/activities/manage" className="text-foreground hover:underline">
           {t("dashboard:holdings.add_first_transaction")}
-          <Icons.ChevronRight className="h-3 w-3" />
         </Link>
-      </div>
+      </p>
     </DashboardCard>
   );
 }
@@ -208,7 +185,6 @@ function TopHoldingsEmptyState() {
 export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { isBalanceHidden } = useBalancePrivacy();
   const [performanceMode, setPerformanceMode] = usePersistentState<PerformanceMode>(
     PERFORMANCE_MODE_KEY,
     "pnl",
@@ -273,7 +249,6 @@ export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsPr
   return (
     <DashboardCard
       title={t("dashboard:holdings.title")}
-      elevated
       action={
         <div className="flex items-center gap-1">
           <Popover>
@@ -290,7 +265,7 @@ export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsPr
               align="end"
               className="border-border/50 bg-card min-w-[200px] rounded-2xl border p-2 shadow-lg backdrop-blur-xl"
             >
-              <p className="text-muted-foreground px-2 py-1.5 text-xs font-medium uppercase tracking-wider">
+              <p className="text-muted-foreground px-2 py-1.5 text-xs font-medium">
                 {t("dashboard:holdings.filter_show")}
               </p>
               {(["daily", "pnl", "return"] as const).map((v) => (
@@ -319,7 +294,7 @@ export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsPr
                 </button>
               ))}
               <div className="bg-border/70 mx-2 my-1.5 h-px" />
-              <p className="text-muted-foreground px-2 py-1.5 text-xs font-medium uppercase tracking-wider">
+              <p className="text-muted-foreground px-2 py-1.5 text-xs font-medium">
                 {t("dashboard:holdings.filter_sort_by")}
               </p>
               {(["value", "gain"] as const).map((v) => (
@@ -344,7 +319,7 @@ export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsPr
                 </button>
               ))}
               <div className="bg-border/70 mx-2 my-1.5 h-px" />
-              <p className="text-muted-foreground px-2 py-1.5 text-xs font-medium uppercase tracking-wider">
+              <p className="text-muted-foreground px-2 py-1.5 text-xs font-medium">
                 {t("dashboard:holdings.filter_display")}
               </p>
               {(["symbol", "name"] as const).map((v) => (
@@ -373,7 +348,7 @@ export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsPr
           <Button
             variant="ghost"
             size="sm"
-            className="text-muted-foreground hover:bg-success/10 text-xs"
+            className="text-muted-foreground hover:bg-foreground/5 text-sm"
             onClick={() => navigate("/holdings")}
           >
             {t("dashboard:view_all")}
@@ -389,7 +364,6 @@ export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsPr
             key={holding.id}
             holding={holding}
             baseCurrency={baseCurrency}
-            isHidden={isBalanceHidden}
             performanceMode={performanceMode}
             showName={displayMode === "name"}
             onClick={() => navigate(`/holdings/${encodeURIComponent(assetId)}`)}

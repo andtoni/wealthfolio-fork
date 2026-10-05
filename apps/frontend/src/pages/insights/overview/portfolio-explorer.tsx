@@ -6,6 +6,8 @@ import type {
   PortfolioAllocations,
   TaxonomyAllocation,
 } from "@/lib/types";
+import { BlockBar } from "@/components/block-bar";
+import { SECTION_HEADING } from "@/components/dashboard-card";
 import { cn } from "@/lib/utils";
 import { Card, Icons, PrivacyAmount, Skeleton } from "@wealthfolio/ui";
 import { useMemo, useState } from "react";
@@ -68,29 +70,6 @@ function collapseWeights(
       depth: 0,
     },
   ];
-}
-
-function SegmentedBar({ nodes }: { nodes: BreakdownNode[] }) {
-  return (
-    <div className="bg-muted flex h-6 w-full overflow-hidden rounded-lg">
-      {nodes.map((node, index) => (
-        <div
-          key={node.id}
-          className="flex h-full items-center overflow-hidden px-2"
-          style={{
-            flex: `${Math.max(node.percentage, 0.5)} 1 0%`,
-            background: node.color,
-            boxShadow: index === 0 ? undefined : "inset 2px 0 0 var(--card)",
-          }}
-          title={`${node.name} · ${node.percentage.toFixed(1)}%`}
-        >
-          {node.percentage >= 8 && (
-            <span className="truncate text-[10.5px] font-bold text-white/95">{node.name}</span>
-          )}
-        </div>
-      ))}
-    </div>
-  );
 }
 
 function taxonomyLens(
@@ -276,14 +255,14 @@ export function PortfolioExplorer({
           <span
             className={cn(
               "truncate text-[13px]",
-              node.depth ? "text-muted-foreground font-medium" : "text-foreground font-semibold",
+              node.depth ? "text-muted-foreground font-medium" : "text-foreground font-medium",
               isOther && "text-muted-foreground font-medium",
             )}
           >
             {node.name}
           </span>
         </span>
-        <span className="text-foreground w-[62px] text-right text-[13px] font-bold tabular-nums">
+        <span className="text-foreground w-[62px] text-right text-[13px] font-medium tabular-nums">
           {node.percentage.toFixed(1)}%
         </span>
         <span className="text-muted-foreground w-[84px] text-right text-[12px] tabular-nums">
@@ -303,25 +282,19 @@ export function PortfolioExplorer({
 
   return (
     <div>
-      <div className="mb-2">
-        <span className="text-muted-foreground text-sm font-medium uppercase tracking-wider">
-          {t("insights:insights.explorer.breakdown")}
-        </span>
-      </div>
+      <h2 className={`${SECTION_HEADING} mb-3`}>{t("insights:insights.explorer.breakdown")}</h2>
 
       <Card className="overflow-hidden p-0">
         {/* Lens tabs */}
-        <div className="bg-muted/30 flex flex-wrap items-center gap-1 border-b px-3.5 py-2.5">
+        <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {lenses.map((lens) => (
             <button
               key={lens.key}
               type="button"
               onClick={() => selectLens(lens.key)}
               className={cn(
-                "rounded-lg px-4 py-2 text-[13px] transition-colors",
-                lens.key === active.key
-                  ? "bg-foreground text-background font-semibold"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                "h-9 shrink-0 rounded-full px-3.5 text-sm transition-colors",
+                lens.key === active.key ? "bg-foreground text-background" : "bg-foreground/[0.07]",
               )}
             >
               {lens.label}
@@ -330,17 +303,23 @@ export function PortfolioExplorer({
         </div>
 
         {/* Full-width breakdown */}
-        <div className="p-6">
+        <div className="pt-5">
           <div className="mb-3.5 flex items-baseline justify-between gap-3.5">
-            <span className="text-[13.5px] font-bold">{active.label}</span>
-            <span className="text-muted-foreground text-[12.5px] tabular-nums">
+            <span className="text-[17px]">{active.label}</span>
+            <span className="text-muted-foreground text-[15px] tabular-nums">
               <PrivacyAmount value={total} currency={currency} /> · {active.nodes.length}{" "}
               {active.unit}
             </span>
           </div>
-          <SegmentedBar nodes={barWeights} />
+          <BlockBar
+            segments={barWeights.map((node) => ({
+              value: node.percentage,
+              color: node.color,
+              label: `${node.name} ${node.percentage.toFixed(1)}%`,
+            }))}
+          />
           <div className="mb-1 mt-4 flex items-baseline justify-between">
-            <span className="text-muted-foreground text-[10.5px] font-semibold uppercase tracking-wider">
+            <span className="text-muted-foreground text-[10.5px] font-medium">
               {collapsible && !showAll
                 ? t("insights:insights.explorer.top_units", { unit: active.unit })
                 : active.label}
@@ -349,7 +328,7 @@ export function PortfolioExplorer({
               <button
                 type="button"
                 onClick={() => setShowAll((v) => !v)}
-                className="text-muted-foreground hover:text-foreground text-[12px] font-semibold"
+                className="text-muted-foreground hover:text-foreground text-[12px] font-medium"
               >
                 {showAll
                   ? t("insights:insights.explorer.show_less")

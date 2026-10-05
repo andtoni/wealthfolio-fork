@@ -435,7 +435,7 @@ export function AllocationDetailSheet({
                       >
                         <TickerAvatar symbol={avatarSymbol} className="h-9 w-9" />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold">{primaryLabel}</p>
+                          <p className="truncate text-sm font-medium">{primaryLabel}</p>
                           <p className="text-muted-foreground truncate text-xs">{secondaryLabel}</p>
                         </div>
                         <div className="text-right">

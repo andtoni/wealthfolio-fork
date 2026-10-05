@@ -119,7 +119,7 @@ export function CashflowDivergingBars({ points, currency, isLoading }: CashflowD
               const d = payload[0].payload as CashflowDatum;
               return (
                 <div className="bg-background min-w-[180px] rounded-md border px-3 py-2 text-xs shadow-sm">
-                  <div className="text-foreground mb-1 font-semibold">{d.label}</div>
+                  <div className="text-foreground mb-1 font-medium">{d.label}</div>
                   <Row
                     label={t("spending:cashFlow.income")}
                     value={d.income}
@@ -219,7 +219,7 @@ function Row({
   return (
     <div className="flex items-center justify-between gap-3">
       <span className="text-muted-foreground">{label}</span>
-      <span className={`tabular-nums ${toneClass} ${bold ? "font-semibold" : "font-medium"}`}>
+      <span className={`tabular-nums ${toneClass} ${bold ? "font-medium" : "font-medium"}`}>
         {showMinus ? "−" : ""}
         <PrivacyAmount value={Math.abs(value)} currency={currency} />
       </span>

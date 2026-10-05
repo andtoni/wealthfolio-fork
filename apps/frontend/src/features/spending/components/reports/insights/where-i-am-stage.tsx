@@ -1,3 +1,4 @@
+import { BlockBar } from "@/components/block-bar";
 import { useMemo, useState, type FC, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -29,9 +30,8 @@ import { formatMonthDay, formatMonthName, formatPercentValue } from "./format";
 // ─── shared chrome ────────────────────────────────────────────────────────
 
 const CARD_CLASS =
-  "border-border/60 bg-card/40 bg-gradient-to-br from-white/[0.07] via-transparent to-black/[0.04] dark:from-white/[0.025] dark:to-black/[0.06] rounded-2xl border p-5 backdrop-blur-xl";
-const LABEL_CLASS =
-  "text-muted-foreground/70 text-[10px] font-semibold uppercase tracking-[0.12em]";
+  "bg-gradient-to-br from-white/[0.07] via-transparent to-black/[0.04] dark:from-white/[0.025] dark:to-black/[0.06]";
+const LABEL_CLASS = "text-muted-foreground/70 text-xs";
 const SAVINGS_GROUP_KEY = "savings";
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -186,7 +186,7 @@ const PaceCard: FC<PaceCardProps> = ({
     return (
       <div className={CARD_CLASS}>
         <div className={LABEL_CLASS}>{t("spending:whereIAm.noBudgetSet")}</div>
-        <p className="text-foreground mt-3 text-lg font-semibold leading-snug tracking-tight">
+        <p className="text-foreground mt-3 text-lg font-medium leading-snug tracking-tight">
           {t("spending:whereIAm.noBudgetTitle")}
         </p>
         <p className="text-muted-foreground/80 mt-2 text-sm">
@@ -223,9 +223,9 @@ const PaceCard: FC<PaceCardProps> = ({
       <div className="mt-3">{pace.narrative}</div>
 
       {/* Row 3 — progress bar with pace tick */}
-      <div className="bg-foreground/10 relative mt-4 h-2 w-full overflow-hidden rounded-full">
+      <div className="bg-foreground/10 relative mt-4 h-2.5 w-full overflow-hidden rounded-[4px]">
         <div
-          className="h-full rounded-full transition-all"
+          className="h-full rounded-[4px] transition-all"
           style={{
             width: `${Math.min(100, pace.percentSpent * 100)}%`,
             backgroundColor: statusColor,
@@ -426,7 +426,7 @@ function buildClosedNarrative({
   return (
     <div className="flex flex-col gap-1.5">
       <div
-        className={cn("text-xl font-semibold tabular-nums tracking-tight md:text-2xl", colorClass)}
+        className={cn("text-xl font-medium tabular-nums tracking-tight md:text-2xl", colorClass)}
       >
         {t("spending:whereIAm.amountSpent", {
           amount: isBalanceHidden ? "••••" : formatCompactAmount(spent, currency),
@@ -514,18 +514,18 @@ const SpentThisPeriodCard: FC<SpentThisPeriodCardProps> = ({
     <div className={CARD_CLASS}>
       <div className={LABEL_CLASS}>{periodLabel}</div>
       <div className="mt-2 flex items-baseline justify-between gap-2">
-        <div className="text-foreground text-lg font-semibold tabular-nums tracking-tight md:text-xl">
+        <div className="text-foreground text-lg font-medium tabular-nums tracking-tight md:text-xl">
           <PrivacyAmount value={spent} currency={currency} />
         </div>
         {deltaPct != null && (
           <span
             className={cn(
-              "rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums",
+              "text-[13px] tabular-nums",
               Math.abs(deltaPct) < 1
-                ? "bg-muted/50 text-muted-foreground"
+                ? "text-muted-foreground"
                 : deltaPct > 0
-                  ? "bg-amber-100/60 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300"
-                  : "bg-success/15 text-success",
+                  ? "text-amber-800 dark:text-amber-300"
+                  : "text-success",
             )}
           >
             {formatPercentValue(deltaPct, { digits: 0, signDisplay: "always" })} {priorLabel}
@@ -536,22 +536,16 @@ const SpentThisPeriodCard: FC<SpentThisPeriodCardProps> = ({
       {/* Segmented stacked bar */}
       {segments.length > 0 ? (
         <>
-          <div className="bg-foreground/5 mt-4 flex h-2 w-full overflow-hidden rounded-full">
-            {segments.map((s, i) => (
-              <div
-                key={s.id}
-                className="h-full"
-                style={{
-                  width: `${s.share}%`,
-                  backgroundColor: s.color,
-                  borderRight: i < segments.length - 1 ? "1px solid var(--card)" : undefined,
-                }}
-                title={`${s.name} · ${
-                  isBalanceHidden ? "••••" : formatAmount(s.amount, currency)
-                } (${s.share.toFixed(1)}%)`}
-              />
-            ))}
-          </div>
+          <BlockBar
+            className="mt-4"
+            segments={segments.map((s) => ({
+              value: s.share,
+              color: s.color,
+              label: `${s.name}, ${
+                isBalanceHidden ? "••••" : formatAmount(s.amount, currency)
+              } (${s.share.toFixed(1)}%)`,
+            }))}
+          />
           <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
             {segments.slice(0, 4).map((s) => (
               <span key={s.id} className="inline-flex items-center gap-1.5">
@@ -683,10 +677,7 @@ const NetCashflowCard: FC<NetCashflowCardProps> = ({ months, currency, isLoading
       </div>
       <div className="mt-2 flex items-baseline justify-between gap-2">
         <div
-          className={cn(
-            "text-lg font-semibold tabular-nums tracking-tight md:text-xl",
-            netToneClass,
-          )}
+          className={cn("text-lg font-medium tabular-nums tracking-tight md:text-xl", netToneClass)}
         >
           {totals.net >= 0 ? "+" : "−"}
           <PrivacyAmount value={Math.abs(totals.net)} currency={currency} />
@@ -694,8 +685,8 @@ const NetCashflowCard: FC<NetCashflowCardProps> = ({ months, currency, isLoading
         {totals.income > 0 && (
           <span
             className={cn(
-              "rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums",
-              totals.net >= 0 ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive",
+              "text-[13px] tabular-nums",
+              totals.net >= 0 ? "text-success" : "text-destructive",
             )}
           >
             {(() => {
@@ -725,13 +716,13 @@ const NetCashflowCard: FC<NetCashflowCardProps> = ({ months, currency, isLoading
           <span className="text-muted-foreground w-12 shrink-0">
             {t("spending:cashFlow.income")}
           </span>
-          <div className="bg-foreground/5 h-1.5 flex-1 overflow-hidden rounded-full">
+          <div className="bg-foreground/10 h-2.5 flex-1 overflow-hidden rounded-[4px]">
             <div
-              className="bg-success/65 h-full rounded-full transition-all"
+              className="bg-success/65 h-full rounded-[4px] transition-all"
               style={{ width: `${incomePct}%` }}
             />
           </div>
-          <span className="text-foreground/90 w-20 shrink-0 text-right font-semibold tabular-nums">
+          <span className="text-foreground/90 w-20 shrink-0 text-right font-medium tabular-nums">
             <PrivacyAmount value={totals.income} currency={currency} />
           </span>
         </div>
@@ -744,13 +735,13 @@ const NetCashflowCard: FC<NetCashflowCardProps> = ({ months, currency, isLoading
           <span className="text-muted-foreground w-12 shrink-0">
             {t("spending:whereIAm.spent")}
           </span>
-          <div className="bg-foreground/5 h-1.5 flex-1 overflow-hidden rounded-full">
+          <div className="bg-foreground/10 h-2.5 flex-1 overflow-hidden rounded-[4px]">
             <div
-              className="bg-foreground/60 h-full rounded-full transition-all"
+              className="bg-foreground/60 h-full rounded-[4px] transition-all"
               style={{ width: `${spentPct}%` }}
             />
           </div>
-          <span className="text-foreground/90 w-20 shrink-0 text-right font-semibold tabular-nums">
+          <span className="text-foreground/90 w-20 shrink-0 text-right font-medium tabular-nums">
             <PrivacyAmount value={totals.spent} currency={currency} />
           </span>
         </div>
@@ -759,13 +750,13 @@ const NetCashflowCard: FC<NetCashflowCardProps> = ({ months, currency, isLoading
             <span className="text-muted-foreground w-12 shrink-0">
               {t("spending:whereIAm.saved")}
             </span>
-            <div className="bg-foreground/5 h-1.5 flex-1 overflow-hidden rounded-full">
+            <div className="bg-foreground/10 h-2.5 flex-1 overflow-hidden rounded-[4px]">
               <div
-                className="h-full rounded-full bg-[#6B8E54]/70 transition-all"
+                className="h-full rounded-[4px] bg-[#6B8E54]/70 transition-all"
                 style={{ width: `${savedPct}%` }}
               />
             </div>
-            <span className="text-foreground/90 w-20 shrink-0 text-right font-semibold tabular-nums">
+            <span className="text-foreground/90 w-20 shrink-0 text-right font-medium tabular-nums">
               <PrivacyAmount value={totals.saved} currency={currency} />
             </span>
           </div>
@@ -814,14 +805,14 @@ function CashflowOverview({
   return (
     <section id="cashflow">
       <header className="mb-3">
-        <h2 className="text-foreground text-base font-semibold tracking-tight">
+        <h2 className="text-foreground text-xl font-medium tracking-tight">
           {t("spending:whereIAm.incomeSaving")}
         </h2>
         <p className="text-muted-foreground text-xs">
           {t("spending:whereIAm.nonSpendingCashflow", { period: periodLabel })}
         </p>
       </header>
-      <div className="border-border/60 bg-card/40 overflow-hidden rounded-2xl border backdrop-blur-xl">
+      <div className="">
         {isLoading ? (
           <div className="grid gap-4 p-4 md:grid-cols-2">
             {Array.from({ length: 2 }).map((_, i) => (
@@ -898,15 +889,15 @@ function CashflowGroup({ label, sublabel, rows, currency }: CashflowGroupProps) 
                 </span>
                 <span className="truncate text-sm font-medium">{row.name}</span>
               </div>
-              <span className="text-sm font-semibold tabular-nums">
+              <span className="text-sm font-medium tabular-nums">
                 <PrivacyAmount value={row.amount} currency={currency} />
               </span>
             </div>
             {visibleRows.length > 1 && (
               <div className="mt-2 flex items-center gap-2">
-                <div className="bg-foreground/5 h-1 flex-1 overflow-hidden rounded-full">
+                <div className="bg-foreground/10 h-2.5 flex-1 overflow-hidden rounded-[4px]">
                   <div
-                    className="h-full rounded-full transition-all"
+                    className="h-full rounded-[4px] transition-all"
                     style={{
                       width: `${row.share}%`,
                       backgroundColor: row.color,
@@ -1071,7 +1062,7 @@ function BreakdownCanvas({
     <section id="breakdown">
       <header className="mb-3 flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h2 className="text-foreground text-base font-semibold tracking-tight">
+          <h2 className="text-foreground text-xl font-medium tracking-tight">
             {t("spending:whereIAm.spendingPlan")}
           </h2>
           <p className="text-muted-foreground text-xs">
@@ -1093,7 +1084,7 @@ function BreakdownCanvas({
                 <DropdownMenuItem
                   key={opt}
                   onSelect={() => setSort(opt)}
-                  className={cn("text-xs", sort === opt && "font-semibold")}
+                  className={cn("text-xs", sort === opt && "font-medium")}
                 >
                   {t(SORT_LABEL_KEYS[opt])}
                   {sort === opt && <Icons.Check className="ml-auto size-3" />}
@@ -1123,14 +1114,7 @@ function BreakdownCanvas({
               )}
             >
               <span>{chip.label}</span>
-              <span
-                className={cn(
-                  "rounded-full px-1.5 text-[10px] font-medium tabular-nums",
-                  active ? "bg-background/20" : "bg-muted/60",
-                )}
-              >
-                {chip.count}
-              </span>
+              <span className={cn("text-[13px] tabular-nums", active ? "" : "")}>{chip.count}</span>
             </button>
           );
         })}

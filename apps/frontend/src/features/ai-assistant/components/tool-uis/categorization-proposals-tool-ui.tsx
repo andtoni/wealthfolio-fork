@@ -515,7 +515,7 @@ export function CategorizationProposalsContentImpl({
 
           {visibleUnproposed.length > 0 && (
             <div className="mt-3 border-t pt-2">
-              <p className="text-muted-foreground px-4 pb-1 text-[11px] uppercase tracking-wide">
+              <p className="text-muted-foreground px-4 pb-1 text-[11px]">
                 {t("ai:categorization.needsManualChoice", { count: visibleUnproposed.length })}
               </p>
               {visibleUnproposed.map((row) => (

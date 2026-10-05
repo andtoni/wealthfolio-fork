@@ -317,7 +317,7 @@ export function OptionContractFields<TFieldValues extends FieldValues = FieldVal
       {/* Contract Summary — confirms what the user is building */}
       {hasContractSummary && (
         <div className="bg-muted/50 border-border rounded-md border px-3 py-2">
-          <span className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">
+          <span className="text-muted-foreground text-[10px] font-medium">
             {t("activity:form.contract")}
           </span>
           <p className="text-sm font-medium tabular-nums">

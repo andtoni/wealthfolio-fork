@@ -119,7 +119,7 @@ export function AccountSnapshotHistory({
     <>
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-lg font-bold">{t("account:snapshot.history_title")}</h3>
+          <h3 className="text-lg font-medium">{t("account:snapshot.history_title")}</h3>
           <p className="text-muted-foreground text-sm">{t("account:snapshot.history_desc")}</p>
         </div>
         {canEditSnapshots && onAddSnapshot && (
@@ -158,10 +158,7 @@ export function AccountSnapshotHistory({
       ) : isMobile ? (
         <div className="space-y-2">
           {orderedSnapshots.map((snapshot) => (
-            <div
-              key={snapshot.id}
-              className="flex items-center gap-3 rounded-lg border px-3 py-2.5"
-            >
+            <div key={snapshot.id} className="flex items-center gap-3 px-3 py-2.5">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <p className="truncate text-sm font-medium">
@@ -205,7 +202,7 @@ export function AccountSnapshotHistory({
           ))}
         </div>
       ) : (
-        <div className="rounded-md border">
+        <div className="">
           <Table>
             <TableHeader className="bg-muted/50">
               <TableRow>

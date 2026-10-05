@@ -14,7 +14,7 @@ export function QuoteImportHelpPopover() {
         </Button>
       </PopoverTrigger>
       <PopoverContent className="m-3 max-h-[min(85vh,680px)] w-[min(90vw,900px)] overflow-y-auto rounded-lg p-4 text-sm sm:m-4 sm:p-6">
-        <h4 className="text-lg font-semibold">
+        <h4 className="text-lg font-medium">
           {t("settings:market_data_page.importing_historical_quotes")}
         </h4>
         <div className="mt-4 grid gap-6 sm:grid-cols-2">
@@ -30,7 +30,7 @@ export function QuoteImportHelpPopover() {
               <li>{t("settings:market_data_page.import_step_4")}</li>
             </ol>
             <div className="mt-4 space-y-3">
-              <div className="rounded-md border border-blue-500 bg-blue-50 p-3 dark:border-blue-500/40 dark:bg-blue-900/40">
+              <div className="border-blue-500 bg-blue-50 p-3 dark:border-blue-500/40 dark:bg-blue-900/40">
                 <p className="text-sm">
                   <strong className="text-blue-700 dark:text-blue-300">
                     {t("settings:market_data_page.import_tip_label")}
@@ -39,7 +39,7 @@ export function QuoteImportHelpPopover() {
                 </p>
               </div>
 
-              <div className="rounded-md border border-green-500 bg-green-50 p-3 dark:border-green-500/40 dark:bg-green-900/40">
+              <div className="border-green-500 bg-green-50 p-3 dark:border-green-500/40 dark:bg-green-900/40">
                 <p className="text-sm">
                   <strong className="text-green-700 dark:text-green-300">
                     {t("settings:market_data_page.import_required_label")}
@@ -48,7 +48,7 @@ export function QuoteImportHelpPopover() {
                 </p>
               </div>
 
-              <div className="rounded-md border border-purple-500 bg-purple-50 p-3 dark:border-purple-500/40 dark:bg-purple-900/40">
+              <div className="border-purple-500 bg-purple-50 p-3 dark:border-purple-500/40 dark:bg-purple-900/40">
                 <p className="text-sm">
                   <strong className="text-purple-700 dark:text-purple-300">
                     {t("settings:market_data_page.import_autoformat_label")}
@@ -63,9 +63,7 @@ export function QuoteImportHelpPopover() {
           <div>
             <div className="space-y-4">
               <div>
-                <p className="font-semibold">
-                  {t("settings:market_data_page.required_csv_format")}
-                </p>
+                <p className="font-medium">{t("settings:market_data_page.required_csv_format")}</p>
                 <pre className="bg-muted mt-2 select-all overflow-x-auto rounded-md p-3 text-xs leading-relaxed">
                   <span className="text-muted-foreground">
                     # Required columns: symbol, date, close
@@ -95,7 +93,7 @@ export function QuoteImportHelpPopover() {
               </div>
 
               <div>
-                <p className="font-semibold">{t("settings:market_data_page.data_validation")}</p>
+                <p className="font-medium">{t("settings:market_data_page.data_validation")}</p>
                 <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
                   <li>
                     <strong>{t("settings:market_data_page.validation_symbol_label")}</strong>{" "}

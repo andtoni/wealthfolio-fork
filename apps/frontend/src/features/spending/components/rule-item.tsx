@@ -118,9 +118,7 @@ export function RuleItem({ rule, categoryMeta, presetMeta, onEdit, onDelete }: R
                     {preset.flag}
                   </span>
                 )}
-                <span className="font-medium uppercase tracking-wide">
-                  {preset?.name ?? rule.presetId}
-                </span>
+                <span className="font-medium">{preset?.name ?? rule.presetId}</span>
                 {rule.presetModified && (
                   <span className="text-muted-foreground/60" aria-hidden="true">
                     ·{t("spending:rules.edited")}

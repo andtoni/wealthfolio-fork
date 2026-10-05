@@ -80,10 +80,6 @@ vi.mock("@/pages/activity/components/activity-pagination", () => ({
   ActivityPagination: () => <div>activity-pagination</div>,
 }));
 
-vi.mock("@/pages/activity/components/activity-table/activity-table", () => ({
-  default: () => <div>activity-table</div>,
-}));
-
 vi.mock("@/pages/activity/components/activity-table/activity-table-mobile", () => ({
   default: () => <div>activity-table-mobile</div>,
 }));

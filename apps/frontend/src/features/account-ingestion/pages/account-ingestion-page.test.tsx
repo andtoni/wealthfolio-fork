@@ -42,13 +42,6 @@ describe("AccountIngestionPage", () => {
     expect(headings.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("shows the Wealthfolio logo fallback", () => {
-    renderPage();
-
-    // Avatar renders WF fallback when image hasnt loaded in test env
-    expect(screen.getByText("WF")).toBeInTheDocument();
-  });
-
   it("shows direct providers before manual account fallbacks", () => {
     renderPage();
 

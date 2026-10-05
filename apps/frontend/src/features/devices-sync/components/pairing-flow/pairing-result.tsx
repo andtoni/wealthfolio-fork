@@ -54,7 +54,7 @@ export function PairingResult({
           <Icons.CheckCircle className="h-10 w-10 text-green-600 dark:text-green-500" />
         </div>
         <div className="mb-6 text-center">
-          <p className="text-foreground text-lg font-semibold">{t("sync:result.allSet")}</p>
+          <p className="text-foreground text-lg font-medium">{t("sync:result.allSet")}</p>
           <p className="text-muted-foreground mt-2 text-sm">
             {t("sync:result.connectedSuccessfully")}
           </p>
@@ -72,9 +72,7 @@ export function PairingResult({
         <Icons.XCircle className="h-10 w-10 text-red-600 dark:text-red-500" />
       </div>
       <div className="mb-6 text-center">
-        <p className="text-foreground text-base font-semibold">
-          {t("sync:result.connectionFailed")}
-        </p>
+        <p className="text-foreground text-base font-medium">{t("sync:result.connectionFailed")}</p>
         <p className="text-muted-foreground mt-2 max-h-40 max-w-[320px] overflow-y-auto whitespace-pre-wrap break-words text-sm">
           {formatError(error)}
         </p>

@@ -105,7 +105,7 @@ export function ContributionLimitForm({
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="mx-auto w-full max-w-4xl space-y-8">
         <DialogHeader className="px-1">
-          <DialogTitle className="text-2xl font-semibold">
+          <DialogTitle className="text-2xl font-medium">
             {defaultValues?.id
               ? t("settings:limits_form_update_title")
               : t("settings:limits_form_add_title")}

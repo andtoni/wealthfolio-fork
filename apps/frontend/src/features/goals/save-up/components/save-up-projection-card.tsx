@@ -90,7 +90,7 @@ function ProjectionTooltip({
   ] as const;
 
   return (
-    <div className="bg-popover grid grid-cols-1 gap-1.5 rounded-md border p-2 shadow-md">
+    <div className="bg-popover grid grid-cols-1 gap-1.5 p-2 shadow-md">
       <p className="text-muted-foreground text-xs">{label}</p>
       {rows.map((r) => (
         <div key={r.label} className="flex items-center justify-between space-x-4">
@@ -107,7 +107,7 @@ function ProjectionTooltip({
             />
             <span className="text-muted-foreground text-xs">{r.label}:</span>
           </div>
-          <span className="text-xs font-semibold tabular-nums">{fmt(r.value)}</span>
+          <span className="text-xs font-medium tabular-nums">{fmt(r.value)}</span>
         </div>
       ))}
     </div>
@@ -282,9 +282,6 @@ export function SaveUpProjectionCard({
     <Card>
       <CardHeader className="flex-row items-start justify-between gap-4">
         <div>
-          <div className="text-muted-foreground mb-1 text-xs font-medium uppercase tracking-[0.15em]">
-            {t("goals:projection.kicker")}
-          </div>
           <CardTitle className="text-md leading-none tracking-tight">
             {t("goals:projection.title")}
           </CardTitle>

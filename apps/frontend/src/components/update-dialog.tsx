@@ -179,7 +179,7 @@ export function UpdateDialog() {
 
             {/* Title */}
             <div className="mb-3 space-y-3">
-              <h2 className="text-foreground text-balance text-2xl font-bold">
+              <h2 className="text-foreground text-balance text-2xl font-medium">
                 {t("common:component.new_update_available")}
               </h2>
             </div>

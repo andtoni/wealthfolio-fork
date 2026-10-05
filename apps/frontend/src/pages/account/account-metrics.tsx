@@ -66,7 +66,7 @@ const EditableBalance: React.FC<EditableBalanceProps> = ({ account, initialBalan
       <Tooltip>
         <TooltipTrigger asChild>
           <div
-            className="flex cursor-pointer items-center gap-2 text-lg font-extrabold"
+            className="flex cursor-pointer items-center gap-2 text-lg font-medium"
             onClick={() => setIsEditing(true)}
           >
             <PrivacyAmount value={initialBalance} currency={currency} />
@@ -278,7 +278,7 @@ const AccountMetrics: React.FC<AccountMetricsProps> = ({
   return (
     <Card className={cn("flex flex-col", className)}>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-lg font-bold">{resolvedBalanceLabel}</CardTitle>
+        <CardTitle className="text-lg font-medium">{resolvedBalanceLabel}</CardTitle>
         <div className="flex items-center gap-2">
           {balanceWarning ? (
             <TooltipProvider>
@@ -313,7 +313,7 @@ const AccountMetrics: React.FC<AccountMetricsProps> = ({
               currency={displayCurrency}
             />
           ) : (
-            <span className="text-lg font-extrabold">
+            <span className="text-lg font-medium">
               <PrivacyAmount value={valuation?.cashBalance || 0} currency={displayCurrency} />
             </span>
           )}

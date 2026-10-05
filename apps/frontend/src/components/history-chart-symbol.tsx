@@ -177,7 +177,9 @@ function SymbolToolTip({ active, payload }: SymbolTooltipProps) {
     <div className="bg-popover pointer-events-none grid grid-cols-1 gap-1.5 rounded-md border p-2 shadow-md">
       <p className="text-muted-foreground text-xs">{formatDate(data.timestamp)}</p>
 
-      <p className="text-base font-bold">{formatAmount(payload[0].value, data.currency, false)}</p>
+      <p className="text-base font-medium">
+        {formatAmount(payload[0].value, data.currency, false)}
+      </p>
 
       {data.activities && data.activities.length > 0 && (
         <>

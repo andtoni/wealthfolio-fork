@@ -87,7 +87,7 @@ function AccountContributionLimitItem({
       <CardContent className="space-y-3 p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-sm font-semibold">
+            <p className="text-sm font-medium">
               {t("account:contribution.year_limit", {
                 year: limit.contributionYear,
                 group: groupName,
@@ -103,7 +103,7 @@ function AccountContributionLimitItem({
               />
             </p>
           </div>
-          <div className={`shrink-0 text-right text-xs font-semibold ${statusClassName}`}>
+          <div className={`shrink-0 text-right text-xs font-medium ${statusClassName}`}>
             {isOverLimit ? (
               <Trans
                 i18nKey="account:contribution.over_by"

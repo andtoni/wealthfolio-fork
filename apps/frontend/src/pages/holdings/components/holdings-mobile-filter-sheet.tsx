@@ -33,8 +33,8 @@ interface HoldingsMobileFilterSheetProps {
   selectedTypes: string[];
   setSelectedTypes: (types: string[]) => void;
   showAccountScope?: boolean;
-  sortBy: "symbol" | "marketValue";
-  setSortBy: (value: "symbol" | "marketValue") => void;
+  sortBy: "symbol" | "marketValue" | "gain";
+  setSortBy: (value: "symbol" | "marketValue" | "gain") => void;
   performanceMode: PerformanceMode;
   setPerformanceMode: (value: PerformanceMode) => void;
   categoryFilter?: HoldingCategoryFilterId;
@@ -75,15 +75,16 @@ export const HoldingsMobileFilterSheet = ({
             {/* View Settings */}
             <div className="grid grid-cols-1 gap-6">
               <div className="space-y-3">
-                <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                <h4 className="text-muted-foreground text-xs font-medium">
                   {t("holdings:sort_by")}
                 </h4>
-                <AnimatedToggleGroup<"symbol" | "marketValue">
+                <AnimatedToggleGroup<"symbol" | "marketValue" | "gain">
                   value={sortBy}
                   onValueChange={setSortBy}
                   items={[
                     { value: "marketValue", label: t("holdings:market_value_toggle") },
                     { value: "symbol", label: t("holdings:symbol") },
+                    { value: "gain", label: t("holdings:sort_gain") },
                   ]}
                   size="sm"
                   className="inline-flex w-auto"
@@ -91,7 +92,7 @@ export const HoldingsMobileFilterSheet = ({
               </div>
 
               <div className="space-y-3">
-                <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                <h4 className="text-muted-foreground text-xs font-medium">
                   {t("common:performance")}
                 </h4>
                 <AnimatedToggleGroup<PerformanceMode>
@@ -113,7 +114,7 @@ export const HoldingsMobileFilterSheet = ({
             {/* Category Filter Section */}
             {setCategoryFilter && (
               <div className="space-y-3">
-                <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                <h4 className="text-muted-foreground text-xs font-medium">
                   {t("holdings:category")}
                 </h4>
                 <div className="overflow-hidden rounded-lg border">
@@ -150,7 +151,7 @@ export const HoldingsMobileFilterSheet = ({
             {/* Account Filter Section */}
             {showAccountScope && (
               <div className="space-y-3">
-                <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                <h4 className="text-muted-foreground text-xs font-medium">
                   {t("holdings:account")}
                 </h4>
                 <div className="overflow-hidden rounded-lg border">
@@ -230,7 +231,7 @@ export const HoldingsMobileFilterSheet = ({
             {/* Asset Type Filter Section */}
             {typeOptions && typeOptions.length > 0 && (
               <div className="space-y-3">
-                <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                <h4 className="text-muted-foreground text-xs font-medium">
                   {t("holdings:asset_type")}
                 </h4>
                 <div className="overflow-hidden rounded-lg border">

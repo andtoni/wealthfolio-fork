@@ -451,7 +451,7 @@ export default function ConnectPage() {
                     </p>
                   </div>
                 ) : (
-                  <div className="divide-border -mx-3 divide-y">
+                  <div className="-mx-3">
                     {recentActivity.map((run) => (
                       <SyncHistoryItem
                         key={run.id}
@@ -535,12 +535,10 @@ function ConnectionItem({
   const syncSummary = getConnectionSyncSummary(syncEnabledCount, totalAccountCount, t);
 
   return (
-    <div className="bg-muted/30 flex items-center gap-3 rounded-lg border p-3">
+    <div className="flex items-center gap-3 p-3">
       <Avatar className="h-9 w-9 shrink-0 rounded-lg">
         <AvatarImage src={logoUrl} alt={name} className="bg-white object-contain p-1" />
-        <AvatarFallback className="rounded-lg text-sm font-semibold">
-          {name.charAt(0)}
-        </AvatarFallback>
+        <AvatarFallback className="rounded-lg text-sm font-medium">{name.charAt(0)}</AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">
         <span className="truncate text-sm font-medium">{name}</span>
@@ -665,7 +663,7 @@ function DeviceItem({ device }: { device: Device }) {
   const lastSeenText = formatDeviceLastSeen(device, t);
 
   return (
-    <div className="bg-muted/30 flex items-center gap-3 rounded-lg border p-3">
+    <div className="flex items-center gap-3 p-3">
       <Avatar className="h-9 w-9 shrink-0 rounded-lg">
         <AvatarFallback className="rounded-lg">
           <Icon className="text-muted-foreground h-4 w-4" />
@@ -769,7 +767,7 @@ function BrokerSyncAttentionSection({
             const message = getBrokerSyncIssueMessage(issue.syncStatus, issue.lastError);
 
             return (
-              <div key={`${issue.provider}:${issue.accountId}`} className="rounded-md border p-3">
+              <div key={`${issue.provider}:${issue.accountId}`} className="p-3">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <span className="font-medium">{accountName}</span>
                   <Badge variant={issue.syncStatus === "FAILED" ? "destructive" : "outline"}>

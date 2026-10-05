@@ -87,7 +87,7 @@ function ImportRunItem({ run }: { run: ImportRun }) {
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <div className="rounded-lg border">
+      <div className="">
         <CollapsibleTrigger asChild>
           <button className="hover:bg-accent/50 flex w-full items-center justify-between p-3">
             <div className="flex items-center gap-3">
@@ -121,19 +121,19 @@ function ImportRunItem({ run }: { run: ImportRun }) {
             {run.summary && (
               <div className="mb-3 grid grid-cols-4 gap-2 text-center">
                 <div>
-                  <p className="text-lg font-semibold">{run.summary.fetched}</p>
+                  <p className="text-lg font-medium">{run.summary.fetched}</p>
                   <p className="text-muted-foreground text-xs">{t("connect:syncRuns.fetched")}</p>
                 </div>
                 <div>
-                  <p className="text-lg font-semibold text-green-600">{run.summary.inserted}</p>
+                  <p className="text-lg font-medium text-green-600">{run.summary.inserted}</p>
                   <p className="text-muted-foreground text-xs">{t("connect:syncRuns.inserted")}</p>
                 </div>
                 <div>
-                  <p className="text-lg font-semibold text-blue-600">{run.summary.updated}</p>
+                  <p className="text-lg font-medium text-blue-600">{run.summary.updated}</p>
                   <p className="text-muted-foreground text-xs">{t("connect:syncRuns.updated")}</p>
                 </div>
                 <div>
-                  <p className="text-lg font-semibold text-gray-500">{run.summary.skipped}</p>
+                  <p className="text-lg font-medium text-gray-500">{run.summary.skipped}</p>
                   <p className="text-muted-foreground text-xs">{t("connect:syncRuns.skipped")}</p>
                 </div>
               </div>

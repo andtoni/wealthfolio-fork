@@ -3,6 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 
 import { Button, Icons } from "@wealthfolio/ui";
 
+import { LIST_ROW, SECTION_HEADING } from "@/components/dashboard-card";
+
 import { useSpendingSettings } from "@/features/spending/hooks/use-spending-settings";
 
 import { AccountsCard } from "./components/accounts-card";
@@ -32,17 +34,7 @@ export default function SpendingSettingsPage() {
           <Icons.ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="min-w-0 flex-1">
-          <nav
-            aria-label={t("settings:spending.breadcrumb_aria")}
-            className="text-muted-foreground mb-3 hidden items-center gap-1.5 text-xs lg:flex"
-          >
-            <span>{t("common:settings")}</span>
-            <span className="text-muted-foreground/50">/</span>
-            <span>{t("common:portfolio")}</span>
-            <span className="text-muted-foreground/50">/</span>
-            <span className="text-foreground">{t("settings:spending.title")}</span>
-          </nav>
-          <h1 className="text-foreground text-base font-semibold tracking-tight sm:text-lg lg:text-2xl">
+          <h1 className="text-foreground text-2xl font-medium tracking-tight lg:text-[32px]">
             {t("settings:spending.title")}
           </h1>
           <p className="text-muted-foreground mt-1 hidden max-w-[64ch] text-sm sm:block">
@@ -65,15 +57,19 @@ export default function SpendingSettingsPage() {
                 tracker can seed historical activities without hunting for the
                 separate /import route. Matches the dashboard tab's Import
                 action (portfolio-page.tsx). */}
-            <div className="border-border/60 bg-card/40 flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-xs">
-              <div className="flex items-center gap-2">
-                <Icons.Upload className="text-muted-foreground h-3.5 w-3.5" aria-hidden />
-                <span className="text-foreground/90">{t("settings:spending.import_prompt")}</span>
-              </div>
-              <Button asChild variant="outline" size="sm" className="h-7 shrink-0 text-xs">
-                <Link to="/import">{t("settings:spending.import_csv")}</Link>
-              </Button>
-            </div>
+            <Link to="/import" className={LIST_ROW}>
+              <span className="bg-foreground/[0.07] flex h-10 w-10 shrink-0 items-center justify-center rounded-full">
+                <Icons.Upload className="h-[18px] w-[18px]" aria-hidden />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[17px] leading-snug">
+                  {t("settings:spending.import_csv")}
+                </span>
+                <span className="text-muted-foreground block text-[15px] leading-snug">
+                  {t("settings:spending.import_prompt")}
+                </span>
+              </span>
+            </Link>
           </Section>
 
           <Section
@@ -117,11 +113,9 @@ interface SectionProps {
 function Section({ title, meta, children }: SectionProps) {
   return (
     <section>
-      <div className="mb-[14px] flex items-baseline justify-between gap-3">
-        <h2 className="text-muted-foreground text-xs font-medium uppercase tracking-widest">
-          {title}
-        </h2>
-        {meta && <span className="text-muted-foreground/80 hidden text-xs sm:inline">{meta}</span>}
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <h2 className={SECTION_HEADING}>{title}</h2>
+        {meta && <span className="text-muted-foreground hidden text-sm sm:inline">{meta}</span>}
       </div>
       <div className="space-y-3.5">{children}</div>
     </section>

@@ -52,12 +52,12 @@ export function BudgetCycleCard() {
   if (isLoading) return <div className="bg-muted/40 h-44 animate-pulse rounded-lg" />;
 
   return (
-    <section id="budget-cycle" className="bg-card scroll-mt-6 rounded-lg border p-4 sm:p-5">
+    <section id="budget-cycle" className="scroll-mt-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Icons.Calendar className="text-muted-foreground h-4 w-4" aria-hidden />
-            <h3 className="text-base font-semibold">{t("settings:spending.budget_cycle.title")}</h3>
+            <h3 className="text-base font-medium">{t("settings:spending.budget_cycle.title")}</h3>
           </div>
           <p className="text-muted-foreground mt-1 max-w-[64ch] text-xs leading-relaxed">
             {t("settings:spending.budget_cycle.description")}
@@ -117,7 +117,7 @@ export function BudgetCycleCard() {
         </label>
       </div>
 
-      <div className="border-border/60 bg-muted/20 mt-4 rounded-md border px-3 py-2.5 text-xs">
+      <div className="mt-4 text-[15px]">
         <div className="text-foreground font-medium">
           {t("settings:spending.budget_cycle.current_period")}
         </div>

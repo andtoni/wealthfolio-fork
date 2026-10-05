@@ -200,7 +200,7 @@ export default function SpendingCategoriesPage() {
       );
     }
     return (
-      <div className="divide-border divide-y rounded-md border">
+      <div className="">
         {categoryList.map((category) => (
           <CategoryItem
             key={category.id}

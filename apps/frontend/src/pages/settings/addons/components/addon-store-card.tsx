@@ -111,7 +111,7 @@ export function AddonStoreCard({
                     <h4 className="font-medium">{t("settings:addon_card_screenshots")}</h4>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       {listing.images.map((image, index) => (
-                        <div key={index} className="overflow-hidden rounded-lg border">
+                        <div key={index} className="overflow-hidden">
                           <img
                             src={image}
                             alt={t("settings:addon_card_screenshot_alt", {
@@ -136,7 +136,7 @@ export function AddonStoreCard({
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                   <div className="space-y-1">
                     <p className="text-sm font-medium">{t("settings:addon_card_downloads")}</p>
-                    <p className="text-primary text-2xl font-bold">
+                    <p className="text-primary text-2xl font-medium">
                       {formatDownloads(listing.downloads)}
                     </p>
                   </div>
@@ -310,7 +310,7 @@ export function AddonStoreCard({
                   <h4 className="font-medium">{t("settings:addon_card_screenshots")}</h4>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     {listing.images.map((image, index) => (
-                      <div key={index} className="overflow-hidden rounded-lg border">
+                      <div key={index} className="overflow-hidden">
                         <img
                           src={image}
                           alt={t("settings:addon_card_screenshot_alt", {
@@ -335,7 +335,7 @@ export function AddonStoreCard({
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                 <div className="space-y-1">
                   <p className="text-sm font-medium">{t("settings:addon_card_downloads")}</p>
-                  <p className="text-primary text-2xl font-bold">
+                  <p className="text-primary text-2xl font-medium">
                     {formatDownloads(listing.downloads)}
                   </p>
                 </div>

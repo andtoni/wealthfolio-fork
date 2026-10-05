@@ -18,7 +18,7 @@ export function StartupError({ error, isRetrying = false, onRetry }: StartupErro
         </div>
 
         <div className="mb-6 space-y-2">
-          <h1 className="text-xl font-semibold tracking-tight">
+          <h1 className="text-xl font-medium tracking-tight">
             {t("common:component.backend_unavailable")}
           </h1>
           <p className="text-muted-foreground text-sm leading-relaxed">

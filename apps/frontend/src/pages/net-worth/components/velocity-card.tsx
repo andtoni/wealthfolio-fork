@@ -1,7 +1,8 @@
 import { DashboardCard } from "@/components/dashboard-card";
+import { BlockBar } from "@/components/block-bar";
 import { useTranslation } from "react-i18next";
 import { CompactAmount } from "./compact-amount";
-import { CARD_LABEL, toneClass, toneFill, type Velocity } from "./utils";
+import { toneClass, toneFill, type Velocity } from "./utils";
 
 function DriverRow({
   label,
@@ -21,27 +22,23 @@ function DriverRow({
   const share = total > 0 ? (Math.abs(value) / total) * 100 : 0;
   const sign = Math.abs(value) < 0.005 ? "" : value > 0 ? "+" : "-";
   return (
-    <div className="space-y-1">
+    <div className="py-2.5">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-foreground/70 text-xs">{label}</span>
-        <span className={`text-sm font-semibold tabular-nums ${toneClass(value)}`}>
+        <span className="text-[17px] leading-snug">{label}</span>
+        <span className={`text-[17px] tabular-nums leading-snug ${toneClass(value)}`}>
           {sign}
           <CompactAmount value={Math.abs(perMonth)} currency={currency} />
-          <span className="text-muted-foreground/50 font-normal">
-            {t("insights:networth.velocity.per_month")}
-          </span>
+          <span className="text-muted-foreground">{t("insights:networth.velocity.per_month")}</span>
         </span>
       </div>
-      <div className="flex items-center gap-2.5">
-        <div className="bg-muted/40 h-1 flex-1 overflow-hidden rounded-full">
-          <div
-            className="h-full rounded-full"
-            style={{ width: `${share}%`, backgroundColor: toneFill(value) }}
-          />
-        </div>
-        <span className="text-muted-foreground/60 shrink-0 text-xs tabular-nums">
-          {Math.round(share)}% · {sign}
-          <CompactAmount value={Math.abs(value)} currency={currency} />
+      <div className="mt-1.5 flex items-center gap-2.5">
+        <BlockBar
+          className="h-2.5"
+          segments={[{ value: share, color: toneFill(value) }]}
+          total={100}
+        />
+        <span className="text-muted-foreground w-9 shrink-0 text-right text-[13px] tabular-nums">
+          {Math.round(share)}%
         </span>
       </div>
     </div>
@@ -76,15 +73,17 @@ export function VelocityCard({
   return (
     <DashboardCard title={t("insights:networth.velocity.monthly_pace")} meta={periodLabel}>
       <div className="flex items-baseline gap-0.5">
-        <span className={`text-lg font-bold tabular-nums ${toneClass(perMonth)}`}>
+        <span
+          className={`text-[28px] font-medium tabular-nums leading-tight ${toneClass(perMonth)}`}
+        >
           {perMonthSign}
           <CompactAmount value={Math.abs(perMonth)} currency={currency} />
         </span>
-        <span className="text-muted-foreground text-sm">
+        <span className="text-muted-foreground text-[17px]">
           {t("insights:networth.velocity.per_month")}
         </span>
       </div>
-      <p className="text-muted-foreground/80 mt-1 text-xs tabular-nums">
+      <p className="text-muted-foreground text-[15px] tabular-nums">
         {netSign}
         <CompactAmount value={Math.abs(netChange)} currency={currency} />{" "}
         {t("insights:networth.velocity.over_months", { count: monthsRounded })}
@@ -92,10 +91,7 @@ export function VelocityCard({
           t("insights:networth.velocity.trailing_pace", { multiple: multiple.toFixed(1) })}
       </p>
 
-      <p className={`${CARD_LABEL} mb-3 mt-5`}>
-        {t("insights:networth.velocity.drivers_of_change", { period: periodLabel })}
-      </p>
-      <div className="space-y-3.5">
+      <div className="pt-2">
         <DriverRow
           label={t("insights:networth.velocity.market_returns")}
           value={marketGains}

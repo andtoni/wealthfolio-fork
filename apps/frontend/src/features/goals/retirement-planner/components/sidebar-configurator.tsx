@@ -93,7 +93,7 @@ function ConfigRow({ label, children }: { label: React.ReactNode; children: Reac
   return (
     <div className="flex items-center justify-between gap-2 py-2.5 first:pt-1 last:pb-1">
       <span className="text-foreground/85 text-sm">{label}</span>
-      <span className="text-right text-sm font-semibold tabular-nums">{children}</span>
+      <span className="text-right text-sm font-medium tabular-nums">{children}</span>
     </div>
   );
 }
@@ -113,11 +113,11 @@ function SidebarMonthlyRow({
   return (
     <div className="flex items-center justify-between gap-3 py-3 first:pt-1 last:pb-1">
       <div className="min-w-0">
-        <div className="text-foreground text-sm font-semibold leading-tight">{label}</div>
+        <div className="text-foreground text-sm font-medium leading-tight">{label}</div>
         {meta && <div className="text-muted-foreground mt-0.5 text-xs leading-tight">{meta}</div>}
       </div>
       <div className="whitespace-nowrap tabular-nums">
-        <span className="text-foreground text-sm font-semibold">
+        <span className="text-foreground text-sm font-medium">
           {formatAmount(amount, currency)}
         </span>
         <span className="text-muted-foreground text-xs">/mo</span>
@@ -126,16 +126,14 @@ function SidebarMonthlyRow({
   );
 }
 
-/** Sidebar totals row: uppercase tracked label on the left, amount + /mo on the right. */
+/** Sidebar totals row: tracked label on the left, amount + /mo on the right. */
 function SidebarTotalRow({ amount, currency }: { amount: number; currency: string }) {
   const { t } = useTranslation();
   return (
     <div className="flex items-center justify-between gap-3 py-3">
-      <span className="text-muted-foreground text-xs uppercase tracking-[0.15em]">
-        {t("common:total")}
-      </span>
+      <span className="text-muted-foreground text-xs">{t("common:total")}</span>
       <div className="whitespace-nowrap tabular-nums">
-        <span className="text-foreground text-sm font-semibold">
+        <span className="text-foreground text-sm font-medium">
           {formatAmount(amount, currency)}
         </span>
         <span className="text-muted-foreground text-xs">/mo</span>
@@ -260,7 +258,7 @@ function PercentOverrideInput({
   const displayValue = draft ?? formatDraft(value);
 
   return (
-    <div className="bg-muted/70 flex h-8 w-full items-center gap-1 rounded-md border px-2.5">
+    <div className="bg-muted/70 flex h-8 w-full items-center gap-1 px-2.5">
       <input
         type="text"
         inputMode="decimal"
@@ -289,9 +287,8 @@ function PercentOverrideInput({
   );
 }
 
-/** A single sidebar card: title + edit button → read rows or edit fields */
+/** A single sidebar card: title + edit button–read rows or edit fields */
 function SidebarCard({
-  kicker,
   title,
   editing,
   onEdit,
@@ -301,7 +298,6 @@ function SidebarCard({
   readContent,
   editContent,
 }: {
-  kicker?: string;
   title: string;
   editing: boolean;
   onEdit: () => void;
@@ -327,11 +323,6 @@ function SidebarCard({
     <Card>
       <CardHeader className="flex-row items-start justify-between pb-4">
         <div className="min-w-0">
-          {kicker && (
-            <div className="text-muted-foreground mb-1 text-xs font-medium uppercase tracking-[0.15em]">
-              {kicker}
-            </div>
-          )}
           <CardTitle className="text-md leading-none tracking-tight">{title}</CardTitle>
         </div>
         {editing ? (
@@ -352,9 +343,7 @@ function SidebarCard({
         {editing ? (
           <div className="space-y-3">
             <div className="space-y-2.5">{editContent}</div>
-            <div className="border-border flex justify-end border-t pt-3">
-              {renderEditActions()}
-            </div>
+            <div className="flex justify-end pt-3">{renderEditActions()}</div>
           </div>
         ) : (
           readContent
@@ -551,7 +540,6 @@ export function SidebarConfigurator({
     <div className="space-y-4">
       {/* ── Plan ── */}
       <SidebarCard
-        kicker={t("goals:sidebar.plan.kicker")}
         title={t("goals:sidebar.plan.title")}
         editing={editingSection === "plan"}
         onEdit={() => setEditingSection("plan")}
@@ -559,7 +547,7 @@ export function SidebarConfigurator({
         onCancel={cancelEdit}
         dirty={dirty}
         readContent={
-          <div className="divide-border divide-y">
+          <div className="">
             <ConfigRow label={t("goals:sidebar.plan.plan_type")}>
               {draftMode === "fire" ? "FIRE" : t("goals:sidebar.plan.traditional")}
             </ConfigRow>
@@ -574,11 +562,11 @@ export function SidebarConfigurator({
           </div>
         }
         editContent={
-          <div className="divide-border -my-1 divide-y">
+          <div className="-my-1">
             <div className="space-y-3 py-4 first:pt-0">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold">{t("goals:sidebar.plan.plan_type")}</p>
+                  <p className="text-sm font-medium">{t("goals:sidebar.plan.plan_type")}</p>
                   <p className="text-muted-foreground mt-1 max-w-[260px] text-xs leading-snug">
                     {t("goals:sidebar.plan.plan_type_help")}
                   </p>
@@ -607,7 +595,7 @@ export function SidebarConfigurator({
             <div className="py-4 first:pt-1 last:pb-1">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-foreground text-sm font-semibold leading-tight">
+                  <div className="text-foreground text-sm font-medium leading-tight">
                     {t("goals:sidebar.plan.birth_month")}
                   </div>
                   <div className="text-muted-foreground mt-1 max-w-[240px] text-xs leading-tight">
@@ -763,7 +751,6 @@ export function SidebarConfigurator({
 
       {/* ── Expenses ── */}
       <SidebarCard
-        kicker={t("goals:sidebar.spending.kicker")}
         title={t("goals:sidebar.spending.title")}
         editing={editingSection === "expenses"}
         onEdit={() => {
@@ -789,7 +776,7 @@ export function SidebarConfigurator({
             );
           }
           return (
-            <div className="divide-border divide-y">
+            <div className="">
               {items.map((it) => (
                 <SidebarMonthlyRow
                   key={it.id}
@@ -806,7 +793,7 @@ export function SidebarConfigurator({
                       : undefined,
                   ]
                     .filter(Boolean)
-                    .join(" · ")}
+                    .join(", ")}
                   amount={it.monthlyAmount}
                   currency={currency}
                 />
@@ -829,7 +816,7 @@ export function SidebarConfigurator({
                       pct: (item.inflationRate * 100).toFixed(1),
                     })
                   : undefined,
-              ].join(" · ");
+              ].join(", ");
 
               return (
                 <div
@@ -851,14 +838,14 @@ export function SidebarConfigurator({
                         }`}
                       />
                       <span className="min-w-0 flex-1">
-                        <span className="text-foreground block truncate text-sm font-semibold">
+                        <span className="text-foreground block truncate text-sm font-medium">
                           {item.label || t("goals:sidebar.spending.default_label")}
                         </span>
-                        <span className="text-muted-foreground mt-0.5 block truncate text-[11px]">
+                        <span className="text-muted-foreground mt-0.5 block truncate text-[13px]">
                           {meta}
                         </span>
                       </span>
-                      <span className="text-foreground shrink-0 text-sm font-semibold tabular-nums">
+                      <span className="text-foreground shrink-0 text-sm font-medium tabular-nums">
                         {formatAmount(item.monthlyAmount, currency)}
                         <span className="text-muted-foreground text-xs font-normal">/mo</span>
                       </span>
@@ -876,12 +863,12 @@ export function SidebarConfigurator({
                   </div>
 
                   {expanded && (
-                    <div className="space-y-4 border-t px-3 pb-3 pt-3">
+                    <div className="space-y-4 px-3 pb-3 pt-3">
                       <Input
                         value={item.label}
                         onChange={(e) => updateExpenseItem(item.id, { label: e.target.value })}
                         placeholder={t("goals:sidebar.spending.name_placeholder")}
-                        className="bg-muted/70 h-8 px-2 text-sm font-semibold shadow-none"
+                        className="bg-muted/70 h-8 px-2 text-sm font-medium shadow-none"
                       />
                       <LeverRow
                         label={t("goals:sidebar.spending.monthly_spending")}
@@ -913,13 +900,13 @@ export function SidebarConfigurator({
                           max={draft.personal.planningHorizonAge}
                         />
                       </div>
-                      <div className="bg-muted/20 grid gap-3 rounded-lg border p-3">
+                      <div className="grid gap-3 p-3">
                         <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center sm:gap-3">
                           <div className="min-w-0">
-                            <div className="text-foreground text-xs font-semibold">
+                            <div className="text-foreground text-xs font-medium">
                               {t("goals:sidebar.spending.spending_type")}
                             </div>
-                            <div className="text-muted-foreground mt-0.5 text-[11px] leading-tight">
+                            <div className="text-muted-foreground mt-0.5 text-[13px] leading-tight">
                               {t("goals:sidebar.spending.spending_type_help")}
                             </div>
                           </div>
@@ -936,12 +923,12 @@ export function SidebarConfigurator({
                             }
                           />
                         </div>
-                        <div className="border-border grid gap-2 border-t pt-3 sm:grid-cols-[1fr_8rem] sm:items-center sm:gap-3">
+                        <div className="grid gap-2 pt-3 sm:grid-cols-[1fr_8rem] sm:items-center sm:gap-3">
                           <div className="min-w-0">
-                            <div className="text-foreground text-xs font-semibold">
+                            <div className="text-foreground text-xs font-medium">
                               {t("goals:sidebar.spending.inflation_override")}
                             </div>
-                            <div className="text-muted-foreground mt-0.5 text-[11px] leading-tight">
+                            <div className="text-muted-foreground mt-0.5 text-[13px] leading-tight">
                               {t("goals:sidebar.spending.inflation_override_help")}
                             </div>
                           </div>
@@ -1017,7 +1004,6 @@ export function SidebarConfigurator({
 
       {/* ── Income Streams ── */}
       <SidebarCard
-        kicker={t("goals:sidebar.income.kicker")}
         title={t("goals:sidebar.income.title")}
         editing={editingSection === "income"}
         onEdit={() => {
@@ -1030,7 +1016,7 @@ export function SidebarConfigurator({
         readContent={
           draft.incomeStreams.length > 0 ? (
             <div className="space-y-2.5">
-              <div className="divide-border divide-y">
+              <div className="">
                 {draft.incomeStreams.map((s) => (
                   <SidebarMonthlyRow
                     key={s.id}
@@ -1088,7 +1074,7 @@ export function SidebarConfigurator({
                   end: draft.personal.planningHorizonAge,
                 }),
                 growthMeta,
-              ].join(" · ");
+              ].join(", ");
 
               return (
                 <div
@@ -1110,14 +1096,14 @@ export function SidebarConfigurator({
                         }`}
                       />
                       <span className="min-w-0 flex-1">
-                        <span className="text-foreground block truncate text-sm font-semibold">
+                        <span className="text-foreground block truncate text-sm font-medium">
                           {s.label || t("goals:sidebar.income.income")}
                         </span>
-                        <span className="text-muted-foreground mt-0.5 block truncate text-[11px]">
+                        <span className="text-muted-foreground mt-0.5 block truncate text-[13px]">
                           {meta}
                         </span>
                       </span>
-                      <span className="text-foreground shrink-0 text-sm font-semibold tabular-nums">
+                      <span className="text-foreground shrink-0 text-sm font-medium tabular-nums">
                         {formatAmount(amount, currency)}
                         <span className="text-muted-foreground text-xs font-normal">/mo</span>
                       </span>
@@ -1135,19 +1121,19 @@ export function SidebarConfigurator({
                   </div>
 
                   {expanded && (
-                    <div className="space-y-4 border-t px-3 pb-3 pt-3">
+                    <div className="space-y-4 px-3 pb-3 pt-3">
                       <Input
                         value={s.label}
                         onChange={(e) => updateStream(s.id, { label: e.target.value })}
                         placeholder={t("goals:sidebar.income.name_placeholder")}
-                        className="bg-muted/70 h-8 px-2 text-sm font-semibold shadow-none"
+                        className="bg-muted/70 h-8 px-2 text-sm font-medium shadow-none"
                       />
                       <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center sm:gap-3">
                         <div className="min-w-0">
-                          <div className="text-foreground text-xs font-semibold">
+                          <div className="text-foreground text-xs font-medium">
                             {t("goals:sidebar.income.income_type")}
                           </div>
-                          <div className="text-muted-foreground mt-0.5 text-[11px] leading-tight">
+                          <div className="text-muted-foreground mt-0.5 text-[13px] leading-tight">
                             {t("goals:sidebar.income.income_type_help")}
                           </div>
                         </div>
@@ -1176,7 +1162,7 @@ export function SidebarConfigurator({
                           }
                         />
                       </div>
-                      <div className="divide-border divide-y">
+                      <div className="">
                         {s.streamType !== "dc" && (
                           <LeverRow
                             label={t("goals:sidebar.income.monthly_income_after_tax")}
@@ -1251,7 +1237,7 @@ export function SidebarConfigurator({
                                 format={(v) => String(Math.round(v))}
                               />
                             )}
-                            <p className="text-muted-foreground px-1 text-[11px] leading-relaxed">
+                            <p className="text-muted-foreground px-1 text-[13px] leading-relaxed">
                               {t("goals:sidebar.income.payout_estimate_note", {
                                 pct: (DEFAULT_DC_PAYOUT_ESTIMATE_RATE * 100).toFixed(1),
                               })}
@@ -1268,13 +1254,13 @@ export function SidebarConfigurator({
                           format={(v) => String(Math.round(v))}
                         />
                       </div>
-                      <div className="bg-muted/20 grid gap-3 rounded-lg border p-3">
+                      <div className="grid gap-3 p-3">
                         <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center sm:gap-3">
                           <div className="min-w-0">
-                            <div className="text-foreground text-xs font-semibold">
+                            <div className="text-foreground text-xs font-medium">
                               {t("goals:sidebar.income.income_growth")}
                             </div>
-                            <div className="text-muted-foreground mt-0.5 text-[11px] leading-tight">
+                            <div className="text-muted-foreground mt-0.5 text-[13px] leading-tight">
                               {t("goals:sidebar.income.income_growth_help")}
                             </div>
                           </div>
@@ -1294,12 +1280,12 @@ export function SidebarConfigurator({
                             }
                           />
                         </div>
-                        <div className="border-border grid gap-2 border-t pt-3 sm:grid-cols-[1fr_8rem] sm:items-center sm:gap-3">
+                        <div className="grid gap-2 pt-3 sm:grid-cols-[1fr_8rem] sm:items-center sm:gap-3">
                           <div className="min-w-0">
-                            <div className="text-foreground text-xs font-semibold">
+                            <div className="text-foreground text-xs font-medium">
                               {t("goals:sidebar.income.custom_annual_growth")}
                             </div>
-                            <div className="text-muted-foreground mt-0.5 text-[11px] leading-tight">
+                            <div className="text-muted-foreground mt-0.5 text-[13px] leading-tight">
                               {t("goals:sidebar.income.custom_annual_growth_help")}
                             </div>
                           </div>
@@ -1351,7 +1337,6 @@ export function SidebarConfigurator({
 
       {/* ── Investment ── */}
       <SidebarCard
-        kicker={t("goals:sidebar.assumptions.kicker")}
         title={t("goals:sidebar.assumptions.title")}
         editing={editingSection === "investment"}
         onEdit={() => setEditingSection("investment")}
@@ -1359,7 +1344,7 @@ export function SidebarConfigurator({
         onCancel={cancelEdit}
         dirty={dirty}
         readContent={
-          <div className="divide-border divide-y">
+          <div className="">
             <ConfigRow label={t("goals:sidebar.assumptions.return_before_retirement")}>
               {formatPercent(draft.investment.preRetirementAnnualReturn)}
             </ConfigRow>
@@ -1395,7 +1380,7 @@ export function SidebarConfigurator({
           </div>
         }
         editContent={
-          <div className="divide-border -my-1 divide-y">
+          <div className="-my-1">
             <LeverRow
               label={t("goals:sidebar.assumptions.return_before_retirement")}
               value={draft.investment.preRetirementAnnualReturn}
@@ -1508,7 +1493,6 @@ export function SidebarConfigurator({
 
       {/* ── Tax ── */}
       <SidebarCard
-        kicker={t("goals:sidebar.taxes.kicker")}
         title={t("goals:sidebar.taxes.title")}
         editing={editingSection === "tax"}
         onEdit={() => setEditingSection("tax")}
@@ -1517,7 +1501,7 @@ export function SidebarConfigurator({
         dirty={dirty}
         readContent={
           <div className="space-y-3">
-            <div className="divide-border divide-y">
+            <div className="">
               <ConfigRow
                 label={
                   <InfoLabel label={t("goals:sidebar.taxes.taxable_account_rate")}>
@@ -1579,8 +1563,8 @@ export function SidebarConfigurator({
             </div>
 
             {taxBucketBalances && taxBucketTotal > 0 && (
-              <div className="border-t pt-3">
-                <p className="text-muted-foreground mb-1.5 flex items-center gap-1 text-[10px] uppercase tracking-wider">
+              <div className="pt-3">
+                <p className="text-muted-foreground mb-1.5 flex items-center gap-1 text-[13px]">
                   {t("goals:sidebar.taxes.account_buckets")}
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -1597,7 +1581,7 @@ export function SidebarConfigurator({
                     </TooltipContent>
                   </Tooltip>
                 </p>
-                <div className="divide-border divide-y">
+                <div className="">
                   <ConfigRow
                     label={
                       <InfoLabel label={t("goals:sidebar.taxes.taxable_bucket")}>
@@ -1639,14 +1623,14 @@ export function SidebarConfigurator({
             )}
 
             {allTaxRatesZero && taxBucketTotal > 0 && (
-              <p className="text-muted-foreground text-[10px]">
+              <p className="text-muted-foreground text-[13px]">
                 {t("goals:sidebar.taxes.zero_rates_note")}
               </p>
             )}
           </div>
         }
         editContent={
-          <div className="divide-border -my-1 divide-y">
+          <div className="-my-1">
             <LeverRow
               label={
                 <InfoLabel label={t("goals:sidebar.taxes.taxable_account_rate")}>

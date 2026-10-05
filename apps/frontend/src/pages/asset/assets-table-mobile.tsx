@@ -190,12 +190,12 @@ export function AssetsTableMobile({
           placeholder={t("asset:mobileTable.search_placeholder")}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="bg-secondary/30 h-10 flex-1 rounded-full border-none"
+          className="bg-card h-10 flex-1 rounded-full border-none px-4 text-[15px] shadow-sm"
         />
         <Button
-          variant="outline"
+          variant="ghost"
           size="icon"
-          className="relative size-10 flex-shrink-0"
+          className="hover:bg-foreground/5 relative size-10 flex-shrink-0 rounded-full"
           onClick={() => setIsFilterSheetOpen(true)}
         >
           <Icons.ListFilter className="h-4 w-4" />
@@ -205,14 +205,14 @@ export function AssetsTableMobile({
         </Button>
       </div>
 
-      <div className="space-y-2">
+      <div>
         {filteredAssets.map((asset) => (
-          <Card key={asset.id} className="p-4">
+          <Card key={asset.id} className="py-2.5">
             <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => navigate(`/holdings/${encodeURIComponent(asset.id)}`)}
-                className="hover:bg-muted/60 focus-visible:ring-ring flex flex-1 items-center gap-3 overflow-hidden rounded-md text-left transition"
+                className="focus-visible:ring-ring flex flex-1 items-center gap-3 overflow-hidden rounded-xl text-left"
               >
                 {(() => {
                   const rawSymbol = asset.displayCode ?? "";
@@ -229,7 +229,7 @@ export function AssetsTableMobile({
                       <TickerAvatar symbol={avatarSymbol} className="h-10 w-10 flex-shrink-0" />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <p className="truncate font-semibold">{displaySymbol}</p>
+                          <p className="truncate text-[17px] leading-snug">{displaySymbol}</p>
                           {parsedOption ? (
                             <Badge variant="secondary" className="text-[10px]">
                               {t("asset:mobileTable.option")}
@@ -239,7 +239,9 @@ export function AssetsTableMobile({
                             {asset.quoteCcy}
                           </Badge>
                         </div>
-                        <p className="text-muted-foreground truncate text-sm">{subtitle}</p>
+                        <p className="text-muted-foreground truncate text-[15px] leading-snug">
+                          {subtitle}
+                        </p>
                       </div>
                     </>
                   );
@@ -247,7 +249,7 @@ export function AssetsTableMobile({
               </button>
 
               <div className="flex flex-shrink-0 items-center gap-2">
-                <div className="text-right text-sm">
+                <div className="text-right text-[15px]">
                   {(() => {
                     const snapshot = latestQuotes[asset.id];
                     const quote = snapshot?.quote;
@@ -255,7 +257,7 @@ export function AssetsTableMobile({
                     if (quote) {
                       return (
                         <>
-                          <div className="flex items-center justify-end gap-1 font-semibold">
+                          <div className="flex items-center justify-end gap-1 text-[17px]">
                             {formatAmount(
                               quote.close,
                               quote.currency ?? asset.quoteCcy ?? baseCurrency,
@@ -274,7 +276,7 @@ export function AssetsTableMobile({
                               </Tooltip>
                             ) : null}
                           </div>
-                          <p className="text-muted-foreground text-xs">
+                          <p className="text-muted-foreground text-[13px]">
                             {formatDate(quote.timestamp)}
                           </p>
                         </>
@@ -306,7 +308,7 @@ export function AssetsTableMobile({
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="hover:bg-muted text-muted-foreground inline-flex h-9 w-9 items-center justify-center rounded-md border transition"
+                      className="hover:bg-foreground/5 text-muted-foreground inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors"
                       aria-label={t("asset:mobileTable.open_actions")}
                     >
                       <Icons.MoreVertical className="h-4 w-4" />
@@ -357,7 +359,7 @@ export function AssetsTableMobile({
               {/* Status Filter */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                  <h4 className="text-muted-foreground text-xs font-medium">
                     {t("asset:mobileTable.portfolio")}
                   </h4>
                   {selectedStatus.length > 0 &&
@@ -426,7 +428,7 @@ export function AssetsTableMobile({
               {/* Data Source Filter */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                  <h4 className="text-muted-foreground text-xs font-medium">
                     {t("asset:mobileTable.data_source")}
                   </h4>
                   {selectedDataSources.length > 0 && (
@@ -487,7 +489,7 @@ export function AssetsTableMobile({
               {/* Asset Kind Filter */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                  <h4 className="text-muted-foreground text-xs font-medium">
                     {t("asset:mobileTable.asset_kind")}
                   </h4>
                   {selectedAssetKinds.length > 0 && (
@@ -550,7 +552,7 @@ export function AssetsTableMobile({
               {/* Price Status Filter */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                  <h4 className="text-muted-foreground text-xs font-medium">
                     {t("asset:mobileTable.price_status")}
                   </h4>
                   {selectedPriceStatus.length > 0 && (

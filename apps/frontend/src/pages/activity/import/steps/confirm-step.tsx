@@ -437,7 +437,7 @@ export function ConfirmStep() {
               <div className="text-muted-foreground text-sm">
                 {t("activity:import.confirm.totalRows")}
               </div>
-              <div className="text-2xl font-semibold">{summary.total}</div>
+              <div className="text-2xl font-medium">{summary.total}</div>
             </div>
           </div>
 
@@ -448,7 +448,7 @@ export function ConfirmStep() {
             </div>
             <div>
               <div className="text-primary text-sm">{t("activity:import.confirm.toImport")}</div>
-              <div className="text-primary text-2xl font-semibold">{summary.toImport}</div>
+              <div className="text-primary text-2xl font-medium">{summary.toImport}</div>
             </div>
           </div>
 
@@ -461,7 +461,7 @@ export function ConfirmStep() {
               <div className="text-muted-foreground text-sm">
                 {t("activity:import.confirm.skipped")}
               </div>
-              <div className="text-muted-foreground text-2xl font-semibold">{skippedTotal}</div>
+              <div className="text-muted-foreground text-2xl font-medium">{skippedTotal}</div>
             </div>
           </div>
         </div>
@@ -469,7 +469,7 @@ export function ConfirmStep() {
         {/* Activity type breakdown */}
         {Object.keys(summary.byType).length > 0 && (
           <div className="space-y-3">
-            <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+            <h4 className="text-muted-foreground text-xs font-medium">
               {t("activity:import.confirm.byActivityType")}
             </h4>
             <div className="flex flex-wrap gap-2">
@@ -498,7 +498,7 @@ export function ConfirmStep() {
         {/* Skipped breakdown */}
         {Object.keys(summary.bySkipReason).length > 0 && (
           <div className="space-y-3">
-            <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+            <h4 className="text-muted-foreground text-xs font-medium">
               {t("activity:import.confirm.skippedBreakdown")}
             </h4>
             <div className="flex flex-wrap gap-2">

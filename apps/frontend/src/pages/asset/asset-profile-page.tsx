@@ -46,7 +46,6 @@ import { AssetSnapshotHistory, useHasManualSnapshots } from "./asset-account-hol
 import AssetLotsTable from "./asset-lots-table";
 import { ActivityDeleteModal } from "@/pages/activity/components/activity-delete-modal";
 import { ActivityForm, type AccountSelectOption } from "@/pages/activity/components/activity-form";
-import ActivityTable from "@/pages/activity/components/activity-table/activity-table";
 import ActivityTableMobile from "@/pages/activity/components/activity-table/activity-table-mobile";
 import { MobileActivityForm } from "@/pages/activity/components/mobile-forms/mobile-activity-form";
 import { useActivityActionDialogs } from "@/pages/activity/hooks/use-activity-action-dialogs";
@@ -549,10 +548,7 @@ export const AssetProfilePage = () => {
     enabled: !!assetId && !isAssetProfileLoading && !isAltAsset,
   });
 
-  const { data: assetActivities = [], isLoading: isActivitiesLoading } = useQuery<
-    ActivityDetails[],
-    Error
-  >({
+  const { data: assetActivities = [] } = useQuery<ActivityDetails[], Error>({
     queryKey: ["activities", "byAsset", assetId],
     queryFn: async () => {
       const pageSize = 500;
@@ -963,22 +959,13 @@ export const AssetProfilePage = () => {
       />
     );
 
-    const activitiesContent = isMobile ? (
+    const activitiesContent = (
       <ActivityTableMobile
         activities={assetActivities}
         isCompactView={true}
         handleEdit={handleActivityEdit}
         handleDelete={handleActivityDelete}
         onDuplicate={handleActivityDuplicate}
-      />
-    ) : (
-      <ActivityTable
-        activities={assetActivities}
-        isLoading={isActivitiesLoading}
-        sorting={[{ id: "date", desc: true }]}
-        onSortingChange={() => undefined}
-        handleEdit={handleActivityEdit}
-        handleDelete={handleActivityDelete}
       />
     );
 
@@ -1006,7 +993,6 @@ export const AssetProfilePage = () => {
     deleteQuoteMutation,
     updateQuoteModeMutation,
     assetActivities,
-    isActivitiesLoading,
     isMobile,
     handleActivityEdit,
     handleActivityDelete,
@@ -1389,7 +1375,7 @@ export const AssetProfilePage = () => {
             )
           )}
           <div className="flex min-w-0 flex-col justify-center">
-            <h1 className="truncate text-base font-semibold leading-tight md:text-lg">
+            <h1 className="truncate text-base font-medium leading-tight md:text-lg">
               {assetProfile?.name ?? holding?.instrument?.name ?? assetId ?? "-"}
             </h1>
             <p className="text-muted-foreground flex items-center gap-1.5 text-xs leading-tight md:text-sm">

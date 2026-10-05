@@ -215,11 +215,11 @@ function StepHeader({
   return (
     <div
       className={cn(
-        "text-muted-foreground flex items-center gap-2 text-[11px] font-medium uppercase tracking-normal",
+        "text-muted-foreground flex items-center gap-2 text-[11px] font-medium tracking-normal",
         className,
       )}
     >
-      <span className="bg-muted inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold tabular-nums tracking-normal">
+      <span className="bg-muted inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-medium tabular-nums tracking-normal">
         {number}
       </span>
       <span>{children}</span>
@@ -318,7 +318,7 @@ function SellProtectionSection({
   return (
     <section className="bg-card/80 rounded-lg border p-5 shadow-sm">
       <div className="mb-1">
-        <h3 className="text-foreground text-[13px] font-semibold">
+        <h3 className="text-foreground text-[13px] font-medium">
           {t("allocation:sellProtection.title")}
         </h3>
       </div>
@@ -329,7 +329,7 @@ function SellProtectionSection({
             {t("allocation:sellProtection.protectedAssets")}
           </span>
           {protectedAssets.length > 0 && (
-            <span className="bg-muted text-muted-foreground inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 font-mono text-[10.5px] font-semibold">
+            <span className="bg-muted text-muted-foreground inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 font-mono text-[10.5px] font-medium">
               {protectedAssets.length}
             </span>
           )}
@@ -344,10 +344,10 @@ function SellProtectionSection({
               key={a.assetId}
               className="border-border bg-background inline-flex items-center gap-1.5 rounded-full border py-1 pl-2 pr-1 font-mono text-[11.5px]"
             >
-              <span className="bg-muted text-muted-foreground flex h-5 w-5 items-center justify-center rounded-full text-[8.5px] font-bold uppercase">
+              <span className="bg-muted text-muted-foreground flex h-5 w-5 items-center justify-center rounded-full text-[8.5px] font-medium uppercase">
                 {a.symbol.slice(0, 2)}
               </span>
-              <span className="text-foreground font-semibold">{a.symbol}</span>
+              <span className="text-foreground font-medium">{a.symbol}</span>
               <span className="text-muted-foreground max-w-[120px] truncate">{a.name}</span>
               <button
                 type="button"
@@ -399,11 +399,11 @@ function SellProtectionSection({
                       }}
                       className="hover:bg-muted flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left"
                     >
-                      <span className="bg-muted text-muted-foreground flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full font-mono text-[8.5px] font-bold uppercase">
+                      <span className="bg-muted text-muted-foreground flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full font-mono text-[8.5px] font-medium uppercase">
                         {a.symbol.slice(0, 2)}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="text-foreground block font-mono text-[12px] font-semibold">
+                        <span className="text-foreground block font-mono text-[12px] font-medium">
                           {a.symbol}
                         </span>
                         <span className="text-muted-foreground block truncate text-[11px]">
@@ -425,7 +425,7 @@ function SellProtectionSection({
             {t("allocation:sellProtection.protectedAccounts")}
           </span>
           {protectedAccounts.length > 0 && (
-            <span className="bg-muted text-muted-foreground inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 font-mono text-[10.5px] font-semibold">
+            <span className="bg-muted text-muted-foreground inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 font-mono text-[10.5px] font-medium">
               {protectedAccounts.length}
             </span>
           )}
@@ -913,7 +913,7 @@ function TargetEditor({
               {t("allocation:editor.step1")}
             </StepHeader>
             <label className="block">
-              <span className="text-muted-foreground mb-1.5 block text-[11px] font-medium uppercase tracking-wider">
+              <span className="text-muted-foreground mb-1.5 block text-[11px] font-medium">
                 {t("allocation:editor.targetName")}
               </span>
               <input
@@ -924,15 +924,15 @@ function TargetEditor({
                   markDirty();
                 }}
                 placeholder={t("allocation:editor.targetName")}
-                className="bg-background/70 text-foreground placeholder:text-muted-foreground focus:border-foreground w-full rounded-lg border px-3 py-2.5 text-[14px] font-semibold outline-none transition-colors placeholder:font-normal"
+                className="bg-background/70 text-foreground placeholder:text-muted-foreground focus:border-foreground w-full rounded-lg border px-3 py-2.5 text-[14px] font-medium outline-none transition-colors placeholder:font-normal"
               />
             </label>
             <div className="mt-4">
-              <div className="text-muted-foreground mb-1.5 text-[11px] font-medium uppercase tracking-wider">
+              <div className="text-muted-foreground mb-1.5 text-[11px] font-medium">
                 {t("allocation:editor.accountScope")}
               </div>
               {target ? (
-                <div className="bg-muted/20 text-foreground flex items-center gap-2 rounded-lg border px-3 py-2.5 text-[14px] font-semibold">
+                <div className="bg-muted/20 text-foreground flex items-center gap-2 rounded-lg border px-3 py-2.5 text-[14px] font-medium">
                   <TargetScopeIcon scopeType={target.scopeType} />
                   <span className="min-w-0 truncate">
                     {targetScopeLabel(target, accounts, portfolios, t)}
@@ -983,7 +983,7 @@ function TargetEditor({
                     )}
                   >
                     <span className="min-w-0">
-                      <span className="text-foreground block truncate text-[12.5px] font-semibold">
+                      <span className="text-foreground block truncate text-[12.5px] font-medium">
                         {taxonomy.name}
                       </span>
                       <span className="text-muted-foreground text-[11px]">
@@ -1025,7 +1025,7 @@ function TargetEditor({
           </section>
 
           <section className="bg-card/80 rounded-lg border p-5 shadow-sm">
-            <div className="text-muted-foreground mb-4 text-[11px] font-medium uppercase tracking-wider">
+            <div className="text-muted-foreground mb-4 text-[11px] font-medium">
               {t("allocation:editor.rebalanceSettings")}
             </div>
             <div className="divide-border/50 divide-y [&>*:first-child]:pt-0 [&>*:last-child]:pb-0 [&>*]:py-4">
@@ -1175,7 +1175,7 @@ function TargetEditor({
 
           <section className="bg-card/80 rounded-lg border p-5 shadow-sm">
             <div className="mb-7">
-              <h3 className="text-foreground text-[15px] font-semibold">
+              <h3 className="text-foreground text-[15px] font-medium">
                 {t("allocation:editor.targetWeightsTitle", { start: selectedStartName })}
               </h3>
               <p className="text-muted-foreground mt-1 text-[12px]">

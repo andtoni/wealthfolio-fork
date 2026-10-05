@@ -177,7 +177,7 @@ function PricingModeToggle({
   const isAutomatic = !isManualMode;
 
   return (
-    <div className="rounded-lg border p-4">
+    <div className="p-4">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0 flex-1 space-y-1">
           <Label className="text-sm font-medium">{t("asset:editSheet.automatic_updates")}</Label>
@@ -991,11 +991,11 @@ export function AssetEditSheet({
                 <Form {...form}>
                   <div className="space-y-6">
                     {/* Latest Quote Card - First */}
-                    <div className="bg-muted/30 rounded-lg border p-4">
+                    <div className="p-4">
                       {latestQuote ? (
                         <div className="grid grid-cols-3 gap-4 text-center">
                           <div>
-                            <p className="text-xl font-semibold">
+                            <p className="text-xl font-medium">
                               {formatAmount(latestQuote.close, latestQuote.currency)}
                             </p>
                             <p className="text-muted-foreground text-xs">
@@ -1146,7 +1146,7 @@ export function AssetEditSheet({
                             </p>
                           </div>
                         ) : (
-                          <div className="rounded-lg border">
+                          <div className="">
                             <table className="w-full">
                               <thead>
                                 <tr className="bg-muted/50 border-b">

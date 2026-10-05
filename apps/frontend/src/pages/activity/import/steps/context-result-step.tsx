@@ -83,7 +83,7 @@ function StatItem({ label, value, variant = "default" }: StatItemProps) {
 
   return (
     <div className="text-center">
-      <div className={`text-3xl font-semibold tabular-nums ${colorClasses[variant]}`}>{value}</div>
+      <div className={`text-3xl font-medium tabular-nums ${colorClasses[variant]}`}>{value}</div>
       <div className="text-muted-foreground mt-1 text-sm">{label}</div>
     </div>
   );
@@ -185,7 +185,7 @@ export function ContextResultStep() {
 
       {/* Title and description */}
       <motion.div className="mb-10 text-center" variants={itemVariants}>
-        <h2 className="text-2xl font-semibold tracking-tight">
+        <h2 className="text-2xl font-medium tracking-tight">
           {t("activity:import.result.completeTitle")}
         </h2>
         <p className="text-muted-foreground mt-2 max-w-sm">

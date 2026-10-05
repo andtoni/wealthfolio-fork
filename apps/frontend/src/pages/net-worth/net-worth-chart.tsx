@@ -12,7 +12,7 @@ import type { NetWorthHistoryPoint } from "@/lib/types";
 import type { MouseHandlerDataParam } from "recharts/types/synchronisation/types";
 
 // Goldish orange for net worth chart (consistent across light/dark modes)
-const CHART_COLOR = "hsl(38, 75%, 50%)";
+const CHART_COLOR = "var(--net-worth-accent)";
 const NEGATIVE_COLOR = "var(--destructive)";
 const CHART_SCRUB_HAPTIC_INTERVAL_MS = 80;
 
@@ -68,7 +68,7 @@ const CustomTooltip = ({ active, payload, isBalanceHidden, t }: CustomTooltipPro
           value={entry.netWorth}
           currency={entry.currency}
           isHidden={isBalanceHidden}
-          className="text-xs font-semibold"
+          className="text-xs font-medium"
         />
       </div>
 

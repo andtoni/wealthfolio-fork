@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
-import { DashboardCard } from "@/components/dashboard-card";
+import { DashboardCard, SECTION_HEADING } from "@/components/dashboard-card";
 import { cn } from "@/lib/utils";
 import { formatCompactAmount, Icons, PrivacyAmount, useBalancePrivacy } from "@wealthfolio/ui";
 
@@ -36,31 +36,19 @@ const STATUS_ACCENTS: Record<
   Status,
   {
     lineColor: string;
-    pillBg: string;
-    accent: string;
-    Icon: typeof Icons.AlertCircle;
     labelKey: string;
   }
 > = {
   over: {
-    lineColor: "#B85544",
-    pillBg: "var(--destructive)",
-    accent: "var(--destructive)",
-    Icon: Icons.AlertTriangle,
+    lineColor: "var(--destructive)",
     labelKey: "spending:budgetChart.overBudget",
   },
   warn: {
     lineColor: "#C28B47",
-    pillBg: "#C28B47",
-    accent: "#C28B47",
-    Icon: Icons.AlertCircle,
     labelKey: "spending:budgetChart.trendingHigh",
   },
   ok: {
-    lineColor: "hsl(73 84% 27%)",
-    pillBg: "hsl(73 84% 27%)",
-    accent: "var(--success)",
-    Icon: Icons.CheckCircle ?? Icons.AlertCircle,
+    lineColor: "var(--success)",
     labelKey: "spending:budgetChart.onTrack",
   },
 };
@@ -73,14 +61,10 @@ export function BudgetLineChartCard({
   onPreviousMonth,
   onNextMonth,
   canGoNextMonth,
-  activityRange,
   target,
   spent,
   currency,
   historicalDailyAvg,
-  allocations,
-  spendingBreakdown,
-  categoriesMeta,
   monthByDay,
   historicalByDay,
 }: {
@@ -91,14 +75,10 @@ export function BudgetLineChartCard({
   onPreviousMonth: () => void;
   onNextMonth: () => void;
   canGoNextMonth: boolean;
-  activityRange: { from: string; to: string };
   target: number;
   spent: number;
   currency: string;
   historicalDailyAvg: number;
-  allocations: BudgetCategoryRow[];
-  spendingBreakdown: { categoryId: string; amount: number; count: number }[];
-  categoriesMeta: CategoryMetaMap;
   monthByDay: DayBucket[];
   historicalByDay: DayBucket[];
 }) {
@@ -119,13 +99,13 @@ export function BudgetLineChartCard({
       dayOfPeriod,
       daysInPeriod,
       daysRemaining: isCurrentMonth ? Math.max(0, daysInPeriod - dayOfPeriod) : 0,
-      monthLabel: budgetPeriodLabel(monthKey, "short", undefined, cycle).toUpperCase(),
-      shortLabel: formatCycleEndpoint(start).toUpperCase(),
+      monthLabel: budgetPeriodLabel(monthKey, "short", undefined, cycle),
+      shortLabel: formatCycleEndpoint(start),
       startLabel: formatCycleEndpoint(start),
       endLabel: formatCycleEndpoint(end),
     };
   }, [monthKey, cycle, isCurrentMonth, today]);
-  const { dayOfPeriod, daysInPeriod, daysRemaining, monthLabel } = monthMeta;
+  const { dayOfPeriod, daysInPeriod, daysRemaining } = monthMeta;
 
   const cumulative = useMemo(() => {
     const byDay = new Map<number, number>();
@@ -141,33 +121,6 @@ export function BudgetLineChartCard({
     }
     return out;
   }, [monthByDay, monthKey, cycle, dayOfPeriod]);
-
-  const rings = useMemo(() => {
-    const spentByTop = new Map<string, number>();
-    for (const row of spendingBreakdown) {
-      const topId = topCategoryId(row.categoryId, categoriesMeta);
-      spentByTop.set(topId, (spentByTop.get(topId) ?? 0) + row.amount);
-    }
-    return allocations
-      .map((al) => {
-        const t = al.target || 0;
-        if (t <= 0) return null;
-        const meta = categoriesMeta.get(al.categoryId);
-        const s = spentByTop.get(al.categoryId) ?? 0;
-        return {
-          id: al.categoryId,
-          categoryId: al.categoryId,
-          name: meta?.name ?? al.categoryId,
-          color: meta?.color ?? null,
-          icon: meta?.icon ?? null,
-          target: t,
-          spent: Math.max(0, s),
-          pct: Math.max(0, s) / t,
-        };
-      })
-      .filter((r): r is NonNullable<typeof r> => r !== null)
-      .sort((x, y) => y.pct - x.pct);
-  }, [allocations, spendingBreakdown, categoriesMeta]);
 
   // Chart geometry derived from target — captured here so actualPath useMemo
   // can depend on stable primitives instead of recomputing each render.
@@ -192,6 +145,14 @@ export function BudgetLineChartCard({
         .join(" L ")
     );
   }, [cumulative, daysInPeriod, innerW, innerH, padL, padT, yMax]);
+  // The same line closed down to the baseline, for the soft fill under it.
+  const actualAreaPath = useMemo(() => {
+    if (!actualPath || !cumulative.length) return "";
+    const lastX =
+      padL + ((cumulative[cumulative.length - 1].day - 1) / Math.max(1, daysInPeriod - 1)) * innerW;
+    const baseY = padT + innerH;
+    return `${actualPath} L ${lastX.toFixed(2)} ${baseY} L ${padL} ${baseY} Z`;
+  }, [actualPath, cumulative, daysInPeriod, innerW, innerH, padL, padT]);
 
   const historicalPace = useMemo(
     () => buildHistoricalPaceCurve(historicalByDay, daysInPeriod, cycle),
@@ -266,7 +227,6 @@ export function BudgetLineChartCard({
 
   const status: Status = isOver ? "over" : isCurrentMonth && !aheadOfPace ? "warn" : "ok";
   const a = STATUS_ACCENTS[status];
-  const { Icon } = a;
   const statusLabel =
     !isCurrentMonth && !isOver ? t("spending:budgetChart.underBudget") : t(a.labelKey);
 
@@ -301,92 +261,34 @@ export function BudgetLineChartCard({
       : t("spending:budgetChart.leftAmount", { amount: formatCompactAmount(remaining, currency) });
 
   const pillLeftPctRaw = (endX / chartW) * 100;
-  const pillLeftPct = Math.min(78, Math.max(8, pillLeftPctRaw - 4));
-  // Near the right edge, anchor the badge to the endpoint and grow leftward so
-  // it never overflows the card.
-  const pillFlip = pillLeftPctRaw > 55;
-  const pillTopPx = Math.max(0, endY - 28);
+
+  // One sentence, so the card never says "on track" and "over budget" together.
+  const headingOver = isCurrentMonth && !isOver && willOverspend && forecastDelta > target * 0.05;
 
   return (
-    <DashboardCard
-      title={t("spending:budgetChart.cycleBudget")}
-      subtitle={monthLabel}
-      action={headerAction}
-    >
-      <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 shrink-0" style={{ color: a.accent }} />
-        <span className="text-foreground text-sm font-semibold">{statusLabel}</span>
-        <span className="text-muted-foreground/70 ml-auto text-xs tabular-nums">
-          {isCurrentMonth
-            ? t("spending:budgetChart.dayOf", { day: dayOfPeriod, total: daysInPeriod })
-            : t("spending:budgetChart.closed")}
-        </span>
+    <div className="w-full min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pb-1">
+        <h2 className={SECTION_HEADING}>{t("spending:tabContent.sectionPace")}</h2>
+        {headerAction}
       </div>
-
-      <div className="mt-3">
-        {isCurrentMonth && willOverspend && forecastDelta > target * 0.05 ? (
-          <>
-            <div className="text-foreground text-2xl font-bold tabular-nums tracking-tight">
-              <PrivacyAmount value={forecast} currency={currency} />{" "}
-              <span className="text-muted-foreground/70 text-base font-medium">
-                {t("spending:budgetChart.forecastLower")}
-              </span>
-            </div>
-            <div className="text-destructive mt-0.5 inline-flex items-center gap-1 text-xs font-semibold tabular-nums">
-              <Icons.ArrowUp className="h-3 w-3" />
+      <div>
+        <div className="text-sm">
+          {headingOver ? (
+            <span className="text-destructive">
+              {t("spending:budgetChart.forecastUpper")}{" "}
+              <PrivacyAmount value={forecast} currency={currency} />
+              {", "}
               <PrivacyAmount value={forecastDelta} currency={currency} />{" "}
               {t("spending:budgetChart.overBudgetLower")}
-            </div>
-            <div className="text-muted-foreground/80 mt-0.5 text-xs tabular-nums">
-              <PrivacyAmount value={remaining} currency={currency} />{" "}
-              {t("spending:budgetChart.leftTodayOf")}{" "}
-              <PrivacyAmount value={target} currency={currency} />{" "}
-              {t("spending:budgetChart.budgetedThisCycle")}
-            </div>
-          </>
-        ) : !isCurrentMonth ? (
-          <>
-            <div className="text-foreground text-2xl font-bold tabular-nums tracking-tight">
-              <PrivacyAmount value={spent} currency={currency} />{" "}
-              <span className="text-muted-foreground/70 text-base font-medium">
-                {t("spending:budgetChart.spentLower")}
-              </span>
-            </div>
-            <div
-              className={cn(
-                "mt-0.5 inline-flex items-center gap-1 text-xs font-semibold tabular-nums",
-                isOver ? "text-destructive" : "text-success",
-              )}
-            >
-              <PrivacyAmount value={isOver ? overBy : remaining} currency={currency} />{" "}
-              {isOver
-                ? t("spending:budgetChart.overBudgetLower")
-                : t("spending:budgetChart.leftLower")}
-            </div>
-            <div className="text-muted-foreground/80 mt-0.5 text-xs tabular-nums">
-              {t("spending:budgetChart.ofLower")}{" "}
-              <PrivacyAmount value={target} currency={currency} />{" "}
-              {t("spending:budgetChart.budgetedLower")}
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="text-foreground text-2xl font-bold tabular-nums tracking-tight">
-              <PrivacyAmount value={isOver ? overBy : remaining} currency={currency} />{" "}
-              <span className="text-muted-foreground/70 text-base font-medium">
-                {isOver ? t("spending:budgetChart.overLower") : t("spending:budgetChart.leftLower")}
-              </span>
-            </div>
-            <div className="text-muted-foreground/80 text-xs tabular-nums">
-              {t("spending:budgetChart.ofLower")}{" "}
-              <PrivacyAmount value={target} currency={currency} />{" "}
-              {t("spending:budgetChart.budgetedThisCycle")}
-            </div>
-          </>
-        )}
+            </span>
+          ) : (
+            <span style={{ color: a.lineColor }}>
+              {statusLabel}, {gapLabel}
+            </span>
+          )}
+        </div>
       </div>
-
-      <div className="relative mt-4 w-full">
+      <div className="relative mt-2 w-full">
         <svg
           viewBox={`0 0 ${chartW} ${chartH}`}
           preserveAspectRatio="none"
@@ -398,8 +300,8 @@ export function BudgetLineChartCard({
               fill="none"
               stroke="var(--muted-foreground)"
               strokeOpacity={0.35}
-              strokeDasharray="3 4"
-              strokeWidth={1.25}
+              strokeDasharray="2 4"
+              strokeWidth={1}
               strokeLinecap="round"
               strokeLinejoin="round"
               vectorEffect="non-scaling-stroke"
@@ -417,12 +319,22 @@ export function BudgetLineChartCard({
               vectorEffect="non-scaling-stroke"
             />
           )}
+          <defs>
+            <linearGradient id="budget-pace-fill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={a.lineColor} stopOpacity={0.2} />
+              <stop offset="70%" stopColor={a.lineColor} stopOpacity={0.12} />
+              <stop offset="100%" stopColor={a.lineColor} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          {actualAreaPath && (
+            <path d={actualAreaPath} fill="url(#budget-pace-fill)" stroke="none" />
+          )}
           {actualPath && (
             <path
               d={actualPath}
               fill="none"
               stroke={a.lineColor}
-              strokeWidth={2.5}
+              strokeWidth={1.5}
               strokeLinecap="round"
               strokeLinejoin="round"
               vectorEffect="non-scaling-stroke"
@@ -434,126 +346,21 @@ export function BudgetLineChartCard({
           // SVG uses preserveAspectRatio="none", which would stretch a circle
           // into an ellipse.
           <div
-            className="absolute h-[9px] w-[9px] rounded-full bg-white"
+            className="absolute h-[6px] w-[6px] rounded-full"
             style={{
               left: `${pillLeftPctRaw}%`,
               top: `${endY}px`,
               transform: "translate(-50%, -50%)",
-              border: `2.5px solid ${a.lineColor}`,
+              backgroundColor: a.lineColor,
             }}
           />
-        )}
-        {cumulative.length > 0 && (
-          <div
-            className="absolute whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums shadow-sm"
-            style={{
-              left: `${pillFlip ? pillLeftPctRaw : pillLeftPct}%`,
-              top: `${pillTopPx}px`,
-              transform: pillFlip ? "translateX(calc(-100% - 6px))" : undefined,
-              backgroundColor: a.pillBg,
-              color: "white",
-            }}
-          >
-            {gapLabel}
-          </div>
         )}
       </div>
       <div className="text-muted-foreground/70 mt-1 flex justify-between text-[10px] tabular-nums">
         <span>{monthMeta.startLabel}</span>
         <span>{monthMeta.endLabel}</span>
       </div>
-
-      <div className="border-border mt-4 grid grid-cols-2 gap-3 border-t pt-3 text-xs">
-        <div>
-          <div className="text-muted-foreground/70 text-[11px] uppercase tracking-wide">
-            {isCurrentMonth
-              ? t("spending:budgetChart.spentSoFar")
-              : t("spending:budgetChart.spentUpper")}
-          </div>
-          <div className="text-foreground text-sm font-semibold tabular-nums">
-            <PrivacyAmount value={spent} currency={currency} />
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="text-muted-foreground/70 text-[11px] uppercase tracking-wide">
-            {isCurrentMonth
-              ? t("spending:budgetChart.forecastUpper")
-              : t("spending:budgetChart.result")}
-          </div>
-          {isCurrentMonth ? (
-            <div
-              className={cn(
-                "text-sm font-semibold tabular-nums",
-                forecastReliable
-                  ? willOverspend
-                    ? "text-destructive"
-                    : "text-foreground"
-                  : "text-muted-foreground/60",
-              )}
-            >
-              {forecastReliable ? <PrivacyAmount value={forecast} currency={currency} /> : "—"}
-            </div>
-          ) : (
-            <div
-              className={cn(
-                "text-sm font-semibold tabular-nums",
-                isOver ? "text-destructive" : "text-foreground",
-              )}
-            >
-              <PrivacyAmount value={isOver ? overBy : remaining} currency={currency} />
-            </div>
-          )}
-          <div className="text-muted-foreground/60 text-[10px]">
-            {isCurrentMonth
-              ? forecastReliable
-                ? haveHistory
-                  ? t("spending:budgetChart.vsLast3Months")
-                  : t("spending:budgetChart.atCurrentPace")
-                : t("spending:budgetChart.moreDataNeeded")
-              : isOver
-                ? t("spending:budgetChart.overBudgetLower")
-                : t("spending:budgetChart.leftLower")}
-          </div>
-        </div>
-      </div>
-
-      <div className="border-border mt-5 border-t pt-4">
-        <div className="mb-3 flex items-center justify-between">
-          <span className="text-muted-foreground/80 text-[11px] font-semibold uppercase tracking-wide">
-            {t("spending:budgetChart.byCategory")}
-          </span>
-          <BudgetManageLink monthKey={monthKey} />
-        </div>
-        {rings.length === 0 ? (
-          <div className="text-muted-foreground py-2 text-center text-xs">
-            {t("spending:budgetBars.noBudgets")}{" "}
-            <Link
-              to="/settings/spending/setup"
-              className="hover:text-foreground underline-offset-4 hover:underline"
-            >
-              {t("spending:budgetBars.setOne")}
-            </Link>
-          </div>
-        ) : (
-          <div
-            key={monthKey}
-            data-no-swipe-drag
-            role="region"
-            className="-mx-1 flex min-w-0 touch-auto snap-x snap-proximity gap-3 overflow-x-auto overscroll-x-contain pb-1 pl-1 pr-8 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            aria-label={t("spending:budgetChart.byCategory")}
-            style={{
-              maskImage: "linear-gradient(to right, black calc(100% - 32px), transparent 100%)",
-              WebkitMaskImage:
-                "linear-gradient(to right, black calc(100% - 32px), transparent 100%)",
-            }}
-          >
-            {rings.map((r) => (
-              <BudgetRing key={r.id} ring={r} currency={currency} activityRange={activityRange} />
-            ))}
-          </div>
-        )}
-      </div>
-    </DashboardCard>
+    </div>
   );
 }
 
@@ -628,9 +435,11 @@ function parseDayBucketDate(date: string): { year: number; month: number; day: n
 }
 
 function formatCycleEndpoint(date: { year: number; month: number; day: number }): string {
-  return new Date(Date.UTC(date.year, date.month - 1, date.day))
-    .toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })
-    .toUpperCase();
+  return new Date(Date.UTC(date.year, date.month - 1, date.day)).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 function toSvgPath(
@@ -672,23 +481,23 @@ function BudgetCardHeaderActions({
   const { t } = useTranslation();
   return (
     <div className="flex items-center gap-1.5">
-      <div className="bg-muted/60 inline-flex items-center rounded-full p-0.5">
+      <div className="bg-card inline-flex items-center rounded-full p-1 shadow-sm">
         <button
           type="button"
           onClick={onPreviousMonth}
-          className="hover:bg-background flex h-6 w-6 items-center justify-center rounded-full transition-colors"
+          className="hover:bg-foreground/5 flex h-7 w-7 items-center justify-center rounded-full transition-colors"
           aria-label={t("spending:budgetChart.previousBudgetPeriod")}
         >
           <Icons.ChevronLeft className="h-3.5 w-3.5" />
         </button>
-        <span className="text-foreground min-w-[74px] whitespace-nowrap px-1 text-center text-[11px] font-medium tabular-nums">
+        <span className="text-foreground min-w-[64px] whitespace-nowrap px-1 text-center text-[13px] tabular-nums">
           {monthLabel}
         </span>
         <button
           type="button"
           onClick={onNextMonth}
           disabled={!canGoNextMonth}
-          className="hover:bg-background disabled:text-muted-foreground/40 flex h-6 w-6 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed"
+          className="hover:bg-foreground/5 disabled:text-muted-foreground/40 flex h-7 w-7 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed"
           aria-label={t("spending:budgetChart.nextBudgetPeriod")}
         >
           <Icons.ChevronRight className="h-3.5 w-3.5" />
@@ -704,92 +513,152 @@ const BudgetManageLink = ({ monthKey }: { monthKey: string }) => {
   return (
     <Link
       to={`/spending/budget?period=${monthKey}`}
-      className="text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline"
+      className="text-muted-foreground hover:text-foreground text-sm underline-offset-4 hover:underline"
     >
       {t("spending:budgetChart.manage")}
     </Link>
   );
 };
 
-function BudgetRing({
-  ring,
+const BUDGET_NEAR_LIMIT = "#C28B47";
+
+/** Green while there is room, amber in the last 15%, red once over. */
+function budgetStatusColor(pct: number): string {
+  return pct > 1 ? "var(--destructive)" : pct > 0.85 ? BUDGET_NEAR_LIMIT : "var(--success)";
+}
+
+const RING_SIZE = 64;
+const RING_STROKE = 3;
+/** The tinted disc behind the icon, the same circle a transaction row uses. */
+const RING_DISC = 46;
+const RING_RADIUS = (RING_SIZE - RING_STROKE) / 2;
+const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
+
+/** Budget use as one ring per category, fullest first, in a grid that never scrolls sideways. */
+export function BudgetRings({
+  allocations,
+  spendingBreakdown,
+  categoriesMeta,
   currency,
   activityRange,
+  monthKey,
 }: {
-  ring: {
-    categoryId: string;
-    name: string;
-    color: string | null;
-    icon: string | null;
-    target: number;
-    spent: number;
-    pct: number;
-  };
+  allocations: BudgetCategoryRow[];
+  spendingBreakdown: { categoryId: string; amount: number; count: number }[];
+  categoriesMeta: CategoryMetaMap;
   currency: string;
   activityRange: { from: string; to: string };
+  monthKey: string;
 }) {
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
-  const isOver = ring.spent > ring.target;
-  const remaining = ring.target - ring.spent;
-  const ringColor = isOver ? "var(--destructive)" : ring.pct > 0.85 ? "#C28B47" : "var(--success)";
-  const displayAmount = Math.abs(isOver ? ring.spent - ring.target : remaining);
+  const rings = useMemo(() => {
+    const spentByTop = new Map<string, number>();
+    for (const row of spendingBreakdown) {
+      const topId = topCategoryId(row.categoryId, categoriesMeta);
+      spentByTop.set(topId, (spentByTop.get(topId) ?? 0) + row.amount);
+    }
+    return allocations
+      .filter((al) => (al.target || 0) > 0)
+      .map((al) => {
+        const meta = categoriesMeta.get(al.categoryId);
+        const spent = Math.max(0, spentByTop.get(al.categoryId) ?? 0);
+        return {
+          categoryId: al.categoryId,
+          name: meta?.name ?? al.categoryId,
+          color: meta?.color ?? "var(--muted-foreground)",
+          icon: meta?.icon ?? null,
+          target: al.target,
+          spent,
+          pct: spent / al.target,
+        };
+      })
+      .sort((x, y) => y.pct - x.pct)
+      .slice(0, 8);
+  }, [allocations, spendingBreakdown, categoriesMeta]);
 
-  const size = 56;
-  const stroke = 4;
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const fillPct = Math.min(1, ring.pct);
-  const dash = `${c * fillPct} ${c}`;
+  if (rings.length === 0) {
+    return (
+      <div className="text-muted-foreground text-sm">
+        {t("spending:budgetBars.noBudgets")}{" "}
+        <Link
+          to="/settings/spending/setup"
+          className="hover:text-foreground underline-offset-4 hover:underline"
+        >
+          {t("spending:budgetBars.setOne")}
+        </Link>
+      </div>
+    );
+  }
 
   return (
-    <Link
-      to={`/activities?tab=spending&category=${encodeURIComponent(ring.categoryId)}&from=${
-        activityRange.from
-      }&to=${activityRange.to}&budget=1`}
-      className="hover:bg-muted/40 flex w-16 shrink-0 snap-start flex-col items-center gap-1 rounded-md px-1 py-1 transition-colors"
-      title={`${ring.name}: ${ring.spent.toFixed(2)} / ${ring.target.toFixed(2)}`}
-    >
-      <div className="relative" style={{ width: size, height: size }}>
-        <svg width={size} height={size} className="-rotate-90">
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={r}
-            fill="none"
-            stroke={ringColor}
-            strokeOpacity={0.22}
-            strokeWidth={stroke}
-          />
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={r}
-            fill="none"
-            stroke={ringColor}
-            strokeWidth={stroke}
-            strokeLinecap="round"
-            strokeDasharray={dash}
-          />
-        </svg>
-        <div
-          className="absolute inset-0 flex items-center justify-center"
-          style={{ color: ring.color ?? ringColor }}
-        >
-          <CategoryIcon icon={ring.icon} fallback={ring.name} className="h-5 w-5" />
-        </div>
+    <div>
+      <div className="grid grid-cols-4 gap-x-2 gap-y-4">
+        {rings.map((ring) => {
+          const color = budgetStatusColor(ring.pct);
+          const over = ring.spent > ring.target;
+          return (
+            <Link
+              key={ring.categoryId}
+              to={`/activities?tab=spending&category=${encodeURIComponent(ring.categoryId)}&from=${
+                activityRange.from
+              }&to=${activityRange.to}&budget=1`}
+              className="flex min-w-0 flex-col items-center gap-1 text-center"
+            >
+              <div className="relative" style={{ width: RING_SIZE, height: RING_SIZE }}>
+                <svg width={RING_SIZE} height={RING_SIZE} className="-rotate-90">
+                  <circle
+                    cx={RING_SIZE / 2}
+                    cy={RING_SIZE / 2}
+                    r={RING_RADIUS}
+                    fill="none"
+                    stroke="var(--foreground)"
+                    strokeOpacity={0.09}
+                    strokeWidth={RING_STROKE}
+                  />
+                  <circle
+                    cx={RING_SIZE / 2}
+                    cy={RING_SIZE / 2}
+                    r={RING_RADIUS}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={RING_STROKE}
+                    strokeLinecap="round"
+                    strokeDasharray={`${RING_LENGTH * Math.min(1, ring.pct)} ${RING_LENGTH}`}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span
+                    className="flex items-center justify-center rounded-full"
+                    style={{
+                      width: RING_DISC,
+                      height: RING_DISC,
+                      color: ring.color,
+                      backgroundColor: `color-mix(in srgb, ${ring.color} 16%, transparent)`,
+                    }}
+                  >
+                    <CategoryIcon icon={ring.icon} fallback={ring.name} className="h-6 w-6" />
+                  </span>
+                </div>
+              </div>
+              <div className="text-muted-foreground w-full truncate text-[11px]">{ring.name}</div>
+              <div
+                className={cn("w-full truncate text-xs tabular-nums", over && "text-destructive")}
+              >
+                {isBalanceHidden
+                  ? "••••"
+                  : formatCompactAmount(Math.abs(ring.target - ring.spent), currency)}{" "}
+                <span className={over ? undefined : "text-muted-foreground"}>
+                  {over ? t("spending:budgetChart.overLower") : t("spending:budgetChart.leftLower")}
+                </span>
+              </div>
+            </Link>
+          );
+        })}
       </div>
-      <div className="text-foreground max-w-full truncate text-xs font-semibold tabular-nums">
-        {isBalanceHidden ? "••••" : formatCompactAmount(displayAmount, currency)}
+      <div className="mt-4">
+        <BudgetManageLink monthKey={monthKey} />
       </div>
-      <div
-        className={cn(
-          "text-[10px] uppercase tracking-wide",
-          isOver ? "text-destructive" : "text-muted-foreground/70",
-        )}
-      >
-        {isOver ? t("spending:budgetChart.overLower") : t("spending:budgetChart.leftLower")}
-      </div>
-    </Link>
+    </div>
   );
 }

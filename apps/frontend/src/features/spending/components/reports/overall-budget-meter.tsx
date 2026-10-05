@@ -49,7 +49,7 @@ export function OverallBudgetMeter({
 
   if (monthlyTarget <= 0) {
     return (
-      <div className="border-border bg-card shadow-xs rounded-xl border p-4 text-center md:p-5">
+      <div className="text-center">
         <p className="text-muted-foreground text-sm">{t("spending:overallBudget.noTarget")}</p>
         <Link
           to="/settings/spending/setup"
@@ -75,10 +75,10 @@ export function OverallBudgetMeter({
         : "var(--success)";
 
   return (
-    <div className="border-border bg-card shadow-xs rounded-xl border p-4 md:p-5">
+    <div className="">
       <div className="mb-3 flex items-baseline justify-between gap-3">
         <div>
-          <h3 className="text-foreground text-sm font-semibold">
+          <h3 className="text-foreground text-sm font-medium">
             {t("spending:overallBudget.title")}
           </h3>
           <p className="text-muted-foreground/70 text-xs tabular-nums">
@@ -87,7 +87,7 @@ export function OverallBudgetMeter({
           </p>
         </div>
         <div className="text-right">
-          <div className="text-foreground text-xl font-semibold tabular-nums">
+          <div className="text-foreground text-xl font-medium tabular-nums">
             {Math.round(pct * 100)}%
           </div>
           <div
@@ -109,9 +109,9 @@ export function OverallBudgetMeter({
         </div>
       </div>
 
-      <div className="bg-muted/40 relative h-2.5 w-full overflow-hidden rounded-full">
+      <div className="bg-foreground/10 relative h-2.5 w-full overflow-hidden rounded-[4px]">
         <div
-          className="h-full rounded-full transition-all"
+          className="h-full rounded-[4px] transition-all"
           style={{ width: `${fillPct}%`, backgroundColor: fillColor, opacity: 0.95 }}
         />
         {overflowPct > 0 && (

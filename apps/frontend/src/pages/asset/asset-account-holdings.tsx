@@ -103,7 +103,7 @@ export function AssetAccountHoldings({ assetId, baseCurrency }: AssetAccountHold
           const gainPct = h.totalGainPct ?? 0;
           const currency = h.localCurrency ?? baseCurrency;
           return (
-            <div key={h.accountId} className="flex items-center gap-3 rounded-lg border p-3">
+            <div key={h.accountId} className="flex items-center gap-3 p-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <p className="truncate text-sm font-medium">{account?.name ?? h.accountId}</p>
@@ -143,7 +143,7 @@ export function AssetAccountHoldings({ assetId, baseCurrency }: AssetAccountHold
   }
 
   return (
-    <div className="rounded-md border">
+    <div className="">
       <Table>
         <TableHeader className="bg-muted/50">
           <TableRow>
@@ -399,7 +399,7 @@ export function AssetSnapshotHistory({
           {enrichedSnapshots.map((snap) => (
             <div
               key={`${snap.accountId}-${snap.snapshotDate}`}
-              className="flex items-center gap-3 rounded-lg border p-3"
+              className="flex items-center gap-3 p-3"
             >
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">{formatDate(snap.snapshotDate)}</p>
@@ -460,7 +460,7 @@ export function AssetSnapshotHistory({
           ))}
         </div>
       ) : (
-        <div className="rounded-md border">
+        <div className="">
           <Table>
             <TableHeader className="bg-muted/50">
               <TableRow>

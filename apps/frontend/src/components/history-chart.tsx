@@ -102,7 +102,7 @@ const CustomTooltip = ({
           value={tvPayload.totalValue}
           currency={tvPayload.currency}
           isHidden={isBalanceHidden}
-          className="text-xs font-semibold"
+          className="text-xs font-medium"
         />
       </div>
       {isChartHovered && netContributionPayload && (
@@ -120,7 +120,7 @@ const CustomTooltip = ({
             value={netContributionPayload.netContribution}
             currency={netContributionPayload.currency}
             isHidden={isBalanceHidden}
-            className="text-xs font-semibold"
+            className="text-xs font-medium"
           />
         </div>
       )}

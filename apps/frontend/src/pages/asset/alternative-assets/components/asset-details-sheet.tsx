@@ -383,7 +383,7 @@ export function AssetDetailsSheet({
 function SectionHeader({ title, description }: { title: string; description?: string }) {
   return (
     <div className="space-y-1">
-      <h4 className="text-sm font-semibold">{title}</h4>
+      <h4 className="text-sm font-medium">{title}</h4>
       {description && <p className="text-muted-foreground text-xs">{description}</p>}
     </div>
   );
@@ -772,7 +772,7 @@ function LiabilityFields({
                 />
               </FormControl>
             ) : linkedAssetName ? (
-              <div className="bg-muted/30 flex items-center gap-2 rounded-lg border p-3">
+              <div className="flex items-center gap-2 p-3">
                 <Icons.Link className="text-muted-foreground h-4 w-4" />
                 <span className="text-sm font-medium">{linkedAssetName}</span>
               </div>
@@ -871,7 +871,7 @@ function PropertyMortgageSection({
 
         {/* Display linked liabilities with unlink option */}
         {linkedLiabilities.length > 0 && (
-          <div className="bg-muted/30 space-y-2 rounded-lg border p-3">
+          <div className="space-y-2 p-3">
             {linkedLiabilities.map((liability) => (
               <div key={liability.id} className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-2">

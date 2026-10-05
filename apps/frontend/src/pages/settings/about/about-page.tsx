@@ -14,7 +14,6 @@ import {
   CardTitle,
 } from "@wealthfolio/ui/components/ui/card";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
-import { Separator } from "@wealthfolio/ui/components/ui/separator";
 import { toast } from "@wealthfolio/ui/components/ui/use-toast";
 import { SettingsHeader } from "../settings-header";
 
@@ -69,12 +68,11 @@ export default function AboutSettingsPage() {
   return (
     <div className="space-y-6">
       <SettingsHeader heading={t("settings:about_title")} text={t("settings:about_description")} />
-      <Separator />
 
       <Card>
         <CardHeader className="flex flex-row items-center gap-4">
           <img
-            src="/logo.svg"
+            src="/brand-mark-v5.png"
             alt={t("settings:about_logo_alt")}
             className="h-12 w-12 rounded-md shadow"
           />
@@ -132,15 +130,11 @@ export default function AboutSettingsPage() {
 
           {!isMobile && (
             <>
-              <Separator />
-
               <div className="grid gap-4">
                 <div className="space-y-1">
-                  <p className="text-muted-foreground text-xs uppercase tracking-wide">
-                    {t("settings:about_db_path")}
-                  </p>
+                  <p className="text-muted-foreground text-xs">{t("settings:about_db_path")}</p>
                   <div className="flex items-center gap-2">
-                    <p className="bg-muted text-muted-foreground flex-1 truncate rounded-md px-3 py-2 font-mono text-xs">
+                    <p className="bg-muted text-muted-foreground flex-1 truncate rounded-md px-3 py-2 text-xs">
                       {dbPath || t("settings:about_unavailable")}
                     </p>
                     <Button
@@ -155,11 +149,11 @@ export default function AboutSettingsPage() {
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-muted-foreground text-xs uppercase tracking-wide">
+                  <p className="text-muted-foreground text-xs">
                     {t("settings:about_logs_directory")}
                   </p>
                   <div className="flex items-center gap-2">
-                    <p className="bg-muted text-muted-foreground flex-1 truncate rounded-md px-3 py-2 font-mono text-xs">
+                    <p className="bg-muted text-muted-foreground flex-1 truncate rounded-md px-3 py-2 text-xs">
                       {logsDir || t("settings:about_unavailable")}
                     </p>
                     <Button
@@ -179,12 +173,10 @@ export default function AboutSettingsPage() {
             </>
           )}
 
-          <Separator />
-
           <div className="space-y-4">
             <p className="text-muted-foreground text-sm">
               {t("settings:about_support_message")}{" "}
-              <span className="select-all font-mono font-semibold">support@wealthfolio.app</span>
+              <span className="select-all font-medium">support@wealthfolio.app</span>
             </p>
             <div className="flex flex-wrap items-center gap-2">
               <Button
@@ -211,8 +203,6 @@ export default function AboutSettingsPage() {
               </Button>
             </div>
 
-            <Separator />
-
             <p className="text-muted-foreground text-sm">
               <ExternalLink
                 href="https://wealthfolio.app/legal/privacy-policy"
@@ -220,14 +210,14 @@ export default function AboutSettingsPage() {
               >
                 {t("settings:about_privacy_policy")}
               </ExternalLink>
-              <span className="mx-2">•</span>
+              <span className="mx-2" />
               <ExternalLink
                 href="https://wealthfolio.app/legal/terms-of-use"
                 className="hover:text-foreground underline underline-offset-4"
               >
                 {t("settings:about_terms_of_use")}
               </ExternalLink>
-              <span className="mx-2">•</span>
+              <span className="mx-2" />
               <ExternalLink
                 href="https://wealthfolio.app"
                 className="hover:text-foreground underline underline-offset-4"

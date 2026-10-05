@@ -390,7 +390,7 @@ function HeaderMetric({
         <MetricValue
           value={value}
           tone={tone}
-          className={cn("text-base font-semibold", valueClassName)}
+          className={cn("text-base font-medium", valueClassName)}
         />
       )}
     </div>
@@ -399,11 +399,9 @@ function HeaderMetric({
 
 const STRIP_SECTION_CLASS =
   "border-border/70 flex min-h-[4.75rem] min-w-0 flex-col justify-center border-l pl-5";
-const STRIP_TITLE_CLASS =
-  "text-muted-foreground/70 mb-2.5 font-mono text-[9px] font-semibold uppercase tracking-[0.28em]";
-const STRIP_LABEL_CLASS =
-  "text-muted-foreground truncate font-mono text-[11px] font-medium tracking-[0.02em]";
-const STRIP_VALUE_CLASS = "font-mono text-lg font-semibold leading-none";
+const STRIP_TITLE_CLASS = "text-muted-foreground/70 mb-2.5 text-[9px] font-medium ";
+const STRIP_LABEL_CLASS = "text-muted-foreground truncate text-[11px] font-medium ";
+const STRIP_VALUE_CLASS = "text-lg font-medium leading-none";
 
 function StripSection({
   title,
@@ -475,7 +473,7 @@ function StripHelpPopover({ items }: { items: StripHelpItem[] }) {
       <PopoverContent className="w-[34rem] max-w-[calc(100vw-2rem)] p-0" side="bottom" align="end">
         <div className="space-y-4 p-5">
           <div>
-            <div className="text-sm font-semibold">{t("performance:help.title")}</div>
+            <div className="text-sm font-medium">{t("performance:help.title")}</div>
             <div className="text-muted-foreground mt-1 text-xs">
               {t("performance:help.description")}
             </div>
@@ -499,7 +497,7 @@ function StripHelpPopover({ items }: { items: StripHelpItem[] }) {
                   key={item.label}
                   className="border-border/60 border-t pt-3 first:border-t-0 first:pt-0"
                 >
-                  <div className="text-xs font-semibold">{item.label}</div>
+                  <div className="text-xs font-medium">{item.label}</div>
                   <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
                     {item.infoText}
                   </p>
@@ -705,7 +703,7 @@ function AttributionDetailMetric({
       <AttributionAmount
         value={periodPnl}
         currency={currency}
-        className={cn("text-base font-semibold", sectionTitle && STRIP_VALUE_CLASS, valueClassName)}
+        className={cn("text-base font-medium", sectionTitle && STRIP_VALUE_CLASS, valueClassName)}
       />
       <Icons.ChevronRight className="text-muted-foreground/60 group-hover:text-muted-foreground h-3.5 w-3.5 shrink-0 transition-all group-hover:translate-x-0.5" />
     </div>
@@ -774,39 +772,37 @@ function AttributionDetailMetric({
             </SheetClose>
           </div>
           <div className="pt-3">
-            <div className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+            <div className="text-muted-foreground text-xs font-medium">
               {t("performance:attribution.period_gain_loss_lower")}
             </div>
             <AttributionAmount
               value={periodPnl}
               currency={currency}
-              className="mt-2 block text-xl font-semibold leading-tight"
+              className="mt-2 block text-xl font-medium leading-tight"
             />
           </div>
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-2">
           <div className="py-3.5">
-            <div className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wide">
+            <div className="text-muted-foreground mb-3 text-xs font-medium">
               {t("performance:attribution.performance_drivers")}
             </div>
             <AttributionRows rows={driverRows} currency={currency} />
           </div>
 
           <div className="py-3.5">
-            <div className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wide">
+            <div className="text-muted-foreground mb-3 text-xs font-medium">
               {t("performance:attribution.cash_flows")}
             </div>
             <AttributionRows rows={flowRows} currency={currency} amountTone="neutral" />
           </div>
         </div>
         <div className="border-border bg-background flex items-center justify-between gap-4 border-t px-6 py-4">
-          <div className="text-xs font-medium uppercase tracking-wide">
-            {t("performance:attribution.total_gain_loss")}
-          </div>
+          <div className="text-xs font-medium">{t("performance:attribution.total_gain_loss")}</div>
           <AttributionAmount
             value={periodPnl}
             currency={currency}
-            className="text-base font-semibold"
+            className="text-base font-medium"
           />
         </div>
       </SheetContent>

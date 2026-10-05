@@ -1,3 +1,4 @@
+import { BlockBar } from "@/components/block-bar";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import type { CategoryAllocation } from "@/lib/types";
@@ -52,11 +53,9 @@ const RISK_BADGE: Record<string, string> = {
 function PresetBar({ weights, colorMap }: PresetBarProps) {
   const nonZero = Object.entries(weights).filter(([, pct]) => pct > 0);
   return (
-    <div className="flex h-3.5 w-full overflow-hidden rounded-sm">
-      {nonZero.map(([key, pct]) => (
-        <div key={key} style={{ width: `${pct}%`, background: colorMap[key] ?? "#878580" }} />
-      ))}
-    </div>
+    <BlockBar
+      segments={nonZero.map(([key, pct]) => ({ value: pct, color: colorMap[key] ?? "#878580" }))}
+    />
   );
 }
 
@@ -171,7 +170,7 @@ export function ModelPresetPicker({
         </div>
         <span
           className={cn(
-            "text-foreground text-[15px] font-semibold leading-tight",
+            "text-foreground text-[15px] font-medium leading-tight",
             compact ? "mt-3" : "mt-4",
           )}
         >
@@ -212,7 +211,7 @@ export function ModelPresetPicker({
       {(secondaryPresets.length > 0 || compact) && (
         <div className="flex flex-wrap items-center gap-2 pt-1">
           {secondaryPresets.length > 0 && (
-            <span className="text-muted-foreground mr-1 text-[11px] font-medium uppercase tracking-wider">
+            <span className="text-muted-foreground mr-1 text-[11px] font-medium">
               {t("allocation:presets.moreTemplates")}
             </span>
           )}
@@ -222,7 +221,7 @@ export function ModelPresetPicker({
               type="button"
               onClick={() => onSelect(preset.id)}
               className={cn(
-                "inline-flex h-8 items-center gap-2 rounded-full border px-3 text-[12px] font-semibold transition-colors",
+                "inline-flex h-8 items-center gap-2 rounded-full border px-3 text-[12px] font-medium transition-colors",
                 selected === preset.id
                   ? "border-foreground bg-foreground text-background"
                   : "bg-card hover:border-muted-foreground/50",
@@ -237,7 +236,7 @@ export function ModelPresetPicker({
             type="button"
             onClick={() => onSelect("scratch")}
             className={cn(
-              "inline-flex h-8 items-center gap-2 rounded-full border px-3 text-[12px] font-semibold transition-colors",
+              "inline-flex h-8 items-center gap-2 rounded-full border px-3 text-[12px] font-medium transition-colors",
               scratchSelected
                 ? "border-foreground bg-foreground text-background"
                 : "bg-card hover:border-muted-foreground/50",

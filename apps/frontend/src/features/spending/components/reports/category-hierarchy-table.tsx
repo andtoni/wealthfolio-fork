@@ -189,10 +189,10 @@ export function CategoryHierarchyTable({
         </ul>
         <div className="mt-4">
           <div className="border-border/30 flex items-baseline justify-between gap-3 border-t pt-4">
-            <span className="text-muted-foreground/80 text-[10px] font-semibold uppercase tracking-[0.14em]">
+            <span className="text-muted-foreground/80 text-xs">
               {tr("spending:hierarchy.totalSpent")}
             </span>
-            <span className="text-foreground text-xl font-semibold tabular-nums tracking-tight">
+            <span className="text-foreground text-xl font-medium tabular-nums tracking-tight">
               <PrivacyAmount value={totals.spent} currency={currency} />
             </span>
           </div>
@@ -212,7 +212,7 @@ export function CategoryHierarchyTable({
     <div className="overflow-x-auto">
       <table className="text-foreground w-full text-sm">
         <thead>
-          <tr className="border-border/60 text-muted-foreground/80 border-b text-[11px] uppercase tracking-wide">
+          <tr className="border-border/60 text-muted-foreground/80 border-b text-xs">
             <th className="px-3 py-2 text-left font-medium">
               <div className="flex items-center gap-3">
                 <span>{tr("spending:filters.category")}</span>
@@ -327,9 +327,9 @@ function ProgressBar({ spent, budget }: { spent: number; budget: number }) {
       : "var(--success)";
   return (
     <div className="flex items-center gap-2">
-      <div className="bg-foreground/10 relative h-1.5 min-w-[60px] flex-1 overflow-hidden rounded-full">
+      <div className="bg-foreground/10 relative h-2.5 min-w-[60px] flex-1 overflow-hidden rounded-[4px]">
         <div
-          className="h-full rounded-full transition-all"
+          className="h-full rounded-[4px] transition-all"
           style={{ width: `${Math.min(100, pct)}%`, backgroundColor: fillColor, opacity: 0.65 }}
         />
       </div>
@@ -391,15 +391,13 @@ const GroupRow = memo(function GroupRow({
               className="block h-2 w-2 shrink-0 rounded-full"
               style={{ backgroundColor: accent }}
             />
-            <span className="text-foreground text-sm font-semibold uppercase tracking-wide">
-              {group.name}
-            </span>
+            <span className="text-foreground text-sm">{group.name}</span>
             <span className="text-muted-foreground/70 text-[11px] font-medium tabular-nums">
               {sharePct.toFixed(1)}%
             </span>
           </div>
         </td>
-        <td className="text-foreground px-3 py-2.5 text-right text-xs font-semibold tabular-nums">
+        <td className="text-foreground px-3 py-2.5 text-right text-xs font-medium tabular-nums">
           <PrivacyAmount value={group.spent} currency={currency} />
           {group.budgeted > 0 && (
             <span className="text-muted-foreground/70 ml-1 font-normal">
@@ -615,17 +613,14 @@ function DeltaPill({ delta, priorSpent }: { delta: number; priorSpent: number })
   const up = delta > 0;
   return (
     <span
-      className={cn(
-        "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums",
-        up ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success",
-      )}
+      className={cn("shrink-0 text-[13px] tabular-nums", up ? "text-destructive" : "text-success")}
     >
       {formatDelta(delta, priorSpent)}
     </span>
   );
 }
 
-const MOBILE_CARD = "border-border/40 bg-card/40 rounded-2xl border";
+const MOBILE_CARD = "";
 
 const MobileGroupRow = memo(function MobileGroupRow({
   group,
@@ -655,9 +650,7 @@ const MobileGroupRow = memo(function MobileGroupRow({
     return (
       <li className={cn(MOBILE_CARD, "flex items-center gap-2.5 px-4 py-3")}>
         <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: accent }} />
-        <span className="text-foreground/75 flex-1 truncate text-[10.5px] font-semibold uppercase tracking-[0.14em]">
-          {group.name}
-        </span>
+        <span className="text-foreground/75 flex-1 truncate text-[10.5px]">{group.name}</span>
         <span className="text-foreground/90 shrink-0 text-sm font-medium tabular-nums">
           <PrivacyAmount value={group.spent} currency={currency} />
         </span>
@@ -679,9 +672,7 @@ const MobileGroupRow = memo(function MobileGroupRow({
             className="block h-1.5 w-1.5 shrink-0 rounded-full"
             style={{ backgroundColor: accent }}
           />
-          <span className="text-foreground/75 flex-1 truncate text-[10.5px] font-semibold uppercase tracking-[0.14em]">
-            {group.name}
-          </span>
+          <span className="text-foreground/75 flex-1 truncate text-[10.5px]">{group.name}</span>
           <DeltaPill delta={delta} priorSpent={group.priorSpent} />
           {hasChildren && (
             <Icons.ChevronRight
@@ -693,7 +684,7 @@ const MobileGroupRow = memo(function MobileGroupRow({
           )}
         </div>
         <div className="mt-1.5 flex items-baseline justify-between gap-3 pl-4">
-          <span className="text-foreground text-[15px] font-semibold tabular-nums tracking-tight">
+          <span className="text-foreground text-[15px] font-medium tabular-nums tracking-tight">
             <PrivacyAmount value={group.spent} currency={currency} />
           </span>
           {hasBudget && (
@@ -757,7 +748,7 @@ const MobileCategoryRow = memo(function MobileCategoryRow({
       <span className={cn("tabular-nums", pct > 100 ? "text-destructive" : undefined)}>
         {pct.toFixed(0)}%
       </span>
-      <span className="text-muted-foreground/50"> · {t("spending:hierarchy.of")} </span>
+      <span className="text-muted-foreground/50">, {t("spending:hierarchy.of")} </span>
       <PrivacyAmount value={node.budgeted} currency={currency} />
     </>
   ) : null;
@@ -780,7 +771,7 @@ const MobileCategoryRow = memo(function MobileCategoryRow({
           <CategoryIcon icon={node.icon} fallback={node.name} className="h-[18px] w-[18px]" />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="text-foreground truncate text-sm font-semibold">{node.name}</div>
+          <div className="text-foreground truncate text-sm font-medium">{node.name}</div>
           {subtitle && (
             <div className="text-muted-foreground/70 mt-0.5 truncate text-[11px] tabular-nums">
               {subtitle}
@@ -788,7 +779,7 @@ const MobileCategoryRow = memo(function MobileCategoryRow({
           )}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-0.5">
-          <span className="text-foreground text-sm font-semibold tabular-nums">
+          <span className="text-foreground text-sm font-medium tabular-nums">
             <PrivacyAmount value={node.spent} currency={currency} />
           </span>
           <DeltaPill delta={delta} priorSpent={node.priorSpent} />

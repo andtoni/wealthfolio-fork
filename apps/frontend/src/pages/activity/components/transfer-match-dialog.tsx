@@ -794,7 +794,7 @@ export function TransferMatchDialog({
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto py-4">
           <div className="space-y-2">
-            <div className="text-muted-foreground text-xs font-medium uppercase">
+            <div className="text-muted-foreground text-xs font-medium">
               {t("activity:transfer_match.selected_row")}
             </div>
             <ActivitySummaryRow
@@ -806,7 +806,7 @@ export function TransferMatchDialog({
 
           {mode === "unlink" ? (
             <div className="space-y-3">
-              <div className="text-muted-foreground text-xs font-medium uppercase">
+              <div className="text-muted-foreground text-xs font-medium">
                 {t("activity:transfer_match.linked_counterpart")}
               </div>
               {counterpartLoading ? (
@@ -836,7 +836,7 @@ export function TransferMatchDialog({
             <>
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-muted-foreground text-xs font-medium uppercase">
+                  <div className="text-muted-foreground text-xs font-medium">
                     {t("activity:transfer_match.suggested_matches")}
                   </div>
                   {oppositeType ? (
@@ -870,7 +870,7 @@ export function TransferMatchDialog({
                     ))}
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center gap-2 rounded-md border border-dashed px-4 py-6 text-center">
+                  <div className="flex flex-col items-center gap-2 rounded-md border px-4 py-6 text-center">
                     <Icons.Search className="text-muted-foreground h-5 w-5" />
                     <p className="text-muted-foreground text-sm">
                       {t("activity:transfer_match.no_matches_7_days")}
@@ -1093,7 +1093,7 @@ export function TransferMatchDialog({
                             />
                           ))
                         ) : (
-                          <div className="text-muted-foreground rounded-md border border-dashed p-4 text-center text-sm">
+                          <div className="text-muted-foreground rounded-md border p-4 text-center text-sm">
                             {t("activity:transfer_match.no_eligible_filters")}
                           </div>
                         )}

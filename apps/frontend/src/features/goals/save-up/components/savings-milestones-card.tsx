@@ -72,9 +72,6 @@ export function SavingsMilestonesCard({
   return (
     <Card>
       <CardHeader>
-        <div className="text-muted-foreground mb-1 text-xs font-medium uppercase tracking-[0.15em]">
-          {t("goals:milestones.kicker")}
-        </div>
         <CardTitle className="text-md leading-none tracking-tight">
           {t("goals:milestones.title")}
         </CardTitle>
@@ -98,7 +95,7 @@ export function SavingsMilestonesCard({
               return (
                 <div key={m.ratio}>
                   <div
-                    className={`absolute top-0 -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider ${
+                    className={`absolute top-0 -translate-x-1/2 whitespace-nowrap text-[13px] font-medium ${
                       m.reached ? "text-foreground" : "text-muted-foreground"
                     }`}
                     style={{ left }}
@@ -115,7 +112,7 @@ export function SavingsMilestonesCard({
                     className="absolute top-[52px] flex -translate-x-1/2 flex-col items-center whitespace-nowrap"
                     style={{ left }}
                   >
-                    <span className="text-sm font-semibold tabular-nums">
+                    <span className="text-sm font-medium tabular-nums">
                       <AmountDisplay value={m.amount} currency={currency} isHidden={isHidden} />
                     </span>
                     <span
@@ -148,7 +145,7 @@ export function SavingsMilestonesCard({
                 <div className="min-w-0 flex-1 pt-0.5">
                   <div className="flex items-baseline justify-between gap-2">
                     <span
-                      className={`text-xs font-semibold uppercase tracking-wider ${
+                      className={`text-xs font-medium ${
                         m.reached ? "text-foreground" : "text-muted-foreground"
                       }`}
                     >
@@ -160,7 +157,7 @@ export function SavingsMilestonesCard({
                       {m.dateLabel}
                     </span>
                   </div>
-                  <div className="mt-1 text-sm font-semibold tabular-nums">
+                  <div className="mt-1 text-sm font-medium tabular-nums">
                     <AmountDisplay value={m.amount} currency={currency} isHidden={isHidden} />
                   </div>
                 </div>

@@ -104,7 +104,7 @@ export function PatTable({ serverUrl }: { serverUrl?: string } = {}) {
     <Card className="rounded-lg">
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 p-6 pb-4">
         <div className="min-w-0 space-y-1">
-          <CardTitle className="text-base font-semibold tracking-tight">
+          <CardTitle className="text-base font-medium tracking-tight">
             {t("settings:agentAccess.pat_title")}
           </CardTitle>
           <CardDescription className="text-xs">

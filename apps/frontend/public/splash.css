@@ -16,8 +16,8 @@ body {
 
 /* Simulate a Splash screen before react app mount */
 body {
-  background-color: #09090b;
-  background-image: url("/logo-gold.png");
+  background-color: #10101a;
+  background-image: url("/brand-mark-v5.png");
   background-repeat: no-repeat;
   background-position: center center;
   background-size: 100px auto;

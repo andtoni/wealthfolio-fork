@@ -128,7 +128,7 @@ export default function SpendingEventsPage() {
           </EmptyPlaceholder.Description>
         </EmptyPlaceholder>
       ) : eventTypes.length > 0 ? (
-        <div className="divide-border divide-y rounded-md border">
+        <div className="">
           {eventTypes.map((type) => {
             const typeEvents = eventsByType[type.id] ?? [];
             const hasEvents = typeEvents.length > 0;

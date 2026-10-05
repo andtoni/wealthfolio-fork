@@ -67,7 +67,7 @@ function DetailSection({ title, icon, children }: DetailSectionProps) {
     <div className="space-y-1">
       <div className="flex items-center gap-2 pb-2">
         {icon}
-        <h4 className="text-sm font-semibold">{title}</h4>
+        <h4 className="text-sm font-medium">{title}</h4>
       </div>
       <div className="bg-muted/30 rounded-lg border p-3">{children}</div>
     </div>
@@ -138,12 +138,12 @@ export function ActivityDetailSheet({ activity, open, onOpenChange }: ActivityDe
           <div className="from-primary/5 to-primary/10 rounded-xl border bg-gradient-to-br p-4">
             <div className="flex items-start justify-between">
               <div>
-                <div className="text-muted-foreground mb-1 text-xs uppercase tracking-wide">
+                <div className="text-muted-foreground mb-1 text-xs">
                   {ActivityTypeNames[activity.activityType] || activity.activityType}
                 </div>
                 {parsedOption ? (
                   <>
-                    <div className="text-xl font-bold">{parsedOption.underlying}</div>
+                    <div className="text-xl font-medium">{parsedOption.underlying}</div>
                     <div className="text-muted-foreground text-sm">
                       {optionExpirationDisplay} ${parsedOption.strikePrice}{" "}
                       {parsedOption.optionType}
@@ -152,7 +152,7 @@ export function ActivityDetailSheet({ activity, open, onOpenChange }: ActivityDe
                 ) : (
                   <>
                     {activity.assetSymbol && (
-                      <div className="text-xl font-bold">{activity.assetSymbol}</div>
+                      <div className="text-xl font-medium">{activity.assetSymbol}</div>
                     )}
                     {activity.assetName && (
                       <div className="text-muted-foreground text-sm">{activity.assetName}</div>
@@ -183,7 +183,7 @@ export function ActivityDetailSheet({ activity, open, onOpenChange }: ActivityDe
               </div>
               <div className="text-right">
                 <div className="text-muted-foreground text-xs">{t("activity:field_amount")}</div>
-                <div className="text-lg font-bold">
+                <div className="text-lg font-medium">
                   <AmountDisplay value={Number(activity.amount)} currency={activity.currency} />
                 </div>
                 {originalCurrency && (

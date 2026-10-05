@@ -58,7 +58,7 @@ export function ActivityOperations<TData>({
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger className="hover:bg-muted flex h-8 w-8 items-center justify-center rounded-md border transition-colors">
+        <DropdownMenuTrigger className="hover:bg-foreground/5 text-muted-foreground flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors">
           <Icons.MoreVertical className="h-4 w-4" />
           <span className="sr-only">{t("activity:open_menu")}</span>
         </DropdownMenuTrigger>

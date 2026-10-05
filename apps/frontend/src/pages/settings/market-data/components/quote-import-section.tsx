@@ -1,4 +1,3 @@
-import { Separator } from "@wealthfolio/ui/components/ui/separator";
 import { useQuoteImport } from "@/hooks/use-quote-import";
 import type { QuoteImportActions, QuoteImportState } from "@/lib/types/quote-import";
 import { cn } from "@/lib/utils";
@@ -108,26 +107,26 @@ export function ImportQuotesSection({
                     <div className="flex items-center gap-6 text-sm">
                       <div className="flex items-center gap-1.5">
                         <span className="text-muted-foreground">{t("common:total")}:</span>
-                        <span className="font-semibold">{preview.totalRows}</span>
+                        <span className="font-medium">{preview.totalRows}</span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="text-muted-foreground">
                           {t("settings:market_data_page.field_valid")}:
                         </span>
-                        <span className="font-semibold text-green-600">{preview.validRows}</span>
+                        <span className="font-medium text-green-600">{preview.validRows}</span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="text-muted-foreground">
                           {t("settings:market_data_page.field_invalid")}:
                         </span>
-                        <span className="font-semibold text-red-600">{preview.invalidRows}</span>
+                        <span className="font-medium text-red-600">{preview.invalidRows}</span>
                       </div>
                       {preview.duplicateCount > 0 && (
                         <div className="flex items-center gap-1.5">
                           <span className="text-muted-foreground">
                             {t("settings:market_data_page.field_duplicates")}:
                           </span>
-                          <span className="font-semibold text-yellow-600">
+                          <span className="font-medium text-yellow-600">
                             {preview.duplicateCount}
                           </span>
                         </div>
@@ -186,7 +185,7 @@ export function ImportQuotesSection({
         >
           {showTitle && (
             <div>
-              <h3 className="text-lg font-semibold">
+              <h3 className="text-lg font-medium">
                 {t("settings:market_data_page.import_page_heading")}
               </h3>
               <p className="text-muted-foreground text-sm">
@@ -206,10 +205,8 @@ export function ImportQuotesSection({
         </div>
       )}
 
-      {showTitle && <Separator />}
-
       <Card className="w-full">
-        <CardHeader className="border-b">
+        <CardHeader className="">
           <StepIndicator steps={STEPS} currentStep={currentStep} />
         </CardHeader>
         <CardContent className="overflow-hidden p-0">

@@ -1,12 +1,13 @@
+import { LIST_ROW } from "@/components/dashboard-card";
 import { TickerAvatar } from "@/components/ticker-avatar";
+import { SplitAmount } from "@/features/spending/components/split-amount";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import { HoldingType } from "@/lib/constants";
 import { parseOccSymbol } from "@/lib/occ-symbol";
 import { Account, AccountScope, Holding } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { AmountDisplay, GainPercent, Input, Separator } from "@wealthfolio/ui";
+import { AmountDisplay, GainPercent, Input } from "@wealthfolio/ui";
 import { Button } from "@wealthfolio/ui/components/ui/button";
-import { Card } from "@wealthfolio/ui/components/ui/card";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { useMemo, useState } from "react";
@@ -28,8 +29,8 @@ interface HoldingsTableMobileProps {
   showAccountScope?: boolean;
   showSearch?: boolean;
   showFilterButton?: boolean;
-  sortBy?: "symbol" | "marketValue";
-  setSortBy?: (value: "symbol" | "marketValue") => void;
+  sortBy?: "symbol" | "marketValue" | "gain";
+  setSortBy?: (value: "symbol" | "marketValue" | "gain") => void;
   performanceMode?: PerformanceMode;
   setPerformanceMode?: (value: PerformanceMode) => void;
   typeOptions?: { value: string; label: string }[];
@@ -60,7 +61,9 @@ export const HoldingsTableMobile = ({
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
 
   // Internal state for uncontrolled mode
-  const [internalSortBy, setInternalSortBy] = useState<"symbol" | "marketValue">("marketValue");
+  const [internalSortBy, setInternalSortBy] = useState<"symbol" | "marketValue" | "gain">(
+    "marketValue",
+  );
   const [internalPerformanceMode, setInternalPerformanceMode] = useState<PerformanceMode>("pnl");
 
   const sortBy = controlledSortBy ?? internalSortBy;
@@ -100,6 +103,15 @@ export const HoldingsTableMobile = ({
         const valB = b.marketValue?.base ?? 0;
         return valB - valA; // Descending
       }
+      if (sortBy === "gain") {
+        const gain = (holding: Holding) =>
+          performanceMode === "return"
+            ? (holding.totalReturn?.base ?? holding.totalGain?.base ?? 0)
+            : performanceMode === "pnl"
+              ? (holding.totalGain?.base ?? 0)
+              : (holding.dayChange?.base ?? 0);
+        return gain(b) - gain(a);
+      }
 
       const symbolA = a.instrument?.symbol?.toLowerCase() ?? "";
       const symbolB = b.instrument?.symbol?.toLowerCase() ?? "";
@@ -114,7 +126,7 @@ export const HoldingsTableMobile = ({
       }
       return 0;
     });
-  }, [holdings, selectedTypes, searchQuery, sortBy]);
+  }, [holdings, selectedTypes, searchQuery, sortBy, performanceMode]);
 
   const handleNavigate = (holding: Holding) => {
     // Use instrument.id (asset ID) for navigation, not symbol (which may be stripped)
@@ -162,7 +174,7 @@ export const HoldingsTableMobile = ({
           )}
         </div>
       )}
-      <div className="space-y-2">
+      <div>
         {filteredHoldings.length > 0 ? (
           filteredHoldings.map((holding) => {
             const symbol = holding.instrument?.symbol ?? holding.id;
@@ -184,66 +196,58 @@ export const HoldingsTableMobile = ({
             const isNavigable = !isCash && holding.instrument?.symbol;
 
             return (
-              <Card
+              <div
                 key={holding.id}
-                className={cn(
-                  "p-3",
-                  isNavigable && "hover:bg-muted/50 cursor-pointer transition-colors",
-                )}
+                className={cn(LIST_ROW, isNavigable && "cursor-pointer")}
                 onClick={() => isNavigable && handleNavigate(holding)}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-1 items-center gap-3 overflow-hidden">
-                    <TickerAvatar symbol={avatarSymbol} className="h-10 w-10" />
-                    <div className="flex-1 overflow-hidden">
-                      <div className="flex items-center gap-1.5">
-                        <p className="truncate font-semibold">{displaySymbol}</p>
-                      </div>
-                      {subtitle && (
-                        <p className="text-muted-foreground truncate text-sm">{subtitle}</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="ml-2 text-right">
-                    <AmountDisplay
+                <TickerAvatar symbol={avatarSymbol} className="h-10 w-10 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[17px] leading-snug">{displaySymbol}</p>
+                  {subtitle && (
+                    <p className="text-muted-foreground truncate text-[15px] leading-snug">
+                      {subtitle}
+                    </p>
+                  )}
+                </div>
+                <div className="flex shrink-0 flex-col items-end">
+                  <span className="text-[19px] leading-snug">
+                    <SplitAmount
                       value={holding.marketValue?.local ?? 0}
                       currency={holding.localCurrency}
-                      isHidden={isBalanceHidden}
-                      className="font-medium"
                     />
-                    <div className="flex items-center justify-end gap-1">
-                      <AmountDisplay
-                        value={
-                          performanceMode === "return"
-                            ? (holding.totalReturn?.local ?? holding.totalGain?.local ?? 0)
-                            : performanceMode === "pnl"
-                              ? (holding.totalGain?.local ?? 0)
-                              : (holding.dayChange?.local ?? 0)
-                        }
-                        currency={holding.localCurrency}
-                        isHidden={isBalanceHidden}
-                        colorFormat
-                        className="text-xs"
-                      />
-                      <Separator orientation="vertical" className="mx-1 h-4" />
-                      <GainPercent
-                        value={
-                          performanceMode === "return"
-                            ? (holding.totalReturnPct ?? holding.totalGainPct ?? 0)
-                            : performanceMode === "pnl"
-                              ? (holding.totalGainPct ?? 0)
-                              : (holding.dayChangePct ?? 0)
-                        }
-                        className="text-xs"
-                      />
-                    </div>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <AmountDisplay
+                      value={
+                        performanceMode === "return"
+                          ? (holding.totalReturn?.local ?? holding.totalGain?.local ?? 0)
+                          : performanceMode === "pnl"
+                            ? (holding.totalGain?.local ?? 0)
+                            : (holding.dayChange?.local ?? 0)
+                      }
+                      currency={holding.localCurrency}
+                      isHidden={isBalanceHidden}
+                      colorFormat
+                      className="text-[13px]"
+                    />
+                    <GainPercent
+                      value={
+                        performanceMode === "return"
+                          ? (holding.totalReturnPct ?? holding.totalGainPct ?? 0)
+                          : performanceMode === "pnl"
+                            ? (holding.totalGainPct ?? 0)
+                            : (holding.dayChangePct ?? 0)
+                      }
+                      className="text-[13px]"
+                    />
                   </div>
                 </div>
-              </Card>
+              </div>
             );
           })
         ) : (
-          <div className="flex h-48 flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
+          <div className="flex h-48 flex-col items-center justify-center p-8 text-center">
             <h3 className="text-lg font-medium">{t("holdings:no_positions_found")}</h3>
             <p className="text-muted-foreground text-sm">
               {holdings.length === 0

@@ -41,16 +41,18 @@ export function MomentumCard({ momentum, currency, periodLabel }: MomentumCardPr
           : t("insights:networth.momentum.vs_prior", { period: periodLabel })
       }
     >
-      <div className={`text-lg font-bold tabular-nums ${toneClass(currentChange)}`}>
+      <div
+        className={`text-[28px] font-medium tabular-nums leading-tight ${toneClass(currentChange)}`}
+      >
         {changeSign}
         <CompactAmount value={Math.abs(currentChange)} currency={currency} />
       </div>
       {beatBy != null && (
-        <p className="text-muted-foreground mt-0.5 text-xs">
+        <p className="text-muted-foreground text-[15px]">
           {beatBy >= 0
             ? t("insights:networth.momentum.beat_prior")
             : t("insights:networth.momentum.behind_prior")}
-          <span className={`font-semibold ${toneClass(beatBy)}`}>
+          <span className={toneClass(beatBy)}>
             <CompactAmount value={Math.abs(beatBy)} currency={currency} />
           </span>
         </p>
@@ -100,7 +102,7 @@ export function MomentumCard({ momentum, currency, periodLabel }: MomentumCardPr
               })}
             </div>
           </div>
-          <div className="text-muted-foreground/60 mt-1.5 flex justify-between text-xs">
+          <div className="text-muted-foreground mt-1.5 flex justify-between text-[13px]">
             <span>{monthLabel(bars[0].month)}</span>
             <span>{t("insights:networth.momentum.now")}</span>
           </div>

@@ -53,18 +53,29 @@ export function AppSidebar({ navigation }: AppSidebarProps) {
                   className="draggable flex items-center justify-center pb-6"
                 >
                   <Link to="/">
-                    <img
-                      className={`h-10 w-10 rounded-full bg-transparent shadow-lg transition-transform duration-700 ease-in-out [transform-style:preserve-3d] hover:[transform:rotateY(-180deg)] ${
+                    {/* The mark flips as it always did. It has two faces, the back
+                        one turned round, so the dollar sign never reads mirrored. */}
+                    <span
+                      className={`relative block h-10 w-10 transition-transform duration-700 ease-in-out [transform-style:preserve-3d] hover:[transform:rotateY(-180deg)] ${
                         collapsed ? "[transform:rotateY(180deg)]" : ""
                       }`}
-                      aria-hidden="true"
-                      src="/logo.png"
-                    />
+                    >
+                      <img
+                        className="absolute inset-0 h-10 w-10 rounded-full bg-transparent shadow-lg [backface-visibility:hidden]"
+                        aria-hidden="true"
+                        src="/brand-mark-v5.png"
+                      />
+                      <img
+                        className="absolute inset-0 h-10 w-10 rounded-full bg-transparent shadow-lg [backface-visibility:hidden] [transform:rotateY(180deg)]"
+                        aria-hidden="true"
+                        src="/brand-mark-v5.png"
+                      />
+                    </span>
                   </Link>
 
                   <span
                     className={cn(
-                      "text-md text-foreground/90 ml-2 font-serif text-xl font-bold transition-opacity delay-100 duration-300 ease-in-out",
+                      "text-md text-foreground/90 ml-2 font-serif text-xl font-medium transition-opacity delay-100 duration-300 ease-in-out",
                       {
                         "sr-only opacity-0": collapsed,
                         "block opacity-100": !collapsed,

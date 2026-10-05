@@ -108,7 +108,7 @@ export function AssetsTable({
             >
               <TickerAvatar symbol={avatarSymbol} className="h-8 w-8 shrink-0" />
               <div className="min-w-0 flex-1">
-                <div className="group-hover:text-primary flex items-center gap-1.5 font-semibold leading-tight transition-colors">
+                <div className="group-hover:text-primary flex items-center gap-1.5 font-medium leading-tight transition-colors">
                   {displaySymbol}
                   {parsedOption ? (
                     <Badge variant="secondary" className="text-[10px]">
@@ -258,7 +258,7 @@ export function AssetsTable({
                     <TooltipContent>{t("asset:table.quote_behind_tooltip")}</TooltipContent>
                   </Tooltip>
                 ) : null}
-                <span className="font-semibold tabular-nums">
+                <span className="font-medium tabular-nums">
                   {formatAmount(quote.close, quote.currency ?? asset.quoteCcy ?? baseCurrency)}
                 </span>
               </div>
@@ -280,7 +280,7 @@ export function AssetsTable({
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="hover:bg-muted text-muted-foreground inline-flex h-9 w-9 items-center justify-center rounded-md border transition"
+                    className="hover:bg-foreground/5 text-muted-foreground inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors"
                     aria-label={t("asset:table.open_actions")}
                   >
                     <Icons.MoreVertical className="h-4 w-4" />
@@ -391,7 +391,7 @@ export function AssetsTable({
         <div className="mb-2 shrink-0">
           <Skeleton className="h-10 w-full" />
         </div>
-        <div className="min-h-0 flex-1 overflow-auto rounded-md border">
+        <div className="min-h-0 flex-1 overflow-auto">
           <Table>
             <TableHeader className="bg-muted/50 sticky top-0 z-10">
               <TableRow>

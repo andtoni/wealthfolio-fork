@@ -72,7 +72,7 @@ export function DriftBandSlider({
             <span className="text-foreground text-[12px] font-medium">
               {t("allocation:band.relativeFactor")}
             </span>
-            <span className="bg-muted text-foreground rounded-md px-2 py-0.5 text-[12px] font-semibold tabular-nums">
+            <span className="bg-muted text-foreground rounded-md px-2 py-0.5 text-[12px] font-medium tabular-nums">
               {t("allocation:band.percentOfTarget", { value: relativeFactorPct })}
             </span>
           </div>
@@ -99,7 +99,7 @@ export function DriftBandSlider({
           <span className="text-foreground text-[12px] font-medium">
             {isHybrid ? t("allocation:band.absoluteFloor") : t("allocation:band.bandWidth")}
           </span>
-          <span className="bg-muted text-foreground rounded-md px-2 py-0.5 text-[12px] font-semibold tabular-nums">
+          <span className="bg-muted text-foreground rounded-md px-2 py-0.5 text-[12px] font-medium tabular-nums">
             ±{driftBandPct.toFixed(1)}%
           </span>
         </div>

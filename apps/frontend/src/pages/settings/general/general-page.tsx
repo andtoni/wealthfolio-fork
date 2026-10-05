@@ -1,4 +1,3 @@
-import { Separator } from "@wealthfolio/ui/components/ui/separator";
 import { useTranslation } from "react-i18next";
 import { usePlatform } from "@/hooks/use-platform";
 import { SettingsHeader } from "../settings-header";
@@ -17,7 +16,6 @@ export default function GeneralSettingsPage() {
         heading={t("settings:general")}
         text={t("settings:general_page_description")}
       />
-      <Separator />
       <BaseCurrencySettings />
       <LanguageRegionSettings />
       <div className="pt-6">

@@ -51,20 +51,20 @@
   "edit_limit": "Grenze bearbeiten",
   "delete_limit": "Grenze löschen",
   "card": {
-    "complete": "ABGESCHLOSSEN",
+    "complete": "Abgeschlossen",
     "saved_of": "gespart von",
     "remaining": "verbleibend",
     "target_met": "Ziel erreicht",
-    "no_deadline": "KEINE FRIST",
-    "due": "FÄLLIG",
-    "achieved": "ERREICHT",
-    "off_track": "VOM KURS AB",
-    "at_risk": "GEFÄHRDET",
-    "months_left_one": "NOCH {{count}} MONAT",
-    "months_left_other": "NOCH {{count}} MONATE",
-    "years_left_one": "NOCH {{count}} JAHR",
-    "years_left_other": "NOCH {{count}} JAHRE",
-    "years_months_left": "NOCH {{years}} J {{months}} M",
+    "no_deadline": "Keine frist",
+    "due": "Fällig",
+    "achieved": "Erreicht",
+    "off_track": "Vom kurs ab",
+    "at_risk": "Gefährdet",
+    "months_left_one": "NOCH {{count}} monat",
+    "months_left_other": "NOCH {{count}} monate",
+    "years_left_one": "NOCH {{count}} jahr",
+    "years_left_other": "NOCH {{count}} jahre",
+    "years_months_left": "NOCH {{years}} j {{months}} m",
     "quote_car": "für den Weg voraus",
     "quote_home": "ein Ort zum Nachhausekommen",
     "quote_education": "für das Lernen von morgen",
@@ -80,10 +80,10 @@
     "create_first_goal": "Erstellen Sie Ihr erstes Ziel",
     "archived_count_one": "Archiviert ({{count}})",
     "archived_count_other": "Archiviert ({{count}})",
-    "stat_saved": "GESPART",
-    "stat_target": "ZIEL",
-    "stat_overall": "GESAMT",
-    "stat_on_track": "AUF KURS",
+    "stat_saved": "Gespart",
+    "stat_target": "Ziel",
+    "stat_overall": "Gesamt",
+    "stat_on_track": "Auf kurs",
     "pending": {
       "failed_to_load": "Ruhestandsprognose konnte nicht geladen werden.",
       "calculating": "Ruhestandsprognose wird berechnet",
@@ -157,7 +157,7 @@
       "funded_pct": "{{pct}} % finanziert"
     },
     "chart": {
-      "projection_age_range": "Prognose · Alter {{start}} → {{end}}",
+      "projection_age_range": "Prognose, Alter {{start}}–{{end}}",
       "portfolio_trajectory": "Portfolio-Verlauf",
       "portfolio_trajectory_aria": "Mehr Infos zum Portfolio-Verlauf",
       "trajectory_tip_traditional": "Die Ruhestandsmarkierung zeigt, wann die Entnahmen beginnen. „Was Sie benötigen“ ist der Mindestsaldo, der in jedem Alter nötig ist, um die geplanten Ruhestandsausgaben bis zur Lebenserwartung zu finanzieren.",
@@ -182,7 +182,7 @@
       "fat_hint": "150 % der geplanten Ausgaben",
       "fat_tip": "In den Ruhestand mit etwa 50 % mehr Ausgaben als geplant — Spielraum für Reisen, Geschenke, Schwankungen und einen höheren Lebensstandard.",
       "more_info_about": "Mehr Infos zu {{label}}",
-      "done": "ERREICHT"
+      "done": "Erreicht"
     },
     "coverage": {
       "kicker": "Deckung",
@@ -296,7 +296,7 @@
       "title": "Ruhestandseinkommen",
       "default_label": "Einkommen {{n}}",
       "stream_fallback": "Strom",
-      "read_meta": "{{type}} · Alter {{start}} → {{end}}",
+      "read_meta": "{{type}}, Alter {{start}}–{{end}}",
       "pension_fund": "Pensionsfonds",
       "income": "Einkommen",
       "none_configured": "Kein Ruhestandseinkommen konfiguriert",
@@ -305,7 +305,7 @@
       "growth_meta": "{{pct}} % Wachstum",
       "inflation_indexed": "Inflationsindexiert",
       "fixed_nominal": "Nominal fest",
-      "age_range": "Alter {{start}} → {{end}}",
+      "age_range": "Alter {{start}}–{{end}}",
       "remove": "{{label}} entfernen",
       "item_fallback": "Ruhestandseinkommen",
       "name_placeholder": "Name des Einkommens",
@@ -540,7 +540,7 @@
     "open_retirement_guide": "Ruhestandsleitfaden öffnen",
     "achieved": "Erreicht",
     "header": "{{type}}-Ziel",
-    "header_with_description": "{{type}}-Ziel · {{description}}",
+    "header_with_description": "{{type}}-Ziel, {{description}}",
     "delete_confirm": "Möchten Sie „{{title}}“ wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
     "deleting": "Wird gelöscht...",
     "no_plan_yet": "Dieses Ziel hat noch keinen detaillierten Plan."
@@ -586,7 +586,7 @@
     "showing": "Anzeige: {{label}}"
   },
   "coverage_chart": {
-    "age_value": "Alter {{age}} · {{valueLabel}}",
+    "age_value": "Alter {{age}}, {{valueLabel}}",
     "planned_spending_yr": "Geplante Ausgaben/Jahr:",
     "retirement_income_used_yr": "Genutztes Renteneinkommen/Jahr:",
     "portfolio_withdrawal_used_yr": "Genutzte Portfolio-Entnahme/Jahr:",
@@ -597,7 +597,7 @@
   "portfolio_chart": {
     "phase_retirement": "Ruhestand",
     "phase_accumulation": "Ansparphase",
-    "tooltip_header": "Alter {{age}} · {{phase}} · {{valueLabel}}",
+    "tooltip_header": "Alter {{age}}, {{phase}}, {{valueLabel}}",
     "start_portfolio": "Portfolio zu Beginn:",
     "end_portfolio": "Portfolio am Ende:",
     "what_youll_need": "Was Sie benötigen werden:",
@@ -607,7 +607,7 @@
     "net_portfolio_change": "Netto-Portfolioveränderung:",
     "event_goal": "Ziel",
     "event_retirement": "Ruhestand",
-    "fi_reference": "FU · {{age}}",
+    "fi_reference": "FU, {{age}}",
     "series_required": "Erforderlich",
     "series_projected": "Prognostiziert"
   },
@@ -789,7 +789,7 @@
       "money_lasts_prompt_fire": "Führen Sie 10k Pfade aus, um zu sehen, wie oft der Plan FU erreicht und bis zum Alter von {{horizonAge}} finanziert bleibt."
     },
     "stress": {
-      "eyebrow_with_count": "Was könnte diesen Plan gefährden? · {{count}} Szenarien",
+      "eyebrow_with_count": "Was könnte diesen Plan gefährden?, {{count}} Szenarien",
       "heading": "Was könnte diesen Plan gefährden?",
       "loading_short": "Stresstests werden geladen.",
       "running": "6 Stress-Szenarien werden gegen Ihren Plan ausgeführt…",

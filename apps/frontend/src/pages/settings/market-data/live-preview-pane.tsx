@@ -98,14 +98,14 @@ function PreviewUrl({ template, values }: { template: string; values: Record<str
 
   if (!template) {
     return (
-      <span className="text-muted-foreground/60 font-mono text-xs italic">
+      <span className="text-muted-foreground/60 text-xs italic">
         {t("settings:market_data_page.enter_url_to_preview")}
       </span>
     );
   }
 
   return (
-    <span className="break-all font-mono text-xs">
+    <span className="break-all text-xs">
       {segments.map((seg, i) =>
         seg.kind === "text" ? (
           <span key={i}>{seg.text}</span>
@@ -113,7 +113,7 @@ function PreviewUrl({ template, values }: { template: string; values: Record<str
           <span
             key={i}
             className={cn(
-              "mx-0.5 inline-flex items-center rounded border px-1 py-0.5 font-mono text-[11px]",
+              "mx-0.5 inline-flex items-center rounded border px-1 py-0.5 text-[11px]",
               seg.value
                 ? "border-primary/30 bg-primary/10 text-primary"
                 : "border-muted-foreground/40 bg-muted text-muted-foreground border-dashed",
@@ -177,7 +177,7 @@ function EmptyResponseState() {
       <div className="space-y-1">
         <p className="text-muted-foreground text-sm">
           {t("settings:market_data_page.empty_response_before")}
-          <span className="bg-muted rounded px-1.5 py-0.5 font-mono text-[11px]">
+          <span className="bg-muted rounded px-1.5 py-0.5 text-[11px]">
             {t("settings:market_data_page.fetch")}
           </span>
           {t("settings:market_data_page.empty_response_after")}
@@ -248,7 +248,7 @@ function HtmlTableResponse({
     <div className="space-y-3">
       {/* Table selector — shown always when html_table, as a legend + switcher */}
       <div className="flex flex-wrap items-center gap-1">
-        <span className="text-muted-foreground mr-1 text-[11px] font-medium uppercase tracking-wide">
+        <span className="text-muted-foreground mr-1 text-[11px] font-medium">
           {t("settings:market_data_page.table")}
         </span>
         {tables.map((tbl, i) => (
@@ -282,7 +282,7 @@ function HtmlTableResponse({
         </span>
       </div>
 
-      <div className="bg-background max-h-[420px] overflow-auto rounded-lg border">
+      <div className="max-h-[420px] overflow-auto">
         <table className="w-full text-xs">
           <thead className="bg-muted/40 sticky top-0">
             <tr>
@@ -316,7 +316,7 @@ function HtmlTableResponse({
             {table.sampleRows.slice(0, 8).map((row, ri) => (
               <tr key={ri} className="border-t">
                 {row.map((cell, ci) => (
-                  <td key={ci} className="text-muted-foreground px-3 py-1.5 font-mono text-[11px]">
+                  <td key={ci} className="text-muted-foreground px-3 py-1.5 text-[11px]">
                     {cell}
                   </td>
                 ))}
@@ -334,7 +334,7 @@ function CsvResponse({ raw, runtime }: { raw: string; runtime: SourceRuntime }) 
   const { headers, rows } = useMemo(() => parseCsv(raw), [raw]);
   if (headers.length === 0) {
     return (
-      <pre className="bg-background max-h-[420px] overflow-auto whitespace-pre-wrap rounded-lg border p-3 font-mono text-xs">
+      <pre className="bg-background max-h-[420px] overflow-auto whitespace-pre-wrap rounded-lg border p-3 text-xs">
         {raw.slice(0, 3000)}
       </pre>
     );
@@ -355,7 +355,7 @@ function CsvResponse({ raw, runtime }: { raw: string; runtime: SourceRuntime }) 
             })
           : t("settings:market_data_page.csv_rows_detected", { count: rows.length })}
       </p>
-      <div className="bg-background max-h-[420px] overflow-auto rounded-lg border">
+      <div className="max-h-[420px] overflow-auto">
         <table className="w-full text-xs">
           <thead className="bg-muted/40 sticky top-0">
             <tr>
@@ -376,7 +376,7 @@ function CsvResponse({ raw, runtime }: { raw: string; runtime: SourceRuntime }) 
             {rows.slice(0, 8).map((row, ri) => (
               <tr key={ri} className="border-t">
                 {headers.map((h) => (
-                  <td key={h} className="text-muted-foreground px-3 py-1.5 font-mono text-[11px]">
+                  <td key={h} className="text-muted-foreground px-3 py-1.5 text-[11px]">
                     {row[h]}
                   </td>
                 ))}
@@ -453,17 +453,17 @@ function HtmlElementsResponse({ runtime }: { runtime: SourceRuntime }) {
             className="bg-background hover:bg-muted/30 group flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-all"
           >
             <div className="min-w-0 flex-1 space-y-1">
-              <code className="bg-muted/60 inline-block max-w-full truncate rounded px-1.5 py-0.5 font-mono text-[11px]">
+              <code className="bg-muted/60 inline-block max-w-full truncate rounded px-1.5 py-0.5 text-[11px]">
                 {el.selector}
               </code>
               {el.label && <p className="text-muted-foreground text-[11px]">{el.label}</p>}
               {el.htmlContext && (
-                <pre className="bg-muted/40 text-muted-foreground/80 mt-1.5 overflow-x-auto rounded p-2 font-mono text-[10px] leading-relaxed">
+                <pre className="bg-muted/40 text-muted-foreground/80 mt-1.5 overflow-x-auto rounded p-2 text-[10px] leading-relaxed">
                   {el.htmlContext}
                 </pre>
               )}
             </div>
-            <span className="shrink-0 pt-0.5 font-mono text-base font-semibold tabular-nums">
+            <span className="shrink-0 pt-0.5 text-base font-medium tabular-nums">
               {formatNumber(el.value)}
             </span>
           </button>
@@ -535,10 +535,8 @@ function ExtractedRow({
   return (
     <div className="flex items-center gap-3 px-3 py-2">
       <span className={cn("h-2 w-2 shrink-0 rounded-sm", color)} />
-      <span className="text-muted-foreground w-16 shrink-0 text-xs font-medium uppercase tracking-wide">
-        {label}
-      </span>
-      <span className="text-foreground min-w-0 flex-1 truncate text-sm font-semibold">
+      <span className="text-muted-foreground w-16 shrink-0 text-xs font-medium">{label}</span>
+      <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
         {display ?? (
           <span className="text-muted-foreground/60 italic">
             {t("settings:market_data_page.not_returned")}
@@ -561,9 +559,7 @@ function TestField({
 }) {
   return (
     <div className={cn("space-y-1", className)}>
-      <Label className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
-        {label}
-      </Label>
+      <Label className="text-muted-foreground text-[11px] font-medium">{label}</Label>
       {children}
     </div>
   );
@@ -610,7 +606,7 @@ function FieldMappingRow({
       />
       <span
         className={cn(
-          "min-w-0 flex-1 truncate font-mono text-xs",
+          "min-w-0 flex-1 truncate text-xs",
           assigned ? "text-foreground" : "text-muted-foreground/70 italic",
         )}
       >
@@ -619,14 +615,14 @@ function FieldMappingRow({
       {required ? (
         <span
           className={cn(
-            "shrink-0 text-[10px] font-medium uppercase tracking-wide",
+            "shrink-0 text-[10px] font-medium",
             assigned ? "text-muted-foreground" : "text-destructive",
           )}
         >
           {t("settings:market_data_page.required")}
         </span>
       ) : (
-        <span className="text-muted-foreground shrink-0 text-[10px] font-medium uppercase tracking-wide">
+        <span className="text-muted-foreground shrink-0 text-[10px] font-medium">
           {t("settings:market_data_page.optional")}
         </span>
       )}
@@ -681,7 +677,7 @@ export function LivePreviewPane({ form, prefix, runtime }: LivePreviewPaneProps)
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-0.5">
-          <h3 className="text-base font-semibold">
+          <h3 className="text-base font-medium">
             {t("settings:market_data_page.live_request_response")}
           </h3>
           <p className="text-muted-foreground text-xs">
@@ -698,7 +694,7 @@ export function LivePreviewPane({ form, prefix, runtime }: LivePreviewPaneProps)
       {/* Request URL preview */}
       <section className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+          <Label className="text-muted-foreground text-[11px] font-medium">
             {t("settings:market_data_page.request_url_preview")}
           </Label>
           <span className="text-muted-foreground text-[11px]">
@@ -707,7 +703,7 @@ export function LivePreviewPane({ form, prefix, runtime }: LivePreviewPaneProps)
               : t("settings:market_data_page.get_latest")}
           </span>
         </div>
-        <div className="bg-background relative min-h-[40px] rounded-lg border px-3 py-2 pr-10">
+        <div className="relative min-h-[40px] px-3 py-2 pr-10">
           <PreviewUrl template={runtime.urlTemplate} values={previewValues} />
           <CopyButton text={runtime.expandedUrl} disabled={!runtime.urlTemplate} />
         </div>
@@ -791,7 +787,7 @@ export function LivePreviewPane({ form, prefix, runtime }: LivePreviewPaneProps)
       {/* Response */}
       <section className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+          <Label className="text-muted-foreground text-[11px] font-medium">
             {t("settings:market_data_page.response")} · {formatLabel}
           </Label>
           {runtime.detectedTables[0] && (
@@ -827,7 +823,7 @@ export function LivePreviewPane({ form, prefix, runtime }: LivePreviewPaneProps)
         ) : format === "csv" && runtime.rawResponse ? (
           <CsvResponse raw={runtime.rawResponse} runtime={runtime} />
         ) : format === "json" && runtime.rawResponse ? (
-          <div className="bg-background max-h-[420px] overflow-auto rounded-lg border">
+          <div className="max-h-[420px] overflow-auto">
             <RawResponseViewer
               rawResponse={runtime.rawResponse}
               format="json"
@@ -835,7 +831,7 @@ export function LivePreviewPane({ form, prefix, runtime }: LivePreviewPaneProps)
             />
           </div>
         ) : runtime.rawResponse ? (
-          <div className="bg-background max-h-[420px] overflow-auto rounded-lg border">
+          <div className="max-h-[420px] overflow-auto">
             <RawResponseViewer rawResponse={runtime.rawResponse} format="html" />
           </div>
         ) : (
@@ -846,11 +842,11 @@ export function LivePreviewPane({ form, prefix, runtime }: LivePreviewPaneProps)
       {/* Extraction preview — verifies the current mapping against the response */}
       {runtime.testResult && (
         <section className="space-y-2">
-          <Label className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+          <Label className="text-muted-foreground text-[11px] font-medium">
             {t("settings:market_data_page.extracted")}
           </Label>
           {runtime.testResult.success ? (
-            <div className="border-success/30 bg-success/5 divide-success/20 divide-y rounded-lg border">
+            <div className="border-success/30 bg-success/5 divide-success/20 divide-y">
               <ExtractedRow
                 color="bg-emerald-500"
                 label={t("settings:market_data_page.field_price")}
@@ -873,7 +869,7 @@ export function LivePreviewPane({ form, prefix, runtime }: LivePreviewPaneProps)
                   label={t("settings:market_data_page.field_as_of")}
                   display={
                     runtime.testResult.date ? (
-                      <span className="font-mono text-xs">{runtime.testResult.date}</span>
+                      <span className="text-xs">{runtime.testResult.date}</span>
                     ) : null
                   }
                 />
@@ -936,7 +932,7 @@ export function LivePreviewPane({ form, prefix, runtime }: LivePreviewPaneProps)
                   label={t("common:currency")}
                   display={
                     runtime.testResult.currency ? (
-                      <span className="font-mono text-xs">{runtime.testResult.currency}</span>
+                      <span className="text-xs">{runtime.testResult.currency}</span>
                     ) : null
                   }
                 />
@@ -956,7 +952,7 @@ export function LivePreviewPane({ form, prefix, runtime }: LivePreviewPaneProps)
       {/* Field mapping */}
       <section className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+          <Label className="text-muted-foreground text-[11px] font-medium">
             {isHistorical
               ? t("settings:market_data_page.field_mapping_historical")
               : t("settings:market_data_page.field_mapping_latest")}

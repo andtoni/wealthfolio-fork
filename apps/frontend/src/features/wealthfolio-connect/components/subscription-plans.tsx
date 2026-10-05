@@ -55,7 +55,7 @@ function useSubscriptionPlans(enabled: boolean) {
 
 function PlanCardSkeleton() {
   return (
-    <div className="border-border bg-muted/30 flex flex-col rounded-lg border p-4">
+    <div className="flex flex-col p-4">
       {/* Title and description */}
       <div className="mb-3">
         <Skeleton className="h-5 w-28" />
@@ -129,13 +129,13 @@ function PlanCard({ plan, billingPeriod, isDefault, isComingSoon }: PlanCardProp
       )}
 
       <div className="mb-3">
-        <h3 className="text-base font-semibold">{plan.name}</h3>
+        <h3 className="text-base font-medium">{plan.name}</h3>
         <p className="text-muted-foreground mt-0.5 text-xs">{plan.tagline ?? plan.description}</p>
       </div>
 
       <div className="mb-4">
         <div className="flex items-baseline gap-1">
-          <span className="text-2xl font-bold">{formatPrice(priceAmount)}</span>
+          <span className="text-2xl font-medium">{formatPrice(priceAmount)}</span>
           <span className="text-muted-foreground text-xs">
             /
             {billingPeriod === "monthly"

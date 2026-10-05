@@ -70,7 +70,7 @@ export function AccountsCard() {
     <Card className="rounded-lg">
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 p-6 pb-4">
         <div className="min-w-0 space-y-1">
-          <CardTitle className="text-base font-semibold tracking-tight">
+          <CardTitle className="text-base font-medium tracking-tight">
             {t("settings:spending.accounts.title")}
           </CardTitle>
           <CardDescription className="text-xs">
@@ -80,7 +80,7 @@ export function AccountsCard() {
       </CardHeader>
       <CardContent className="p-6 pt-0">
         {spendingAccounts.length === 0 ? (
-          <div className="text-muted-foreground rounded-md border border-dashed py-8 text-center text-xs">
+          <div className="text-muted-foreground py-8 text-center text-[15px]">
             {t("settings:spending.accounts.empty")}
           </div>
         ) : (
@@ -96,35 +96,31 @@ export function AccountsCard() {
                 <div
                   key={account.id}
                   className={cn(
-                    "grid grid-cols-[auto_1fr_auto] items-center gap-4 rounded-md border px-4 py-3.5 transition-colors",
-                    tracked
-                      ? "bg-muted/30 border-border"
-                      : "border-border border-dashed bg-transparent opacity-80",
+                    "grid grid-cols-[auto_1fr_auto] items-center gap-3 py-2.5",
+                    !tracked && "opacity-70",
                   )}
                 >
                   <div
                     className={cn(
-                      "flex h-8 w-8 items-center justify-center rounded-md border",
-                      tracked
-                        ? "bg-background border-border text-foreground"
-                        : "border-border/60 text-muted-foreground bg-transparent",
+                      "bg-foreground/[0.07] flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
+                      !tracked && "text-muted-foreground",
                     )}
                   >
                     <TypeIcon size={18} weight="duotone" />
                   </div>
                   <div className="min-w-0">
                     <div className="flex min-w-0 items-center gap-2">
-                      <span className="truncate text-sm font-medium">{account.name}</span>
+                      <span className="truncate text-[17px] leading-snug">{account.name}</span>
                       {!account.isActive && (
-                        <span className="bg-muted text-muted-foreground shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider">
+                        <span className="text-muted-foreground shrink-0 text-[13px]">
                           {t("settings:spending.accounts.inactive_badge")}
                         </span>
                       )}
                     </div>
-                    <div className="text-muted-foreground mt-0.5 text-xs">
-                      {typeLabel} · {account.currency}
-                      {account.group ? ` · ${account.group}` : ""}
-                      {!tracked && ` · ${t("settings:spending.accounts.not_tracked")}`}
+                    <div className="text-muted-foreground text-[15px] leading-snug">
+                      {typeLabel}, {account.currency}
+                      {account.group ? `, ${account.group}` : ""}
+                      {!tracked && `, ${t("settings:spending.accounts.not_tracked")}`}
                     </div>
                   </div>
                   <Switch

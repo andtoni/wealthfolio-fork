@@ -28,9 +28,8 @@ import { buildHeadline, type HeadlineFragment, type HeadlineModel } from "../../
 import { UNCATEGORIZED_CATEGORY_ID } from "../../../lib/insight-projection";
 import { formatPercentValue } from "./format";
 
-const CARD_CLASS = "border-border/60 bg-card/40 rounded-2xl border p-5 backdrop-blur-xl";
-const LABEL_CLASS =
-  "text-muted-foreground/70 text-[10px] font-semibold uppercase tracking-[0.12em]";
+const CARD_CLASS = "";
+const LABEL_CLASS = "text-muted-foreground/70 text-xs";
 
 const SPARK_MARGIN = { top: 2, right: 0, left: 0, bottom: 0 };
 
@@ -130,7 +129,7 @@ export function WhatChangedStage({
       />
       {!isLoading && movers.length > 0 && (
         <div>
-          <h3 className="text-foreground mb-4 text-base font-semibold tracking-tight">
+          <h3 className="text-foreground mb-4 text-xl font-medium tracking-tight">
             {t("spending:whatChanged.categoryDetails")}
           </h3>
           <ComparisonTable
@@ -298,7 +297,6 @@ function HeadlineSummaryLine({
     <div className="border-border/40 mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-t pt-3 text-sm">
       {parts.map((p, i) => (
         <span key={i} className="flex items-center gap-3">
-          {i > 0 && <span className="text-muted-foreground/40">·</span>}
           {p}
         </span>
       ))}
@@ -415,7 +413,7 @@ const CategoryTrendsSection: FC<CategoryTrendsSectionProps> = ({
   return (
     <div>
       <header className="mb-4">
-        <h3 className="text-foreground text-base font-semibold tracking-tight">
+        <h3 className="text-foreground text-xl font-medium tracking-tight">
           {t("spending:whatChanged.categoryTrends")}
         </h3>
       </header>
@@ -623,7 +621,7 @@ const SparklineRow = memo(function SparklineRow({
           : undefined
       }
       className={cn(
-        "border-border/60 bg-card/50 flex flex-col gap-1.5 rounded-xl border px-4 pb-4 pt-3",
+        "bg-card/50 flex flex-col gap-1.5 px-4 pb-4 pt-3",
         clickable && "hover:border-border/90 hover:bg-card/70 cursor-pointer transition-colors",
       )}
       style={{ backgroundImage: `linear-gradient(to bottom, ${tintBg}, transparent 70%)` }}
@@ -641,10 +639,10 @@ const SparklineRow = memo(function SparklineRow({
         {pill && (
           <span
             className={cn(
-              "rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums",
-              pill.tone === "up" && "bg-destructive/10 text-destructive",
-              pill.tone === "down" && "bg-success/15 text-success",
-              pill.tone === "neutral" && "text-muted-foreground/80 bg-muted/40",
+              "text-[13px] tabular-nums",
+              pill.tone === "up" && "text-destructive",
+              pill.tone === "down" && "text-success",
+              pill.tone === "neutral" && "text-muted-foreground/80",
             )}
           >
             {pill.label}
@@ -701,10 +699,10 @@ function ComparisonTable({
   const hidePct = periodState.kind === "no_prior_period";
 
   return (
-    <div className="border-border/60 bg-card/40 overflow-x-auto rounded-2xl border backdrop-blur-xl">
+    <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-border/40 text-muted-foreground/70 border-b text-[10px] font-semibold uppercase tracking-[0.12em]">
+          <tr className="border-border/40 text-muted-foreground/70 border-b text-xs">
             <th className="px-3 py-3 text-left md:px-4">{t("spending:filters.category")}</th>
             <th className="px-2 py-3 text-right md:px-3">{labels.current}</th>
             <th className="px-2 py-3 text-right md:px-3">{labels.prior}</th>
@@ -844,8 +842,8 @@ function buildPeriodLabels(
       current,
       prior,
       combined: t("spending:whatChanged.combinedVs", {
-        current: current.toUpperCase(),
-        prior: prior.toUpperCase(),
+        current: current,
+        prior: prior,
       }),
     };
   }
@@ -859,8 +857,8 @@ function buildPeriodLabels(
       current,
       prior,
       combined: t("spending:whatChanged.combinedVs", {
-        current: current.toUpperCase(),
-        prior: prior.toUpperCase(),
+        current: current,
+        prior: prior,
       }),
     };
   }

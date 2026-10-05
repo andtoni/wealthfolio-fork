@@ -21,6 +21,11 @@ import { cn } from "@/lib/utils";
 
 import {
   AnimatedToggleGroup,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
   Icons,
   MonthYearPicker,
   Popover,
@@ -149,6 +154,74 @@ export function SpendingPeriodSelector({
         </div>
       </div>
     </div>
+  );
+}
+
+/** The period as one menu: the label it wraps is the trigger. */
+export function SpendingPeriodMenu({
+  value,
+  onValueChange,
+  customMonth,
+  maxMonth,
+  onCustomMonthChange,
+  children,
+}: Omit<SpendingPeriodSelectorProps, "isLoading" | "className"> & { children: ReactNode }) {
+  const { t } = useTranslation();
+  const [monthOpen, setMonthOpen] = useState(false);
+  const names: Record<ReportsPeriod, string> = {
+    MTD: t("spending:period.currentPeriod"),
+    LAST_MONTH: t("spending:period.lastMonth"),
+    "3M": "3M",
+    "6M": "6M",
+    YTD: "YTD",
+    "1Y": "1Y",
+  };
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="text-muted-foreground inline-flex items-center gap-1 text-sm"
+            aria-label={t("spending:period.pickMonth")}
+          >
+            <span>{children}</span>
+            <Icons.ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          {REPORTS_PERIODS.map((period) => (
+            <DropdownMenuItem key={period} onClick={() => onValueChange(period)}>
+              <span className={cn(!customMonth && value === period && "font-medium")}>
+                {names[period]}
+              </span>
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => setMonthOpen(true)}>
+            {customMonth ? compactMonthLabel(customMonth) : t("spending:period.pickMonth")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Sheet open={monthOpen} onOpenChange={setMonthOpen}>
+        <SheetContent side="bottom" className="rounded-t-4xl mx-1 p-0">
+          <SheetHeader className="border-border border-b px-6 py-4">
+            <SheetTitle>{t("spending:period.selectMonth")}</SheetTitle>
+          </SheetHeader>
+          <div className="px-5 py-5 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)]">
+            <MonthYearPicker
+              value={customMonth ?? maxMonth}
+              maxDate={maxMonth}
+              className="w-full max-w-none p-0"
+              onChange={(monthKey) => {
+                onCustomMonthChange(monthKey);
+                setMonthOpen(false);
+              }}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
 

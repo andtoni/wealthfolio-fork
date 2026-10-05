@@ -31,7 +31,7 @@ import {
 import { Input } from "@wealthfolio/ui/components/ui/input";
 import { Label } from "@wealthfolio/ui/components/ui/label";
 import { Textarea } from "@wealthfolio/ui/components/ui/textarea";
-import { Button, Checkbox, EmptyPlaceholder, Icons, Separator, Skeleton } from "@wealthfolio/ui";
+import { Button, Checkbox, EmptyPlaceholder, Icons, Skeleton } from "@wealthfolio/ui";
 import { SettingsHeader } from "../settings-header";
 
 export default function PortfoliosPage() {
@@ -98,7 +98,6 @@ export default function PortfoliosPage() {
             </Button>
           </>
         </SettingsHeader>
-        <Separator />
 
         {portfolios.length === 0 ? (
           <EmptyPlaceholder>
@@ -113,7 +112,7 @@ export default function PortfoliosPage() {
             </Button>
           </EmptyPlaceholder>
         ) : (
-          <div className="divide-border bg-card divide-y rounded-md border">
+          <div className="">
             {portfolios.map((p) => {
               const missingAccountCount = p.accountIds.filter(
                 (id) => !existingAccountIds.has(id),
@@ -130,7 +129,7 @@ export default function PortfoliosPage() {
                     </Avatar>
 
                     <div className="grid gap-1">
-                      <div className="flex items-center gap-2 font-semibold">
+                      <div className="flex items-center gap-2 font-medium">
                         <span>{p.name}</span>
                         {missingAccountCount > 0 && (
                           <Icons.AlertTriangle
@@ -167,7 +166,7 @@ export default function PortfoliosPage() {
 
                   <div className="flex items-center space-x-2">
                     <DropdownMenu>
-                      <DropdownMenuTrigger className="hover:bg-muted flex h-8 w-8 items-center justify-center rounded-md border transition-colors">
+                      <DropdownMenuTrigger className="hover:bg-foreground/5 text-muted-foreground flex h-8 w-8 items-center justify-center rounded-full transition-colors">
                         <Icons.MoreVertical className="h-4 w-4" />
                         <span className="sr-only">{t("settings:portfolios.operations_open")}</span>
                       </DropdownMenuTrigger>

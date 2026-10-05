@@ -48,7 +48,7 @@ export function RetirementDashboardSkeleton() {
 
           {/* Milestone strip */}
           <Card className="p-0">
-            <div className="grid grid-cols-2 divide-x divide-y sm:grid-cols-4 sm:divide-y-0">
+            <div className="grid grid-cols-2 sm:grid-cols-4">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="space-y-2 p-4">
                   <Skeleton className="h-3 w-16 rounded" />

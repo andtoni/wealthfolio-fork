@@ -357,25 +357,25 @@ export function HoldingsConfirmStep() {
 
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               <div className="bg-muted/30 rounded-lg p-3 text-center">
-                <div className="text-primary text-2xl font-bold">{snapshots.length}</div>
+                <div className="text-primary text-2xl font-medium">{snapshots.length}</div>
                 <div className="text-muted-foreground text-xs">
                   {t("activity:import.holdings.snapshots")}
                 </div>
               </div>
               <div className="bg-muted/30 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold">{totalPositions}</div>
+                <div className="text-2xl font-medium">{totalPositions}</div>
                 <div className="text-muted-foreground text-xs">
                   {t("activity:import.holdings.positions")}
                 </div>
               </div>
               <div className="bg-muted/30 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold">{totalCashEntries}</div>
+                <div className="text-2xl font-medium">{totalCashEntries}</div>
                 <div className="text-muted-foreground text-xs">
                   {t("activity:import.holdings.cashBalances")}
                 </div>
               </div>
               <div className="bg-muted/30 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold">{parsedRows.length}</div>
+                <div className="text-2xl font-medium">{parsedRows.length}</div>
                 <div className="text-muted-foreground text-xs">
                   {t("activity:import.holdings.csvRows")}
                 </div>

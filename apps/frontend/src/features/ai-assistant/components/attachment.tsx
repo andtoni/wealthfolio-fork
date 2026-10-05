@@ -188,7 +188,7 @@ const ComposerFileAttachment: FC = () => {
       <span className="aui-attachment-file-chip-name min-w-0 flex-1 truncate text-sm font-medium">
         {name}
       </span>
-      <span className="aui-attachment-file-chip-extension text-muted-foreground shrink-0 text-[10px] font-semibold uppercase leading-none">
+      <span className="aui-attachment-file-chip-extension text-muted-foreground shrink-0 text-[10px] font-medium uppercase leading-none">
         {extension}
       </span>
     </div>
@@ -306,7 +306,7 @@ export const ComposerAddAttachment: FC = () => {
         side="bottom"
         variant="ghost"
         size="icon"
-        className="aui-composer-add-attachment hover:bg-muted-foreground/15 dark:border-muted-foreground/15 dark:hover:bg-muted-foreground/30 size-[34px] rounded-full p-1 text-xs font-semibold"
+        className="aui-composer-add-attachment hover:bg-muted-foreground/15 dark:border-muted-foreground/15 dark:hover:bg-muted-foreground/30 size-[34px] rounded-full p-1 text-xs font-medium"
         aria-label={t("ai:attachment.addAttachment")}
       >
         <Icons.Plus className="aui-attachment-add-icon size-5 stroke-[1.5px]" />

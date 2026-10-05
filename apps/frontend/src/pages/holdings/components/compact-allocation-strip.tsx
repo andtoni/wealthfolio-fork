@@ -168,9 +168,7 @@ export function CompactAllocationStrip({
   if (processedCategories.length === 0) {
     return (
       <Card className="p-3">
-        <p className="text-muted-foreground text-sm font-medium uppercase tracking-wider">
-          {title}
-        </p>
+        <p className="text-muted-foreground text-sm font-medium">{title}</p>
         <p className="text-muted-foreground mt-2 text-xs">{t("holdings:no_data")}</p>
       </Card>
     );
@@ -180,9 +178,7 @@ export function CompactAllocationStrip({
     <Card className="p-3">
       <TooltipProvider>
         {/* Title */}
-        <p className="text-muted-foreground mb-2 text-sm font-medium uppercase tracking-wider">
-          {title}
-        </p>
+        <p className="text-muted-foreground mb-2 text-sm font-medium">{title}</p>
 
         {/* Stacked bar - prominent height with 1px separators */}
         <div className="mb-2 flex h-5 w-full overflow-hidden rounded">
@@ -218,9 +214,7 @@ export function CompactAllocationStrip({
                 {!isEmpty && (
                   <TooltipContent side="top" align="center">
                     <div className="text-center">
-                      <span className="text-muted-foreground text-[0.70rem] uppercase">
-                        {category.name}
-                      </span>
+                      <span className="text-muted-foreground text-[0.70rem]">{category.name}</span>
                       <div className="font-medium">{formatPercent(category.percent / 100)}</div>
                       <div className="text-muted-foreground text-xs">
                         <PrivacyAmount value={category.value} currency={baseCurrency} />

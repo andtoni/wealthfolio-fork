@@ -198,7 +198,7 @@ export function TargetWeightEditor({
     <div className="space-y-1 overflow-x-auto">
       <div className="min-w-[58rem]">
         {/* Column headers */}
-        <div className="text-muted-foreground grid grid-cols-[minmax(8rem,1fr)_minmax(12rem,2fr)_4.25rem_5rem_6rem_28px] gap-4 border-b px-1 pb-2 text-[10px] font-medium uppercase tracking-wider">
+        <div className="text-muted-foreground grid grid-cols-[minmax(8rem,1fr)_minmax(12rem,2fr)_4.25rem_5rem_6rem_28px] gap-4 border-b px-1 pb-2 text-[10px] font-medium">
           <span>{resolvedCategoryLabel}</span>
           <span>{t("allocation:editor.todayVsTarget")}</span>
           <span className="text-right">{t("allocation:editor.current")}</span>
@@ -228,9 +228,9 @@ export function TargetWeightEditor({
                 </div>
 
                 {/* Today vs target */}
-                <div className="bg-muted/60 relative h-2 rounded-full">
+                <div className="bg-foreground/10 relative h-2.5 rounded-[4px]">
                   <div
-                    className="h-full rounded-full"
+                    className="h-full rounded-[4px]"
                     style={{
                       width: `${Math.min(100, Math.max(0, row.currentPct))}%`,
                       background: row.color,
@@ -347,7 +347,7 @@ export function TargetWeightEditor({
             <span />
             <span
               className={cn(
-                "text-right text-[14px] font-semibold tabular-nums",
+                "text-right text-[14px] font-medium tabular-nums",
                 isValid ? "text-green-700 dark:text-green-400" : "text-destructive",
               )}
             >

@@ -81,7 +81,7 @@ const OnboardingPage = () => {
           <img
             alt="Wealthfolio"
             className="mb-3 h-16 w-16 sm:h-20 sm:w-20"
-            src="/logo-vantage.png"
+            src="/brand-mark-v5.png"
           />
 
           {/* Progress indicators */}

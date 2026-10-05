@@ -228,7 +228,7 @@ export const EventsTimelineCard: FC<EventsTimelineCardProps> = ({
       {/* HEADER */}
       <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="text-foreground text-base font-semibold tracking-tight">
+          <div className="text-foreground text-xl font-medium tracking-tight">
             {tr("spending:eventsCard.title")}
           </div>
           <div className="text-muted-foreground/80 mt-0.5 text-[11px]">
@@ -242,13 +242,13 @@ export const EventsTimelineCard: FC<EventsTimelineCardProps> = ({
           {usedTypes.map((t) => (
             <span
               key={t.id}
-              className="text-muted-foreground/80 inline-flex items-center gap-1.5 text-[10px] tracking-wider"
+              className="text-muted-foreground/80 inline-flex items-center gap-1.5 text-[10px]"
             >
               <span
                 className="inline-block h-2.5 w-2.5 rounded-[2px]"
                 style={{ background: t.fill, border: `1.5px solid ${t.stroke}` }}
               />
-              {t.name.toUpperCase()}
+              {t.name}
             </span>
           ))}
           <div className="ml-1 inline-flex items-center gap-1">
@@ -314,7 +314,7 @@ export const EventsTimelineCard: FC<EventsTimelineCardProps> = ({
           {/* Month gridlines + labels */}
           {months.map((m, i) => {
             const x = padL + m.idx * dayW;
-            const showYear = m.label === "JAN" || i === 0;
+            const showYear = m.label === "Jan" || i === 0;
             return (
               <g key={i}>
                 <line
@@ -433,7 +433,7 @@ export const EventsTimelineCard: FC<EventsTimelineCardProps> = ({
             const days = Math.max(1, inclusiveDays(start, end));
             const expected = computed.normalPace * days;
             const lift = ev.totalSpending - expected;
-            const kindLabel = (ev.eventTypeName ?? "").toUpperCase();
+            const kindLabel = ev.eventTypeName ?? "";
             const labelRowIdx = labelRowByEventId[ev.eventId] ?? 0;
             const labelYOffset = -4 - labelRowIdx * 12;
             const isWide = w > WIDE_THRESHOLD;
@@ -453,10 +453,8 @@ export const EventsTimelineCard: FC<EventsTimelineCardProps> = ({
                   width={w}
                   height={bandsH - 4}
                   fill={c.fill}
-                  stroke={c.stroke}
-                  strokeWidth={isSel ? 2 : 1}
-                  rx={4}
-                  opacity={isSel ? 1 : 0.85}
+                  rx={6}
+                  opacity={isSel ? 1 : 0.7}
                 />
                 <rect
                   x={x1}
@@ -474,7 +472,7 @@ export const EventsTimelineCard: FC<EventsTimelineCardProps> = ({
                       y={bandY + 16}
                       fontSize={11}
                       className="fill-foreground"
-                      fontWeight={isSel ? 700 : 600}
+                      fontWeight={500}
                     >
                       {ev.eventName}
                     </text>
@@ -482,14 +480,14 @@ export const EventsTimelineCard: FC<EventsTimelineCardProps> = ({
                       x={x1 + 8}
                       y={bandY + 32}
                       fontSize={9.5}
-                      fontWeight={600}
+                      fontWeight={500}
                       className={lift >= 0 ? "fill-destructive" : "fill-success"}
                     >
                       {lift >= 0 ? "+" : "−"}
                       {isBalanceHidden ? "••••" : formatCompactAmount(Math.abs(lift), currency)}
                     </text>
                     <text x={x1 + 8} y={bandY + 46} fontSize={9} className="fill-muted-foreground">
-                      {days}D · {kindLabel}
+                      {days}D, {kindLabel}
                     </text>
                   </>
                 ) : (
@@ -509,7 +507,7 @@ export const EventsTimelineCard: FC<EventsTimelineCardProps> = ({
                       x={x1 + w / 2}
                       y={bandY + labelYOffset}
                       fontSize={10}
-                      fontWeight={isSel ? 700 : 500}
+                      fontWeight={500}
                       textAnchor="middle"
                       className={isSel ? "fill-foreground" : "fill-foreground/80"}
                     >
@@ -533,7 +531,7 @@ export const EventsTimelineCard: FC<EventsTimelineCardProps> = ({
                 strokeWidth={1.5}
               />
               <circle cx={todayX} cy={4} r={3} fill="var(--event-today)" />
-              <text x={todayX + 6} y={14} fontSize={9.5} fontWeight={600} fill="var(--event-today)">
+              <text x={todayX + 6} y={14} fontSize={9.5} fontWeight={500} fill="var(--event-today)">
                 {tr("spending:timeline.today")}
               </text>
             </>
@@ -550,7 +548,7 @@ export const EventsTimelineCard: FC<EventsTimelineCardProps> = ({
             textAnchor="end"
             className="fill-muted-foreground"
           >
-            {formatBookendDate(rangeEnd)} ·{" "}
+            {formatBookendDate(rangeEnd)},{" "}
             {tr("spending:timeline.daysUpper", { count: periodDays })}
           </text>
           <text
@@ -566,9 +564,9 @@ export const EventsTimelineCard: FC<EventsTimelineCardProps> = ({
       </div>
 
       {/* Summary strip */}
-      <div className="border-border/40 mt-3 grid grid-cols-2 gap-x-0 gap-y-3 border-t pt-3 md:grid-cols-4">
+      <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-4">
         <SummaryCell label={tr("spending:timeline.acrossEvents", { count: events.length })}>
-          <div className="text-foreground text-sm font-semibold tabular-nums tracking-tight">
+          <div className="text-foreground text-sm font-medium tabular-nums tracking-tight">
             <PrivacyAmount value={computed.totalSpent} currency={currency} />
           </div>
           <div className="text-muted-foreground/80 mt-0.5 text-[10px]">
@@ -581,7 +579,7 @@ export const EventsTimelineCard: FC<EventsTimelineCardProps> = ({
         <SummaryCell label={tr("spending:timeline.combinedLift")} divided>
           <div
             className={cn(
-              "text-sm font-semibold tabular-nums tracking-tight",
+              "text-sm font-medium tabular-nums tracking-tight",
               computed.lift >= 0 ? "text-destructive" : "text-success",
             )}
           >
@@ -594,7 +592,7 @@ export const EventsTimelineCard: FC<EventsTimelineCardProps> = ({
         </SummaryCell>
         {biggest && (
           <SummaryCell label={tr("spending:timeline.biggestEvent")} divided>
-            <div className="text-foreground truncate text-sm font-semibold tracking-tight">
+            <div className="text-foreground truncate text-sm font-medium tracking-tight">
               {biggest.eventName}
             </div>
             <div className="text-muted-foreground/80 mt-0.5 text-[10px] tabular-nums">
@@ -612,7 +610,7 @@ export const EventsTimelineCard: FC<EventsTimelineCardProps> = ({
                   border: `1.5px solid ${getEventColors(selected).stroke}`,
                 }}
               />
-              <span className="text-foreground truncate text-sm font-semibold tracking-tight">
+              <span className="text-foreground truncate text-sm font-medium tracking-tight">
                 {selected.eventName}
               </span>
             </div>
@@ -620,8 +618,8 @@ export const EventsTimelineCard: FC<EventsTimelineCardProps> = ({
               {formatSelectedRange(
                 parseLocalDate(selected.startDate),
                 parseLocalDate(selected.endDate),
-              )}{" "}
-              ·{" "}
+              )}
+              ,{" "}
               {inclusiveDays(parseLocalDate(selected.startDate), parseLocalDate(selected.endDate))}D
             </div>
           </SummaryCell>
@@ -641,7 +639,7 @@ function SummaryCell({
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn(divided && "md:border-border/40 md:border-l md:pl-4")}>
+    <div className={cn(divided && "")}>
       <div className={LABEL_CLASS}>{label}</div>
       <div className="mt-1">{children}</div>
     </div>

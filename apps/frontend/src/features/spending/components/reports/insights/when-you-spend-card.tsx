@@ -15,8 +15,8 @@ import { cn, formatAmount } from "@/lib/utils";
 import { getActivitySpendingAmount } from "../../../lib/constants";
 import { createZonedDayHourFormatter, type ZonedDayHour } from "../../../lib/timezone";
 
-const CARD_CLASS = "border-border/60 bg-card/40 rounded-2xl border p-5 backdrop-blur-xl";
-const LABEL_CLASS = "text-muted-foreground/70 text-[10px] font-normal uppercase tracking-[0.12em]";
+const CARD_CLASS = "";
+const LABEL_CLASS = "text-muted-foreground/70 text-xs font-normal";
 
 const DAY_NAME_KEYS = [
   "spending:dayOfWeek.mon",
@@ -59,7 +59,7 @@ export const WhenYouSpendCard: FC<WhenYouSpendCardProps> = ({
     return (
       <div className={CARD_CLASS}>
         <header className="mb-3">
-          <h3 className="text-foreground text-base font-semibold tracking-tight">
+          <h3 className="text-foreground text-xl font-medium tracking-tight">
             {t("spending:whenYouSpend.title")}
           </h3>
           <p className="text-muted-foreground text-xs">{t("spending:whenYouSpend.subtitle")}</p>
@@ -75,7 +75,7 @@ export const WhenYouSpendCard: FC<WhenYouSpendCardProps> = ({
     <div className={CARD_CLASS}>
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <h3 className="text-foreground text-base font-semibold tracking-tight">
+          <h3 className="text-foreground text-xl font-medium tracking-tight">
             {t("spending:whenYouSpend.title")}
           </h3>
           <p className="text-muted-foreground text-xs">
@@ -123,7 +123,7 @@ export const WhenYouSpendCard: FC<WhenYouSpendCardProps> = ({
         })}
       </div>
 
-      <div className="border-border/40 mt-4 flex items-center justify-between border-t pt-3 text-[11px]">
+      <div className="mt-4 flex items-center justify-between text-[13px]">
         {!isPhone && (
           <span className="text-muted-foreground/70">
             {t("spending:whenYouSpend.legendIntro")}{" "}
@@ -182,7 +182,7 @@ function Row({
             hoursPerCell === 1
               ? formatHour(startHour)
               : `${formatHour(startHour)}–${formatHour(endHour + 1)}`;
-          const label = `${day} ${range} · ${
+          const label = `${day} ${range}, ${
             amount > 0 ? (isBalanceHidden ? "••••" : formatAmount(amount, currency)) : noSpendLabel
           }`;
           if (!onCellClick) {

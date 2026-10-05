@@ -50,7 +50,7 @@ function JsonTreeViewer({
   }
 
   return (
-    <pre className="p-3 font-mono text-[12px] leading-relaxed">
+    <pre className="p-3 text-[12px] leading-relaxed">
       <JsonValue value={parsed.value} path="$" depth={0} onSelect={onPathClick} />
     </pre>
   );

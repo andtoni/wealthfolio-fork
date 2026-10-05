@@ -248,10 +248,10 @@ export default function SaveUpDetailPage({ goal, plan, overview }: Props) {
         : t("goals:save_up.monthly_cushion");
   const monthlyDifferenceClass =
     monthlyDifference === null || Math.abs(monthlyDifference) < 0.5
-      ? "text-foreground font-semibold"
+      ? "text-foreground font-medium"
       : monthlyDifference > 0
-        ? "text-destructive font-semibold"
-        : "text-success font-semibold";
+        ? "text-destructive font-medium"
+        : "text-success font-medium";
   const gapMetricLabel =
     projectedGap === null
       ? t("goals:save_up.remaining")
@@ -275,16 +275,14 @@ export default function SaveUpDetailPage({ goal, plan, overview }: Props) {
             <div className="p-6">
               <div className="min-w-0">
                 <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${status.badgeClass}`}
-                  >
+                  <span className={`rounded-md px-1.5 py-0.5 text-xs ${status.badgeClass}`}>
                     {status.label}
                   </span>
-                  <span className="text-muted-foreground text-xs font-medium uppercase tracking-[0.15em]">
+                  <span className="text-muted-foreground text-xs font-medium">
                     {t("goals:save_up.savings_plan")}
                   </span>
                 </div>
-                <h2 className="font-serif text-2xl leading-tight tracking-tight">
+                <h2 className="text-2xl leading-tight tracking-tight">
                   {status.headlinePrefix}{" "}
                   <span className={status.textClass}>{status.headlineEmphasis}</span>
                   {status.headlineSuffix}
@@ -295,7 +293,7 @@ export default function SaveUpDetailPage({ goal, plan, overview }: Props) {
                     value={monthlyContribution}
                     currency={currency}
                     isHidden={isBalanceHidden}
-                    className="text-foreground font-semibold"
+                    className="text-foreground font-medium"
                   />
                   {t("goals:save_up.summary_per_month")}{" "}
                   {projection && targetDateLabel && projectedGap !== null ? (
@@ -306,7 +304,7 @@ export default function SaveUpDetailPage({ goal, plan, overview }: Props) {
                           value={projectedGap}
                           currency={currency}
                           isHidden={isBalanceHidden}
-                          className="text-success font-semibold"
+                          className="text-success font-medium"
                         />{" "}
                         {t("goals:save_up.summary_above_target", { date: targetDateLabel })}
                       </>
@@ -317,7 +315,7 @@ export default function SaveUpDetailPage({ goal, plan, overview }: Props) {
                           value={Math.abs(projectedGap)}
                           currency={currency}
                           isHidden={isBalanceHidden}
-                          className="text-destructive font-semibold"
+                          className="text-destructive font-medium"
                         />{" "}
                         {t("goals:save_up.summary_short_by", { date: targetDateLabel })}
                       </>
@@ -326,7 +324,7 @@ export default function SaveUpDetailPage({ goal, plan, overview }: Props) {
                     t("goals:save_up.summary_set_target")
                   )}
                 </p>
-                <div className="bg-muted mt-5 h-2 overflow-hidden rounded-full">
+                <div className="bg-foreground/10 mt-5 h-2.5 overflow-hidden rounded-[4px]">
                   <div
                     className={`h-full rounded-full ${status.progressClass}`}
                     style={{ width: `${Math.min(displayProgress * 100, 100)}%` }}
@@ -334,7 +332,7 @@ export default function SaveUpDetailPage({ goal, plan, overview }: Props) {
                 </div>
               </div>
             </div>
-            <div className="border-border grid grid-cols-2 divide-x divide-y border-t md:grid-cols-4 md:divide-y-0">
+            <div className="grid grid-cols-2 md:grid-cols-4">
               <HeroMetric label={t("goals:save_up.saved")}>
                 <AmountDisplay
                   value={currentValue}
@@ -411,7 +409,6 @@ export default function SaveUpDetailPage({ goal, plan, overview }: Props) {
       {/* ── Sidebar ── */}
       <div className="space-y-6 lg:sticky lg:top-6 lg:col-span-1 lg:self-start">
         <SidebarCard
-          kicker={t("goals:save_up.plan_kicker")}
           title={t("goals:save_up.savings_inputs")}
           editing={isEditingPlan}
           onEdit={() => setIsEditingPlan(true)}
@@ -421,7 +418,7 @@ export default function SaveUpDetailPage({ goal, plan, overview }: Props) {
           pending={actionPending}
           pendingLabel={actionPendingLabel}
           readContent={
-            <div className="divide-border divide-y">
+            <div className="">
               <SidebarRow label={t("goals:save_up.field_target_amount")}>
                 <AmountDisplay
                   value={targetAmount}
@@ -546,7 +543,7 @@ function getSaveUpStatus(
       headlinePrefix: t("goals:save_up.headline_setup_prefix"),
       headlineEmphasis: t("goals:save_up.headline_setup_emphasis"),
       headlineSuffix: t("goals:save_up.headline_setup_suffix", { title: goalTitle }),
-      badgeClass: "bg-muted text-muted-foreground",
+      badgeClass: "bg-foreground/[0.07] text-muted-foreground",
       textClass: "text-muted-foreground",
       progressClass: "bg-muted-foreground/40",
     };
@@ -558,7 +555,7 @@ function getSaveUpStatus(
       headlinePrefix: t("goals:save_up.headline_reached_prefix"),
       headlineEmphasis: t("goals:save_up.headline_reached_emphasis"),
       headlineSuffix: t("goals:save_up.headline_reached_suffix", { title: goalTitle }),
-      badgeClass: "bg-success text-success-foreground",
+      badgeClass: "bg-success/15 text-success",
       textClass: "text-success",
       progressClass: "bg-success",
     };
@@ -573,7 +570,7 @@ function getSaveUpStatus(
         title: goalTitle,
         date: dateLabel,
       }),
-      badgeClass: "bg-success text-success-foreground",
+      badgeClass: "bg-success/15 text-success",
       textClass: "text-success",
       progressClass: "bg-success",
     };
@@ -585,7 +582,7 @@ function getSaveUpStatus(
       headlinePrefix: t("goals:save_up.headline_at_risk_prefix", { title: goalTitle }),
       headlineEmphasis: t("goals:save_up.headline_at_risk_emphasis"),
       headlineSuffix: t("goals:save_up.headline_at_risk_suffix", { date: dateLabel }),
-      badgeClass: "bg-yellow-100 text-yellow-800",
+      badgeClass: "bg-warning/15 text-warning",
       textClass: "text-yellow-700",
       progressClass: "bg-yellow-600",
     };
@@ -599,7 +596,7 @@ function getSaveUpStatus(
       title: goalTitle,
       date: dateLabel,
     }),
-    badgeClass: "bg-destructive text-destructive-foreground",
+    badgeClass: "bg-destructive/10 text-destructive",
     textClass: "text-destructive",
     progressClass: "bg-destructive",
   };
@@ -617,11 +614,9 @@ function formatGoalDate(value?: string | null) {
 
 function HeroMetric({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="min-w-0 px-5 py-4">
-      <div className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wider">
-        {label}
-      </div>
-      <div className="mt-2 truncate text-lg font-semibold tabular-nums">{children}</div>
+    <div className="min-w-0 py-3 pr-4">
+      <div className="text-muted-foreground text-[13px]">{label}</div>
+      <div className="mt-1 text-[17px] tabular-nums">{children}</div>
     </div>
   );
 }
@@ -651,10 +646,7 @@ function MonthlyPlanCallout({
       <CardContent className="p-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
-            <div className="text-muted-foreground mb-1 text-xs font-medium uppercase tracking-[0.15em]">
-              {t("goals:save_up.action")}
-            </div>
-            <h3 className="text-md font-semibold leading-none tracking-tight">
+            <h3 className="text-md font-medium leading-none tracking-tight">
               {t("goals:save_up.monthly_plan")}
             </h3>
           </div>
@@ -695,9 +687,9 @@ function MonthlyPlanCallout({
 
 function CalloutMetric({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="border-border/70 bg-muted/20 rounded-lg border px-3 py-2.5">
-      <div className="text-muted-foreground text-[11px]">{label}</div>
-      <div className="mt-1 text-sm font-semibold tabular-nums">{children}</div>
+    <div className="border-border/70 px-3 py-2.5">
+      <div className="text-muted-foreground text-[13px]">{label}</div>
+      <div className="mt-1 text-sm font-medium tabular-nums">{children}</div>
     </div>
   );
 }
@@ -706,13 +698,12 @@ function SidebarRow({ label, children }: { label: React.ReactNode; children: Rea
   return (
     <div className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
       <span className="text-muted-foreground text-xs">{label}</span>
-      <span className="text-sm font-semibold tabular-nums">{children}</span>
+      <span className="text-sm font-medium tabular-nums">{children}</span>
     </div>
   );
 }
 
 function SidebarCard({
-  kicker,
   title,
   editing,
   onEdit,
@@ -724,7 +715,6 @@ function SidebarCard({
   readContent,
   editContent,
 }: {
-  kicker: string;
   title: string;
   editing: boolean;
   onEdit: () => void;
@@ -752,9 +742,6 @@ function SidebarCard({
     <Card>
       <CardHeader className="flex-row items-start justify-between pb-4">
         <div className="min-w-0">
-          <div className="text-muted-foreground mb-1 text-xs font-medium uppercase tracking-[0.15em]">
-            {kicker}
-          </div>
           <CardTitle className="text-md leading-none tracking-tight">{title}</CardTitle>
         </div>
         {editing ? (
@@ -774,10 +761,8 @@ function SidebarCard({
       <CardContent>
         {editing ? (
           <div className="space-y-3">
-            <div className="divide-border divide-y">{editContent}</div>
-            <div className="border-border flex justify-end border-t pt-3">
-              {renderEditActions()}
-            </div>
+            <div className="">{editContent}</div>
+            <div className="flex justify-end pt-3">{renderEditActions()}</div>
           </div>
         ) : (
           readContent
@@ -802,7 +787,7 @@ function DateRow({
     <div className="py-4 first:pt-1 last:pb-1">
       <div className="mb-2 flex items-start justify-between gap-3">
         <div>
-          <div className="text-foreground text-sm font-semibold leading-tight">{label}</div>
+          <div className="text-foreground text-sm font-medium leading-tight">{label}</div>
           <div className="text-muted-foreground mt-1 text-xs leading-tight">{hint}</div>
         </div>
       </div>
