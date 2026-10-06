@@ -710,7 +710,9 @@
     "nextBudgetMonth": "下一预算月份",
     "previousBudgetPeriod": "上一预算周期",
     "nextBudgetPeriod": "下一预算周期",
-    "manage": "管理"
+    "manage": "管理",
+    "irregularTitle": "非常规支出",
+    "irregularMore": "另有 {{count}} 项"
   },
   "cashForm": {
     "accountRequired": "请选择一个账户。",

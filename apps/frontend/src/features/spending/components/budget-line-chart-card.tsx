@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
+import { BlockBar } from "@/components/block-bar";
 import { DashboardCard, SECTION_HEADING } from "@/components/dashboard-card";
 import { cn } from "@/lib/utils";
 import { formatCompactAmount, Icons, PrivacyAmount, useBalancePrivacy } from "@wealthfolio/ui";
@@ -533,10 +534,13 @@ const RING_STROKE = 3;
 const RING_DISC = 46;
 const RING_RADIUS = (RING_SIZE - RING_STROKE) / 2;
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
+/** How many irregular categories are named under the bar before the rest are counted. */
+const IRREGULAR_LEGEND = 4;
 
 /** Budget use as one ring per category, fullest first, in a grid that never scrolls sideways. */
 export function BudgetRings({
   allocations,
+  unbudgeted,
   spendingBreakdown,
   categoriesMeta,
   currency,
@@ -544,6 +548,8 @@ export function BudgetRings({
   monthKey,
 }: {
   allocations: BudgetCategoryRow[];
+  /** Every spending category of the cycle; the ones without a budget feed the irregular bar. */
+  unbudgeted: BudgetCategoryRow[];
   spendingBreakdown: { categoryId: string; amount: number; count: number }[];
   categoriesMeta: CategoryMetaMap;
   currency: string;
@@ -576,6 +582,21 @@ export function BudgetRings({
       .sort((x, y) => y.pct - x.pct)
       .slice(0, 8);
   }, [allocations, spendingBreakdown, categoriesMeta]);
+
+  // Irregular spending: categories the plan gives nothing to but that were spent in,
+  // whether they sit in a group, in an excluded group, or in no group at all.
+  const irregular = useMemo(() => {
+    const rows = unbudgeted
+      .filter((row) => (row.target || 0) <= 0 && row.actual > 0)
+      .map((row) => ({
+        categoryId: row.categoryId,
+        name: row.name,
+        color: row.color ?? "var(--muted-foreground)",
+        spent: row.actual,
+      }))
+      .sort((x, y) => y.spent - x.spent);
+    return { rows, total: rows.reduce((sum, row) => sum + row.spent, 0) };
+  }, [unbudgeted]);
 
   if (rings.length === 0) {
     return (
@@ -656,6 +677,50 @@ export function BudgetRings({
           );
         })}
       </div>
+      {irregular.total > 0 && (
+        <div className="mt-6">
+          <div className="flex items-baseline justify-between gap-3 pb-2">
+            <span className="text-[15px]">{t("spending:budgetChart.irregularTitle")}</span>
+            <span className="text-[15px] tabular-nums">
+              {isBalanceHidden ? "••••" : formatCompactAmount(irregular.total, currency)}
+            </span>
+          </div>
+          <BlockBar
+            segments={irregular.rows.map((row) => ({
+              value: row.spent,
+              color: row.color,
+              label: row.name,
+            }))}
+          />
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
+            {irregular.rows.slice(0, IRREGULAR_LEGEND).map((row) => (
+              <Link
+                key={row.categoryId}
+                to={`/activities?tab=spending&category=${encodeURIComponent(row.categoryId)}&from=${
+                  activityRange.from
+                }&to=${activityRange.to}&budget=1`}
+                className="inline-flex min-w-0 items-center gap-1.5"
+              >
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: row.color }}
+                />
+                <span className="truncate">{row.name}</span>
+                <span className="text-muted-foreground tabular-nums">
+                  {isBalanceHidden ? "••••" : formatCompactAmount(row.spent, currency)}
+                </span>
+              </Link>
+            ))}
+            {irregular.rows.length > IRREGULAR_LEGEND && (
+              <span className="text-muted-foreground">
+                {t("spending:budgetChart.irregularMore", {
+                  count: irregular.rows.length - IRREGULAR_LEGEND,
+                })}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
       <div className="mt-4">
         <BudgetManageLink monthKey={monthKey} />
       </div>

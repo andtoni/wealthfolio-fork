@@ -716,7 +716,9 @@
     "nextBudgetMonth": "Next budget month",
     "previousBudgetPeriod": "Previous budget period",
     "nextBudgetPeriod": "Next budget period",
-    "manage": "Manage"
+    "manage": "Manage",
+    "irregularTitle": "Irregular spending",
+    "irregularMore": "+{{count}} more"
   },
   "cashForm": {
     "accountRequired": "Please select an account.",

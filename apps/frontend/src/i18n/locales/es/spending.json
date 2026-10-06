@@ -710,7 +710,9 @@
     "nextBudgetMonth": "Mes de presupuesto siguiente",
     "previousBudgetPeriod": "Periodo presupuestario anterior",
     "nextBudgetPeriod": "Periodo presupuestario siguiente",
-    "manage": "Gestionar"
+    "manage": "Gestionar",
+    "irregularTitle": "Gastos irregulares",
+    "irregularMore": "+{{count}} más"
   },
   "cashForm": {
     "accountRequired": "Selecciona una cuenta.",

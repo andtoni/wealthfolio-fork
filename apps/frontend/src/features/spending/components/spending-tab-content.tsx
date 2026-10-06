@@ -1275,6 +1275,10 @@ export default function SpendingTabContent() {
                   .flatMap((row) => row.categories)
                   .filter((row) => !row.excludedFromBudget) ?? []
               }
+              unbudgeted={[
+                ...(budgetCardBudget?.computed.groupRows.flatMap((row) => row.categories) ?? []),
+                ...(budgetCardBudget?.computed.ungroupedRows ?? []),
+              ]}
               spendingBreakdown={budgetSpendingBreakdown}
               categoriesMeta={categoriesMeta}
               currency={budgetCardBudget?.computed.currency ?? currency}
