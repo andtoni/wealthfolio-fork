@@ -558,7 +558,8 @@ export function BudgetRings({
 }) {
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
-  const rings = useMemo(() => {
+  // Every category with a budget; the bar totals them all, the rings show the eight fullest.
+  const budgetedRows = useMemo(() => {
     const spentByTop = new Map<string, number>();
     for (const row of spendingBreakdown) {
       const topId = topCategoryId(row.categoryId, categoriesMeta);
@@ -579,9 +580,16 @@ export function BudgetRings({
           pct: spent / al.target,
         };
       })
-      .sort((x, y) => y.pct - x.pct)
-      .slice(0, 8);
+      .sort((x, y) => y.pct - x.pct);
   }, [allocations, spendingBreakdown, categoriesMeta]);
+  const budgeted = useMemo(
+    () => ({
+      spent: budgetedRows.reduce((sum, row) => sum + row.spent, 0),
+      target: budgetedRows.reduce((sum, row) => sum + row.target, 0),
+    }),
+    [budgetedRows],
+  );
+  const rings = budgetedRows.slice(0, 8);
 
   // Irregular spending: categories the plan gives nothing to but that were spent in,
   // whether they sit in a group, in an excluded group, or in no group at all.
@@ -614,6 +622,28 @@ export function BudgetRings({
 
   return (
     <div>
+      <div className="mb-6">
+        <div className="flex items-baseline justify-between gap-3 pb-2">
+          <span className="text-[15px]">{t("spending:budgetChart.budgetedTitle")}</span>
+          <span className="text-[15px] tabular-nums">
+            {isBalanceHidden
+              ? "••••"
+              : t("spending:budgetChart.budgetedOf", {
+                  spent: formatCompactAmount(budgeted.spent, currency),
+                  budget: formatCompactAmount(budgeted.target, currency),
+                })}
+          </span>
+        </div>
+        <BlockBar
+          segments={[
+            {
+              value: budgeted.spent,
+              color: budgetStatusColor(budgeted.spent / budgeted.target),
+            },
+          ]}
+          total={budgeted.target}
+        />
+      </div>
       <div className="grid grid-cols-4 gap-x-2 gap-y-4">
         {rings.map((ring) => {
           const color = budgetStatusColor(ring.pct);

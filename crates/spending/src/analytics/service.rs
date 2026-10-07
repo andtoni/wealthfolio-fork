@@ -23,6 +23,9 @@ use crate::activity_allocations::{
     SplitsByActivity,
 };
 use crate::activity_assignments::ActivityTaxonomyAssignmentRepositoryTrait;
+use crate::activity_budget_periods::{
+    apply_budget_period_overrides, ActivityBudgetPeriodRepositoryTrait,
+};
 use crate::activity_classification::{
     activity_abs_amount, classify_activity, classify_activity_for_aggregation, decimal_to_f64,
     within_spending_transfer_groups, SpendingClassification,
@@ -65,6 +68,7 @@ pub struct AnalyticsService {
     fx_service: Arc<dyn wealthfolio_core::fx::FxServiceTrait>,
     activity_events: Arc<dyn crate::activity_events::ActivityEventsRepositoryTrait>,
     aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
+    budget_period_repo: Arc<dyn ActivityBudgetPeriodRepositoryTrait>,
 }
 
 impl AnalyticsService {
@@ -80,6 +84,7 @@ impl AnalyticsService {
         fx_service: Arc<dyn wealthfolio_core::fx::FxServiceTrait>,
         activity_events: Arc<dyn crate::activity_events::ActivityEventsRepositoryTrait>,
         aggregate_eligibility_service: Arc<dyn AggregateEligibilityServiceTrait>,
+        budget_period_repo: Arc<dyn ActivityBudgetPeriodRepositoryTrait>,
     ) -> Self {
         Self {
             activity_repo,
@@ -92,6 +97,7 @@ impl AnalyticsService {
             fx_service,
             activity_events,
             aggregate_eligibility_service,
+            budget_period_repo,
         }
     }
 
@@ -218,10 +224,17 @@ impl AnalyticsService {
         let prior_end = start - Duration::seconds(1);
         let prior_start = prior_end - Duration::seconds((period_secs - 1).max(0));
 
-        let context_activities = self
+        let mut context_activities = self
             .activity_repo
             .get_activities_by_account_ids(&all_spending_account_ids)
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        // Count each transaction in the budget period the user chose for it.
+        apply_budget_period_overrides(
+            &mut context_activities,
+            &self.budget_period_repo.list_all().await?,
+            timezone,
+            &s.budget_cycle,
+        );
         let transfer_context_acts: Vec<&Activity> = context_activities.iter().collect();
         let transfer_groups = within_spending_transfer_groups(&transfer_context_acts);
 
@@ -753,10 +766,16 @@ impl AnalyticsService {
 
         // Load all activities for the configured spending accounts so transfer
         // pair eligibility can fail closed before any classification or joins.
-        let context_activities = self
+        let mut context_activities = self
             .activity_repo
             .get_activities_by_account_ids(&all_spending_accounts)
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        apply_budget_period_overrides(
+            &mut context_activities,
+            &self.budget_period_repo.list_all().await?,
+            timezone,
+            &s.budget_cycle,
+        );
         let eligible_account_ids: HashSet<&str> =
             eligible_accounts.ids.iter().map(String::as_str).collect();
         let mut activities = context_activities
@@ -1626,6 +1645,7 @@ mod tests {
     };
 
     use crate::activity_assignments::NewActivityTaxonomyAssignment;
+    use crate::activity_budget_periods::StaticBudgetPeriods;
     use crate::activity_events::ActivityEvent;
     use crate::activity_splits::{ActivitySplit, NewActivitySplit};
     use crate::events::{Event, EventType, NewEvent, NewEventType, UpdateEvent};
@@ -2568,6 +2588,7 @@ mod tests {
 
     struct TestAnalytics {
         service: AnalyticsService,
+        budget_periods: Arc<StaticBudgetPeriods>,
         eligibility: Arc<MockEligibility>,
         assignments: Arc<MockAssignmentRepo>,
         splits: Arc<MockSplitRepo>,
@@ -2596,6 +2617,7 @@ mod tests {
             activity_events.clone(),
         ));
         let eligibility = Arc::new(MockEligibility::default());
+        let budget_periods = Arc::new(StaticBudgetPeriods::default());
         *eligibility.allowed_accounts.lock().unwrap() = allowed_accounts.into_iter().collect();
         *eligibility.allowed_activity_ids.lock().unwrap() =
             allowed_activity_ids.into_iter().collect();
@@ -2612,12 +2634,54 @@ mod tests {
                 Arc::new(PassthroughFx),
                 activity_events.clone(),
                 eligibility.clone(),
+                budget_periods.clone(),
             ),
+            budget_periods,
             eligibility,
             assignments,
             splits,
             activity_events,
         }
+    }
+
+    #[tokio::test]
+    async fn analytics_monthly_report_counts_a_transaction_in_its_chosen_budget_period() {
+        let salary = analytics_activity(
+            "salary",
+            "cash",
+            "DEPOSIT",
+            500,
+            Utc.with_ymd_and_hms(2026, 6, 23, 12, 0, 0).unwrap(),
+        );
+        let analytics = make_analytics_service(
+            vec![salary],
+            vec![account("cash", account_types::CASH)],
+            vec!["cash".to_string()],
+            vec!["cash".to_string()],
+            vec!["salary".to_string()],
+        );
+        analytics
+            .budget_periods
+            .set_many(&["salary".to_string()], Some("2026-06-25".to_string()))
+            .await
+            .unwrap();
+
+        let report = analytics
+            .service
+            .monthly_report(
+                ReportRequest {
+                    start_date: "2026-06-25T00:00:00Z".to_string(),
+                    end_date: "2026-07-24T23:59:59Z".to_string(),
+                    account_ids: None,
+                },
+                "UTC",
+                "USD",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(report.current.income, 500.0);
+        assert_eq!(report.prior.income, 0.0);
     }
 
     #[tokio::test]

@@ -711,6 +711,8 @@
     "previousBudgetPeriod": "Période budgétaire précédente",
     "nextBudgetPeriod": "Période budgétaire suivante",
     "manage": "Gérer",
+    "budgetedTitle": "Dépenses budgétées",
+    "budgetedOf": "{{spent}} sur {{budget}}",
     "irregularTitle": "Dépenses irrégulières",
     "irregularMore": "+{{count}} de plus"
   },
@@ -839,6 +841,8 @@
     "up": "En hausse",
     "aboutSame": "À peu près comme la période précédente",
     "fromPriorPeriod": "par rapport à la période précédente",
+    "fromSamePointPriorPeriod": "par rapport au même moment de la période précédente",
+    "aboutSameAtThisPoint": "À peu près comme au même moment de la période précédente",
     "intervalMtd": "ce mois-ci",
     "intervalLastMonth": "le mois dernier",
     "interval3M": "3 derniers mois",

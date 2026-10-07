@@ -711,6 +711,8 @@
     "previousBudgetPeriod": "上一预算周期",
     "nextBudgetPeriod": "下一预算周期",
     "manage": "管理",
+    "budgetedTitle": "预算内支出",
+    "budgetedOf": "{{spent}} / {{budget}}",
     "irregularTitle": "非常规支出",
     "irregularMore": "另有 {{count}} 项"
   },
@@ -839,6 +841,8 @@
     "up": "上升",
     "aboutSame": "与上一周期基本持平",
     "fromPriorPeriod": "较上一周期",
+    "fromSamePointPriorPeriod": "较上一周期同期",
+    "aboutSameAtThisPoint": "与上一周期同期基本持平",
     "intervalMtd": "本月",
     "intervalLastMonth": "上月",
     "interval3M": "过去 3 个月",

@@ -294,6 +294,20 @@ function previousFullMonthRange(range: DateRange): DateRange | undefined {
   return monthRange(monthKeyFromParts(priorMonth));
 }
 
+/** Days elapsed in `range` when today falls inside it before its last day. */
+function daysIntoUnfinishedRange(
+  range: DateRange | undefined,
+  timezone?: string | null,
+): number | null {
+  if (!range?.from || !range?.to) return null;
+  const today = calendarDateKey(getZonedDateParts(new Date(), timezone));
+  const start = localDateParts(range.from);
+  if (today < calendarDateKey(start) || today >= calendarDateKey(localDateParts(range.to))) {
+    return null;
+  }
+  return calendarDaysBetweenInclusive(start, getZonedDateParts(new Date(), timezone));
+}
+
 function priorRange(
   range: DateRange | undefined,
   selection: SpendingSelection | undefined,
@@ -304,7 +318,13 @@ function priorRange(
 
   const periodKey = selection ? budgetPeriodKeyForSelection(selection, cycle, timezone) : null;
   if (periodKey) {
-    return budgetPeriodRange(shiftBudgetPeriodKey(periodKey, -1, cycle), cycle);
+    const prior = budgetPeriodRange(shiftBudgetPeriodKey(periodKey, -1, cycle), cycle);
+    const daysIn = daysIntoUnfinishedRange(range, timezone);
+    if (daysIn === null) return prior;
+    // A period still in progress is compared with the same number of days of
+    // the one before, not with all of it.
+    const samePoint = localDateFromParts(addCalendarDays(localDateParts(prior.from), daysIn - 1));
+    return samePoint < prior.to ? { from: prior.from, to: samePoint } : prior;
   }
 
   if (selection?.kind === "month" || selection?.code === "LAST_MONTH") {
@@ -434,6 +454,9 @@ export default function SpendingTabContent() {
     () => priorRange(dateRange, selection, budgetCycle, appTimezone),
     [dateRange, selection, budgetCycle, appTimezone],
   );
+  const priorIsSamePoint =
+    budgetPeriodKeyForSelection(selection, budgetCycle, appTimezone) !== null &&
+    daysIntoUnfinishedRange(dateRange, appTimezone) !== null;
   const priorReportReq = useMemo(
     () =>
       priorRangeForReport ? rangeToReportRequest(priorRangeForReport, appTimezone) : reportReq,
@@ -1215,6 +1238,7 @@ export default function SpendingTabContent() {
                 <SpendingDeltaLine
                   delta={delta}
                   currency={currency}
+                  samePoint={priorIsSamePoint}
                   deltaPct={
                     displayDeltaPct !== null && Math.abs(displayDeltaPct) <= 5
                       ? displayDeltaPct
@@ -2086,10 +2110,12 @@ function SpendingDeltaLine({
   delta,
   currency,
   deltaPct,
+  samePoint,
 }: {
   delta: number;
   currency: string;
   deltaPct: number | null;
+  samePoint: boolean;
 }) {
   const { t } = useTranslation();
   const isFlat = Math.abs(delta) < 1;
@@ -2099,7 +2125,9 @@ function SpendingDeltaLine({
   if (isFlat) {
     return (
       <span className="text-muted-foreground lg:text-md text-sm font-light">
-        {t("spending:tabContent.aboutSame")}
+        {t(
+          samePoint ? "spending:tabContent.aboutSameAtThisPoint" : "spending:tabContent.aboutSame",
+        )}
       </span>
     );
   }
@@ -2112,7 +2140,13 @@ function SpendingDeltaLine({
         {direction} <PrivacyAmount value={Math.abs(delta)} currency={currency} />
         {pctSuffix}
       </span>{" "}
-      <span className="text-muted-foreground">{t("spending:tabContent.fromPriorPeriod")}</span>
+      <span className="text-muted-foreground">
+        {t(
+          samePoint
+            ? "spending:tabContent.fromSamePointPriorPeriod"
+            : "spending:tabContent.fromPriorPeriod",
+        )}
+      </span>
     </span>
   );
 }

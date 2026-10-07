@@ -711,6 +711,8 @@
     "previousBudgetPeriod": "Periodo presupuestario anterior",
     "nextBudgetPeriod": "Periodo presupuestario siguiente",
     "manage": "Gestionar",
+    "budgetedTitle": "Gastos presupuestados",
+    "budgetedOf": "{{spent}} de {{budget}}",
     "irregularTitle": "Gastos irregulares",
     "irregularMore": "+{{count}} más"
   },
@@ -839,6 +841,8 @@
     "up": "Arriba",
     "aboutSame": "Aproximadamente igual que el periodo anterior",
     "fromPriorPeriod": "respecto al periodo anterior",
+    "fromSamePointPriorPeriod": "respecto a estas alturas del periodo anterior",
+    "aboutSameAtThisPoint": "Aproximadamente igual que a estas alturas del periodo anterior",
     "intervalMtd": "este mes",
     "intervalLastMonth": "mes pasado",
     "interval3M": "últimos 3 meses",

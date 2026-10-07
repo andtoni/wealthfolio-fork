@@ -717,6 +717,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
             fx_service.clone(),
             activity_events_repo.clone(),
             aggregate_eligibility_service.clone(),
+            activity_budget_periods_repo.clone(),
         ));
 
     // Spending: reconciled period insight (powers the Spending Insight dashboard).
