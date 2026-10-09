@@ -140,10 +140,10 @@
     "YTD": "year to date",
     "1Y": "past year",
     "5Y": "past 5 years",
-    "ALL": "All Time"
+    "ALL": "all time"
   },
-  "pace": {
-    "a_month": "a month"
+  "change": {
+    "this_month": "this month"
   },
   "search": {
     "clear": "Clear search",

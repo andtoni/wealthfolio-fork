@@ -142,8 +142,8 @@
     "5Y": "5 dernières années",
     "ALL": "Tout l'historique"
   },
-  "pace": {
-    "a_month": "par mois"
+  "change": {
+    "this_month": "ce mois-ci"
   },
   "search": {
     "clear": "Effacer la recherche",

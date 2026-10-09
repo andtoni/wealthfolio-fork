@@ -1,28 +1,27 @@
 import { calculatePerformanceSummary } from "@/adapters";
+import { ChangeLine } from "@/components/change-line";
 import { HistoryChart } from "@/components/history-chart";
-import { MonthlyPace } from "@/components/monthly-pace";
 import { useHapticFeedback } from "@/hooks";
 import { useCurrentValuation } from "@/hooks/use-current-account-valuations";
 import { useHoldings } from "@/hooks/use-holdings";
 import { useValuationHistory } from "@/hooks/use-valuation-history";
 import { HoldingType, isAlternativeAssetKind } from "@/lib/constants";
 import { pageWash } from "@/lib/page-wash";
-import { monthlyRate, performancePeriodPnl, performanceSummaryReturn } from "@/lib/performance";
+import {
+  changeBetween,
+  performancePeriodPnl,
+  performanceSummaryReturn,
+  type Change,
+} from "@/lib/performance";
 import { QueryKeys } from "@/lib/query-keys";
 import { useSettingsContext } from "@/lib/settings-provider";
-import { DateRange, TimePeriod } from "@/lib/types";
+import type { AccountValuation, DateRange, PerformanceResult, TimePeriod } from "@/lib/types";
 import { PortfolioUpdateTrigger } from "@/pages/dashboard/portfolio-update-trigger";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { TimePeriod as UITimePeriod } from "@wealthfolio/ui";
-import {
-  GainAmount,
-  GainPercent,
-  getInitialIntervalData,
-  IntervalSelector,
-  usePersistentState,
-} from "@wealthfolio/ui";
+import { getInitialIntervalData, IntervalSelector, usePersistentState } from "@wealthfolio/ui";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
-import { format } from "date-fns";
+import { format, startOfMonth, subDays } from "date-fns";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AccountsSummary } from "./accounts-summary";
@@ -73,6 +72,34 @@ function getDashboardNetContributionMaxDomainSpanRatio(period: UITimePeriod): nu
   }
 }
 
+const portfolioPerformanceQuery = (startDate?: string, endDate?: string) => ({
+  queryKey: [QueryKeys.PERFORMANCE_SUMMARY, "dashboard", "all", startDate, endDate],
+  queryFn: () =>
+    calculatePerformanceSummary({
+      itemType: "account",
+      itemId: "portfolio:all",
+      startDate,
+      endDate,
+      filter: { type: "all" },
+      profile: "dashboard",
+    }),
+  placeholderData: keepPreviousData,
+  staleTime: 30 * 1000,
+  retry: 1,
+});
+
+// Investment gain when performance can be measured; otherwise (cash-only
+// accounts, incomplete valuations) the plain change in balance.
+function periodChange(
+  performance: PerformanceResult | undefined,
+  history: AccountValuation[] | undefined,
+): Change | null {
+  const gain = performancePeriodPnl(performance);
+  if (gain != null) return { amount: gain, percent: performanceSummaryReturn(performance) };
+  if (!history || history.length < 2) return null;
+  return changeBetween(history[0].totalValueBase, history[history.length - 1].totalValueBase);
+}
+
 export function DashboardContent() {
   const { t } = useTranslation();
   // Use the same persisted state as IntervalSelector for the interval code
@@ -120,24 +147,23 @@ export function DashboardContent() {
   const datesReady = isAllTime || (!!startDate && !!endDate);
 
   const { data: portfolioPerformance, isLoading: isPortfolioPerformanceLoading } = useQuery({
-    queryKey: [QueryKeys.PERFORMANCE_SUMMARY, "dashboard", "all", startDate, endDate],
-    queryFn: () =>
-      calculatePerformanceSummary({
-        itemType: "account",
-        itemId: "portfolio:all",
-        startDate,
-        endDate,
-        filter: { type: "all" },
-        profile: "dashboard",
-      }),
+    ...portfolioPerformanceQuery(startDate, endDate),
     enabled: datesReady,
-    placeholderData: keepPreviousData,
-    staleTime: 30 * 1000,
-    retry: 1,
   });
 
-  const gainLossAmount = performancePeriodPnl(portfolioPerformance);
-  const simpleReturn = performanceSummaryReturn(portfolioPerformance);
+  // "This month" runs from last month's closing value to today.
+  const monthRange = useMemo(() => {
+    const today = new Date();
+    return { from: subDays(startOfMonth(today), 1), to: today };
+  }, []);
+  const { valuationHistory: monthHistory } = useValuationHistory(monthRange);
+  const { data: monthPerformance } = useQuery(
+    portfolioPerformanceQuery(
+      format(monthRange.from, "yyyy-MM-dd"),
+      format(monthRange.to, "yyyy-MM-dd"),
+    ),
+  );
+
   const isCurrentValuationUnavailable =
     !isCurrentValuationLoading && !portfolioCurrentValuation && Boolean(currentValuationError);
   const portfolioSourceDataAsOf =
@@ -166,23 +192,8 @@ export function DashboardContent() {
     [selectedInterval],
   );
 
-  // Change in the charted value over the range, and how many months it spans.
-  const balanceChange = useMemo(() => {
-    if (chartData.length < 2) return null;
-    const first = chartData[0];
-    const last = chartData[chartData.length - 1];
-    const days = (new Date(last.date).getTime() - new Date(first.date).getTime()) / 86_400_000;
-    return { amount: last.totalValue - first.totalValue, months: days / (365.25 / 12) };
-  }, [chartData]);
-  // Investment gain when performance can be measured; otherwise (cash-only
-  // accounts, incomplete valuations) the plain change in balance.
-  const periodAmount = gainLossAmount ?? balanceChange?.amount ?? null;
-  const returnPace =
-    simpleReturn != null && balanceChange ? monthlyRate(simpleReturn, balanceChange.months) : null;
-  const balancePace =
-    simpleReturn == null && balanceChange && balanceChange.months >= 1
-      ? balanceChange.amount / balanceChange.months
-      : null;
+  const rangeChange = periodChange(portfolioPerformance, valuationHistory);
+  const monthChange = periodChange(monthPerformance, monthHistory);
 
   const isNegative = totalValue < 0;
 
@@ -213,53 +224,29 @@ export function DashboardContent() {
                 currency={baseCurrency}
                 displayCurrency={true}
               />
-              <div className="text-md flex min-h-5 items-center space-x-3">
-                {isPortfolioPerformanceLoading ? (
-                  <div className="flex items-center gap-3">
-                    <Skeleton className="h-4 w-24" />
-                    <div className="border-secondary my-1 border-r pr-2" />
-                    <Skeleton className="h-4 w-16" />
-                  </div>
-                ) : (
-                  <>
-                    {periodAmount == null ? (
-                      <span className="text-muted-foreground lg:text-md text-sm font-light">
-                        N/A
-                      </span>
-                    ) : (
-                      <GainAmount
-                        className="lg:text-md text-sm font-light"
-                        value={periodAmount}
-                        currency={baseCurrency}
-                        displayCurrency={true}
-                      />
-                    )}
-                    {(simpleReturn != null || balancePace != null) && (
-                      <div className="border-secondary my-1 border-r pr-2" />
-                    )}
-                    {returnPace != null ? (
-                      <MonthlyPace className="lg:text-md text-sm font-light" value={returnPace} />
-                    ) : simpleReturn != null ? (
-                      <GainPercent
-                        className="lg:text-md text-sm font-light"
-                        value={simpleReturn}
-                        animated={true}
-                      />
-                    ) : balancePace != null ? (
-                      <MonthlyPace
-                        className="lg:text-md text-sm font-light"
-                        value={balancePace}
-                        currency={baseCurrency}
-                      />
-                    ) : null}
-                  </>
-                )}
-                {selectedInterval && (
-                  <span className="lg:text-md text-muted-foreground ml-1 text-sm font-light">
-                    {t(`ui:interval.${selectedInterval}`)}
-                  </span>
-                )}
-              </div>
+              {isPortfolioPerformanceLoading ? (
+                <Skeleton className="h-4 w-40" />
+              ) : (
+                <>
+                  {monthChange && (
+                    <ChangeLine
+                      className="lg:text-md text-sm font-light"
+                      change={monthChange}
+                      currency={baseCurrency}
+                      label={t("ui:change.this_month")}
+                    />
+                  )}
+                  {rangeChange && (
+                    <ChangeLine
+                      className="text-xs font-light lg:text-sm"
+                      change={rangeChange}
+                      currency={baseCurrency}
+                      label={t(`ui:interval.${selectedInterval}`)}
+                      muted
+                    />
+                  )}
+                </>
+              )}
             </div>
           </div>
         </PortfolioUpdateTrigger>

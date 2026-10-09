@@ -2,16 +2,15 @@ import { useNetWorth, useNetWorthHistory } from "@/hooks/use-alternative-assets"
 import { usePortfolioAllocations } from "@/hooks/use-portfolio-allocations";
 import { useIsMobileViewport } from "@/hooks/use-platform";
 import { pageWash } from "@/lib/page-wash";
+import { changeBetween } from "@/lib/performance";
 import { useSettingsContext } from "@/lib/settings-provider";
 import type { DateRange } from "@/lib/types";
 import { formatDateISO } from "@/lib/utils";
 import Balance from "@/pages/dashboard/balance";
 import { AllocationDetailSheet } from "@/pages/holdings/components/allocation-detail-sheet";
 import { DashboardCard } from "@/components/dashboard-card";
-import { MonthlyPace } from "@/components/monthly-pace";
+import { ChangeLine } from "@/components/change-line";
 import {
-  GainAmount,
-  GainPercent,
   IntervalSelector,
   getInitialIntervalData,
   usePersistentState,
@@ -25,6 +24,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@wealthfolio/ui/components/ui/tooltip";
+import { startOfMonth, subDays } from "date-fns";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
@@ -38,6 +38,7 @@ import {
   computeVelocity,
   investmentAllocation,
   parseHistory,
+  type ParsedHistoryPoint,
   type ParsedNetWorth,
   type SelectedCategory,
 } from "./components/utils";
@@ -47,6 +48,11 @@ import { NetWorthChart } from "./net-worth-chart";
 const DEFAULT_INTERVAL: TimePeriod = "ALL";
 const INTERVAL_STORAGE_KEY = "networth-interval";
 const MS_PER_DAY = 86_400_000;
+
+function netWorthChange(history: ParsedHistoryPoint[]) {
+  if (history.length < 2) return null;
+  return changeBetween(history[0].netWorth, history[history.length - 1].netWorth);
+}
 
 export function NetWorthContent() {
   const { t } = useTranslation();
@@ -93,6 +99,16 @@ export function NetWorthContent() {
     endDate: longHistoryDates?.endDate ?? "",
     enabled: !!longHistoryDates,
   });
+
+  // "This month" runs from last month's closing value to today.
+  const monthDates = useMemo(() => {
+    const today = new Date();
+    return {
+      startDate: formatDateISO(subDays(startOfMonth(today), 1)),
+      endDate: formatDateISO(today),
+    };
+  }, []);
+  const { data: monthHistoryData } = useNetWorthHistory(monthDates);
 
   const handleIntervalSelect = (
     code: TimePeriod,
@@ -148,15 +164,11 @@ export function NetWorthContent() {
     return computeMomentum(longHistory, historyDates.startDate, historyDates.endDate);
   }, [longHistory, historyDates, periodCode]);
 
-  // Net worth change over the selected range (simple delta).
-  const { gainLossAmount, gainLossPercent } = useMemo(() => {
-    if (parsedHistory.length < 2) return { gainLossAmount: 0, gainLossPercent: 0 };
-    const first = parsedHistory[0].netWorth;
-    const last = parsedHistory[parsedHistory.length - 1].netWorth;
-    const change = last - first;
-    const base = first !== 0 ? Math.abs(first) : 1;
-    return { gainLossAmount: change, gainLossPercent: change / base };
-  }, [parsedHistory]);
+  const rangeChange = useMemo(() => netWorthChange(parsedHistory), [parsedHistory]);
+  const monthChange = useMemo(
+    () => netWorthChange(parseHistory(monthHistoryData)),
+    [monthHistoryData],
+  );
 
   const currency = netWorthData?.currency || settings?.baseCurrency || "USD";
   const hasStaleValuations = netWorthData && netWorthData.staleAssets.length > 0;
@@ -234,43 +246,29 @@ export function NetWorthContent() {
                 </TooltipProvider>
               )}
             </div>
-            <div className="text-md flex space-x-3">
-              {isHistoryLoading ? (
-                <div className="flex items-center gap-3 pt-1">
-                  <Skeleton className="h-4 w-24" />
-                  <div className="border-secondary my-1 border-r pr-2" />
-                  <Skeleton className="h-4 w-16" />
-                </div>
-              ) : (
-                <>
-                  <GainAmount
+            {isHistoryLoading ? (
+              <Skeleton className="mt-1 h-4 w-40" />
+            ) : (
+              <>
+                {monthChange && (
+                  <ChangeLine
                     className="lg:text-md text-sm font-light"
-                    value={gainLossAmount}
+                    change={monthChange}
                     currency={currency}
-                    displayCurrency={true}
+                    label={t("ui:change.this_month")}
                   />
-                  <div className="border-secondary my-1 border-r pr-2" />
-                  {velocity && velocity.months >= 1 ? (
-                    <MonthlyPace
-                      className="lg:text-md text-sm font-light"
-                      value={velocity.perMonth}
-                      currency={currency}
-                    />
-                  ) : (
-                    <GainPercent
-                      className="lg:text-md text-sm font-light"
-                      value={gainLossPercent}
-                      animated={true}
-                    />
-                  )}
-                </>
-              )}
-              {periodCode && (
-                <span className="lg:text-md text-muted-foreground ml-1 text-sm font-light">
-                  {t(`ui:interval.${periodCode}`)}
-                </span>
-              )}
-            </div>
+                )}
+                {rangeChange && (
+                  <ChangeLine
+                    className="text-xs font-light lg:text-sm"
+                    change={rangeChange}
+                    currency={currency}
+                    label={t(`ui:interval.${periodCode}`)}
+                    muted
+                  />
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -61,8 +61,13 @@ export function shouldDisplayAnnualizedPerformanceReturn(
   return (end - start) / MS_PER_DAY >= ANNUALIZED_DISPLAY_MIN_DAYS;
 }
 
-/** The steady monthly rate that compounds to `periodReturn` over `months`. */
-export function monthlyRate(periodReturn: number, months: number): number | null {
-  if (months < 1 || periodReturn <= -1) return null;
-  return Math.pow(1 + periodReturn, 1 / months) - 1;
+export interface Change {
+  amount: number;
+  /** As a rate (0.02 is 2%); null when there is no sensible starting value. */
+  percent: number | null;
+}
+
+/** The change from `first` to `last`, as money and as a share of `first`. */
+export function changeBetween(first: number, last: number): Change {
+  return { amount: last - first, percent: first > 0 ? (last - first) / first : null };
 }

@@ -142,8 +142,8 @@
     "5Y": "过去 5 年",
     "ALL": "全部时间"
   },
-  "pace": {
-    "a_month": "每月"
+  "change": {
+    "this_month": "本月"
   },
   "search": {
     "clear": "清除搜索",
