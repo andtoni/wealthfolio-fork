@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -53,6 +53,8 @@ interface TransactionCardProps {
   isMobile: boolean;
   suggestedCategory?: SuggestedCategory | null;
   onToggleSelect: (id: string) => void;
+  /** Press and hold: puts the list in select mode with this row selected. */
+  onHoldSelect: (id: string) => void;
   onAssignCategory: (activityId: string, taxonomyId: string, categoryId: string) => void;
   onClearCategory: (activityId: string, taxonomyId: string) => void;
   onSetEvent: (activityId: string, eventId: string | null) => void;
@@ -82,6 +84,7 @@ function TransactionCardImpl({
   isMobile,
   suggestedCategory,
   onToggleSelect,
+  onHoldSelect,
   onAssignCategory,
   onClearCategory,
   onSetEvent,
@@ -97,6 +100,10 @@ function TransactionCardImpl({
 }: TransactionCardProps) {
   const { t } = useTranslation();
   const [detailOpen, setDetailOpen] = useState(false);
+  const holdTimer = useRef<number | undefined>(undefined);
+  // True from the moment a hold selects the row until the click that follows it.
+  const held = useRef(false);
+  const cancelHold = () => window.clearTimeout(holdTimer.current);
   const investecCardLifecycleLinkEnabled = useInvestecCardLifecycleLinkEnabled();
   const a = row.activity;
   const originalCurrency = getOriginalCurrencyDisplay(a);
@@ -149,8 +156,24 @@ function TransactionCardImpl({
         role="button"
         tabIndex={0}
         data-state={isSelected ? "selected" : undefined}
-        className={LIST_ROW}
-        onClick={() => (selectMode ? onToggleSelect(a.id) : setDetailOpen(true))}
+        className={cn(LIST_ROW, "select-none [-webkit-touch-callout:none]")}
+        onPointerDown={(e) => {
+          held.current = false;
+          if (selectMode || e.button !== 0) return;
+          holdTimer.current = window.setTimeout(() => {
+            held.current = true;
+            onHoldSelect(a.id);
+          }, 450);
+        }}
+        onPointerUp={cancelHold}
+        onPointerLeave={cancelHold}
+        onPointerCancel={cancelHold}
+        onContextMenu={(e) => held.current && e.preventDefault()}
+        onClick={() => {
+          if (held.current) held.current = false;
+          else if (selectMode) onToggleSelect(a.id);
+          else setDetailOpen(true);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             if (selectMode) onToggleSelect(a.id);

@@ -84,26 +84,6 @@ export function computeBookCost(holdings: Holding[]): {
   return { total, currencySplit };
 }
 
-function currencySymbol(currency: string): string {
-  try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 0 })
-      .format(0)
-      .replace(/[0-9.,\s]/g, "");
-  } catch {
-    return "";
-  }
-}
-
-/** Compact money for tight spots (donut center, legend): $1.28M, $361K. */
-export function formatCompact(value: number, currency: string): string {
-  const symbol = currencySymbol(currency);
-  const abs = Math.abs(value);
-  const sign = value < 0 ? "-" : "";
-  if (abs >= 1e6) return `${sign}${symbol}${(abs / 1e6).toFixed(2)}M`;
-  if (abs >= 1e3) return `${sign}${symbol}${Math.round(abs / 1e3)}K`;
-  return `${sign}${symbol}${Math.round(abs)}`;
-}
-
 /** Whole-dollar money for the value strip headline figures: $1,284,500. */
 export function formatWhole(value: number, currency: string): string {
   try {

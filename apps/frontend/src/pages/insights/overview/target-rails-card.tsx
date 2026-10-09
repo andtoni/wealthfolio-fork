@@ -3,7 +3,7 @@ import { useTaxonomy } from "@/hooks/use-taxonomies";
 import { SECTION_HEADING } from "@/components/dashboard-card";
 import { cn } from "@/lib/utils";
 import type { DriftReport, DriftRow, AllocationTarget } from "@/lib/types";
-import { Button, Card, Icons, Skeleton } from "@wealthfolio/ui";
+import { Button, Card, formatCompactAmount, Icons, Skeleton } from "@wealthfolio/ui";
 import { useTranslation } from "react-i18next";
 import {
   allocationTargetColorForRow,
@@ -17,7 +17,6 @@ import {
   isOutOfBand,
   rebalanceMove,
 } from "@/pages/allocation-targets/components/drift-row-utils";
-import { formatCompact } from "./allocation-derivations";
 
 interface TargetRailsCardProps {
   targets: AllocationTarget[];
@@ -102,7 +101,7 @@ export function TargetRailsCard({
     .filter(({ row }) => isOutOfBand(row))
     .sort((a, b) => Math.abs(b.row.valueDelta) - Math.abs(a.row.valueDelta));
   const money = (value: number) =>
-    isBalanceHidden ? "••••" : formatCompact(Math.abs(value), currency);
+    isBalanceHidden ? "••••" : formatCompactAmount(Math.abs(value), currency);
 
   return (
     <Card className="flex flex-col gap-3 xl:h-full">

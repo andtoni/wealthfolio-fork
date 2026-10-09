@@ -44,7 +44,7 @@
       "add": "Add",
       "trim": "Trim",
       "inside_target_range": "Inside target range",
-      "outside_range": "{{count}} outside range · largest gap {{gap}}",
+      "outside_range": "{{count}} outside range, largest gap {{gap}}",
       "tolerance": "tolerance {{tolerance}}",
       "current": "Current",
       "target": "Target",
@@ -95,7 +95,7 @@
     },
     "category_sheet": {
       "over_period": "over {{period}}",
-      "trend_period": "Trend · {{period}}",
+      "trend_period": "Trend, {{period}}",
       "items": "Items"
     },
     "trend": {
@@ -113,7 +113,7 @@
       "monthly_pace": "Monthly pace",
       "over_months_one": "over {{count}} month",
       "over_months_other": "over {{count}} months",
-      "trailing_pace": " · {{multiple}}× trailing-12mo pace",
+      "trailing_pace": ", {{multiple}}× trailing-12mo pace",
       "drivers_of_change": "Drivers of {{period}} change",
       "market_returns": "Market returns",
       "contributions": "Contributions",

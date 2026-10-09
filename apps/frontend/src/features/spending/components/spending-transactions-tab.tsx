@@ -368,7 +368,7 @@ export const SpendingTransactionsTab = forwardRef<
   ]);
 
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
-  // Phone only: checkboxes and the bulk bar appear once the list is in select mode.
+  // Checkboxes and the floating action bar appear once the list is in select mode.
   const [selectMode, setSelectMode] = useState(false);
 
   const { accounts = [] } = useAccounts({ filterActive: false });
@@ -857,6 +857,11 @@ export const SpendingTransactionsTab = forwardRef<
     });
   }, []);
 
+  const handleHoldRow = useCallback((id: string) => {
+    setSelectMode(true);
+    setSelectedRowIds((prev) => new Set(prev).add(id));
+  }, []);
+
   const allVisibleSelected =
     rows.length > 0 && rows.every((r) => selectedRowIds.has(r.activity.id));
   const someVisibleSelected =
@@ -995,6 +1000,7 @@ export const SpendingTransactionsTab = forwardRef<
         isSelected: selectedRowIds.has(r.activity.id),
         suggestedCategory: suggestedCategoryByActivity.get(r.activity.id),
         onToggleSelect: handleToggleRow,
+        onHoldSelect: handleHoldRow,
         onAssignCategory: handleAssignCategory,
         onClearCategory: handleClearCategory,
         onSetEvent: handleSetEvent,
@@ -1086,7 +1092,7 @@ export const SpendingTransactionsTab = forwardRef<
         }}
       />
 
-      {selectedRowIds.size > 0 && (
+      {(selectMode || selectedRowIds.size > 0) && (
         <TransactionsBulkBar
           selectedCount={selectedRowIds.size}
           categoryScope={bulkCategoryScope}
@@ -1095,7 +1101,10 @@ export const SpendingTransactionsTab = forwardRef<
           onTagEvent={handleBulkSetEvent}
           onSetBudgetPeriod={handleBulkSetBudgetPeriod}
           onDelete={handleBulkDelete}
-          onClearSelection={clearSelection}
+          onDone={() => {
+            clearSelection();
+            setSelectMode(false);
+          }}
         />
       )}
 
@@ -1135,7 +1144,7 @@ export const SpendingTransactionsTab = forwardRef<
           )}
         </EmptyPlaceholder>
       ) : (
-        <div>
+        <div className={selectMode ? "pb-20" : undefined}>
           {selectMode && rows.length > 1 && (
             <div className="flex min-h-8 items-center gap-2 pt-2">
               <Checkbox

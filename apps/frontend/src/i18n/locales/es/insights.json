@@ -44,7 +44,7 @@
       "add": "Añadir",
       "trim": "Reducir",
       "inside_target_range": "Dentro del rango objetivo",
-      "outside_range": "{{count}} fuera de rango · mayor diferencia {{gap}}",
+      "outside_range": "{{count}} fuera de rango, mayor diferencia {{gap}}",
       "tolerance": "tolerancia {{tolerance}}",
       "current": "Actual",
       "target": "Objetivo",
@@ -95,7 +95,7 @@
     },
     "category_sheet": {
       "over_period": "en {{period}}",
-      "trend_period": "Tendencia · {{period}}",
+      "trend_period": "Tendencia, {{period}}",
       "items": "Elementos"
     },
     "trend": {
@@ -113,7 +113,7 @@
       "monthly_pace": "Ritmo mensual",
       "over_months_one": "en {{count}} mes",
       "over_months_other": "en {{count}} meses",
-      "trailing_pace": " · {{multiple}}× del ritmo de los últimos 12 meses",
+      "trailing_pace": ", {{multiple}}× del ritmo de los últimos 12 meses",
       "drivers_of_change": "Factores del cambio de {{period}}",
       "market_returns": "Rentabilidades del mercado",
       "contributions": "Aportaciones",

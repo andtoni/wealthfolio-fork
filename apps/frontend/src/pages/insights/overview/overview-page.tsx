@@ -406,8 +406,8 @@ export function OverviewPage({
   return (
     <>
       <div className="space-y-4">
-        {/* Row 1 — compact value strip */}
-        <ValueStrip data={valueStrip} currency={baseCurrency} isLoading={isLoading} compact />
+        {/* Row 1 — value strip */}
+        <ValueStrip data={valueStrip} currency={baseCurrency} isLoading={isLoading} />
 
         {/* Row 2 — exploration previews */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

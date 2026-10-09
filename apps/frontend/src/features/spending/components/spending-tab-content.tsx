@@ -62,7 +62,7 @@ import {
 } from "../lib/period-preferences";
 import type { ReportsPeriod } from "../lib/reports-period";
 import type { BudgetCycleSettings } from "../types";
-import { FOREST_THEME, SPENDING_WASH, type Palette } from "../lib/theme";
+import { FOREST_THEME, type Palette } from "../lib/theme";
 import {
   addCalendarDays,
   addCalendarMonths,
@@ -1282,13 +1282,7 @@ export default function SpendingTabContent() {
         </div>
       </div>
 
-      {/* Wrapper: everything under the headline shares one continuous gradient */}
-      <div
-        className="flex grow flex-col"
-        style={{
-          backgroundImage: `linear-gradient(to top, color-mix(in srgb, ${SPENDING_WASH} 30%, transparent), color-mix(in srgb, ${SPENDING_WASH} 15%, transparent) 50%, transparent 100%)`,
-        }}
-      >
+      <div className="flex grow flex-col">
         <div className="px-4 pb-6 md:px-6 lg:px-8">
           <div className="mt-6">
             <h2 className={`${SECTION_HEADING} pb-3`}>{t("spending:tabContent.sectionBudget")}</h2>

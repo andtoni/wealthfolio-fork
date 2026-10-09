@@ -9,7 +9,8 @@ import type {
 import { BlockBar } from "@/components/block-bar";
 import { SECTION_HEADING } from "@/components/dashboard-card";
 import { cn } from "@/lib/utils";
-import { Card, Icons, PrivacyAmount, Skeleton } from "@wealthfolio/ui";
+import { SplitAmount } from "@/features/spending/components/split-amount";
+import { Card, Icons, Skeleton } from "@wealthfolio/ui";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -224,7 +225,7 @@ export function PortfolioExplorer({
       <div
         key={node.id}
         className={cn(
-          "flex items-center gap-2 border-t py-2.5 first:border-t-0",
+          "flex items-center gap-2 py-2.5",
           interactive &&
             "hover:bg-muted/60 -mx-1.5 cursor-pointer rounded-lg px-1.5 transition-colors",
         )}
@@ -254,19 +255,18 @@ export function PortfolioExplorer({
           <span className="h-3 w-3 shrink-0 rounded-sm" style={{ background: node.color }} />
           <span
             className={cn(
-              "truncate text-[13px]",
-              node.depth ? "text-muted-foreground font-medium" : "text-foreground font-medium",
-              isOther && "text-muted-foreground font-medium",
+              "truncate text-[15px]",
+              (node.depth > 0 || isOther) && "text-muted-foreground",
             )}
           >
             {node.name}
           </span>
         </span>
-        <span className="text-foreground w-[62px] text-right text-[13px] font-medium tabular-nums">
+        <span className="text-muted-foreground w-[56px] shrink-0 text-right text-[15px] tabular-nums">
           {node.percentage.toFixed(1)}%
         </span>
-        <span className="text-muted-foreground w-[84px] text-right text-[12px] tabular-nums">
-          <PrivacyAmount value={node.value} currency={currency} />
+        <span className="min-w-[96px] shrink-0 text-right text-[15px]">
+          <SplitAmount value={node.value} currency={currency} />
         </span>
         <span className="text-muted-foreground w-3.5 text-center">
           {canOpenSheet ? <Icons.ChevronRight className="h-3.5 w-3.5" /> : null}
@@ -307,8 +307,7 @@ export function PortfolioExplorer({
           <div className="mb-3.5 flex items-baseline justify-between gap-3.5">
             <span className="text-[17px]">{active.label}</span>
             <span className="text-muted-foreground text-[15px] tabular-nums">
-              <PrivacyAmount value={total} currency={currency} /> · {active.nodes.length}{" "}
-              {active.unit}
+              <SplitAmount value={total} currency={currency} />, {active.nodes.length} {active.unit}
             </span>
           </div>
           <BlockBar
@@ -319,7 +318,7 @@ export function PortfolioExplorer({
             }))}
           />
           <div className="mb-1 mt-4 flex items-baseline justify-between">
-            <span className="text-muted-foreground text-[10.5px] font-medium">
+            <span className="text-muted-foreground text-[13px]">
               {collapsible && !showAll
                 ? t("insights:insights.explorer.top_units", { unit: active.unit })
                 : active.label}

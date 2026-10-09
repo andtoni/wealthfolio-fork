@@ -142,6 +142,9 @@
     "5Y": "past 5 years",
     "ALL": "All Time"
   },
+  "pace": {
+    "a_month": "a month"
+  },
   "search": {
     "clear": "Clear search",
     "closeSearch": "Close search",

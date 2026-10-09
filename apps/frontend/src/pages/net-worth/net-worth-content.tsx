@@ -1,12 +1,14 @@
 import { useNetWorth, useNetWorthHistory } from "@/hooks/use-alternative-assets";
 import { usePortfolioAllocations } from "@/hooks/use-portfolio-allocations";
 import { useIsMobileViewport } from "@/hooks/use-platform";
+import { pageWash } from "@/lib/page-wash";
 import { useSettingsContext } from "@/lib/settings-provider";
 import type { DateRange } from "@/lib/types";
 import { formatDateISO } from "@/lib/utils";
 import Balance from "@/pages/dashboard/balance";
 import { AllocationDetailSheet } from "@/pages/holdings/components/allocation-detail-sheet";
 import { DashboardCard } from "@/components/dashboard-card";
+import { MonthlyPace } from "@/components/monthly-pace";
 import {
   GainAmount,
   GainPercent,
@@ -245,14 +247,22 @@ export function NetWorthContent() {
                     className="lg:text-md text-sm font-light"
                     value={gainLossAmount}
                     currency={currency}
-                    displayCurrency={false}
+                    displayCurrency={true}
                   />
                   <div className="border-secondary my-1 border-r pr-2" />
-                  <GainPercent
-                    className="lg:text-md text-sm font-light"
-                    value={gainLossPercent}
-                    animated={true}
-                  />
+                  {velocity && velocity.months >= 1 ? (
+                    <MonthlyPace
+                      className="lg:text-md text-sm font-light"
+                      value={velocity.perMonth}
+                      currency={currency}
+                    />
+                  ) : (
+                    <GainPercent
+                      className="lg:text-md text-sm font-light"
+                      value={gainLossPercent}
+                      animated={true}
+                    />
+                  )}
                 </>
               )}
               {periodCode && (
@@ -269,10 +279,9 @@ export function NetWorthContent() {
       <div
         className="flex grow flex-col"
         style={{
-          backgroundImage:
-            (parsedData?.netWorth ?? 0) < 0
-              ? `linear-gradient(to top, color-mix(in srgb, var(--destructive) 30%, transparent), color-mix(in srgb, var(--destructive) 15%, transparent) 50%, transparent 100%)`
-              : `linear-gradient(to top, color-mix(in srgb, ${THEME_COLOR} 30%, transparent), color-mix(in srgb, ${THEME_COLOR} 15%, transparent) 50%, transparent 100%)`,
+          backgroundImage: pageWash(
+            (parsedData?.netWorth ?? 0) < 0 ? "var(--destructive)" : THEME_COLOR,
+          ),
         }}
       >
         {/* Chart section */}

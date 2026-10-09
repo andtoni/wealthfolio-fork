@@ -44,7 +44,7 @@
       "add": "增持",
       "trim": "减持",
       "inside_target_range": "在目标区间内",
-      "outside_range": "{{count}} 项超出区间 · 最大偏差 {{gap}}",
+      "outside_range": "{{count}} 项超出区间，最大偏差 {{gap}}",
       "tolerance": "容差 {{tolerance}}",
       "current": "当前",
       "target": "目标",
@@ -95,7 +95,7 @@
     },
     "category_sheet": {
       "over_period": "在 {{period}} 内",
-      "trend_period": "趋势 · {{period}}",
+      "trend_period": "趋势，{{period}}",
       "items": "项目"
     },
     "trend": {
@@ -113,7 +113,7 @@
       "monthly_pace": "月度节奏",
       "over_months_one": "在 {{count}} 个月内",
       "over_months_other": "在 {{count}} 个月内",
-      "trailing_pace": " · 过去 12 个月节奏的 {{multiple}} 倍",
+      "trailing_pace": "，过去 12 个月节奏的 {{multiple}} 倍",
       "drivers_of_change": "{{period}} 变化的驱动因素",
       "market_returns": "市场回报",
       "contributions": "投入",

@@ -22,7 +22,7 @@ function renderBulkBar(onSetBudgetPeriod: (periodStart: string | null) => void) 
       onTagEvent={vi.fn()}
       onSetBudgetPeriod={onSetBudgetPeriod}
       onDelete={vi.fn()}
-      onClearSelection={vi.fn()}
+      onDone={vi.fn()}
     />,
   );
 }

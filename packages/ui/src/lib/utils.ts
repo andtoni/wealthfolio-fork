@@ -31,6 +31,7 @@ const getCurrencyFormatter = (currency: string) => {
     formatter = new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: normalizedCurrency,
+      currencyDisplay: "narrowSymbol",
       ...DECIMAL_FORMAT_OPTIONS,
     });
   } catch {
@@ -54,6 +55,7 @@ const getCompactCurrencyFormatter = (currency: string, maximumFractionDigits: nu
     formatter = new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: normalizedCurrency,
+      currencyDisplay: "narrowSymbol",
       notation: "compact",
       maximumFractionDigits,
     });

@@ -60,3 +60,9 @@ export function shouldDisplayAnnualizedPerformanceReturn(
 
   return (end - start) / MS_PER_DAY >= ANNUALIZED_DISPLAY_MIN_DAYS;
 }
+
+/** The steady monthly rate that compounds to `periodReturn` over `months`. */
+export function monthlyRate(periodReturn: number, months: number): number | null {
+  if (months < 1 || periodReturn <= -1) return null;
+  return Math.pow(1 + periodReturn, 1 / months) - 1;
+}

@@ -142,6 +142,9 @@
     "5Y": "últimos 5 años",
     "ALL": "Todo el tiempo"
   },
+  "pace": {
+    "a_month": "al mes"
+  },
   "search": {
     "clear": "Borrar búsqueda",
     "closeSearch": "Cerrar búsqueda",

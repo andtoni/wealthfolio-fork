@@ -1,11 +1,13 @@
 import { calculatePerformanceSummary } from "@/adapters";
 import { HistoryChart } from "@/components/history-chart";
+import { MonthlyPace } from "@/components/monthly-pace";
 import { useHapticFeedback } from "@/hooks";
 import { useCurrentValuation } from "@/hooks/use-current-account-valuations";
 import { useHoldings } from "@/hooks/use-holdings";
 import { useValuationHistory } from "@/hooks/use-valuation-history";
 import { HoldingType, isAlternativeAssetKind } from "@/lib/constants";
-import { performancePeriodPnl, performanceSummaryReturn } from "@/lib/performance";
+import { pageWash } from "@/lib/page-wash";
+import { monthlyRate, performancePeriodPnl, performanceSummaryReturn } from "@/lib/performance";
 import { QueryKeys } from "@/lib/query-keys";
 import { useSettingsContext } from "@/lib/settings-provider";
 import { DateRange, TimePeriod } from "@/lib/types";
@@ -164,6 +166,24 @@ export function DashboardContent() {
     [selectedInterval],
   );
 
+  // Change in the charted value over the range, and how many months it spans.
+  const balanceChange = useMemo(() => {
+    if (chartData.length < 2) return null;
+    const first = chartData[0];
+    const last = chartData[chartData.length - 1];
+    const days = (new Date(last.date).getTime() - new Date(first.date).getTime()) / 86_400_000;
+    return { amount: last.totalValue - first.totalValue, months: days / (365.25 / 12) };
+  }, [chartData]);
+  // Investment gain when performance can be measured; otherwise (cash-only
+  // accounts, incomplete valuations) the plain change in balance.
+  const periodAmount = gainLossAmount ?? balanceChange?.amount ?? null;
+  const returnPace =
+    simpleReturn != null && balanceChange ? monthlyRate(simpleReturn, balanceChange.months) : null;
+  const balancePace =
+    simpleReturn == null && balanceChange && balanceChange.months >= 1
+      ? balanceChange.amount / balanceChange.months
+      : null;
+
   const isNegative = totalValue < 0;
 
   // Callback for IntervalSelector
@@ -202,30 +222,36 @@ export function DashboardContent() {
                   </div>
                 ) : (
                   <>
-                    {gainLossAmount == null ? (
+                    {periodAmount == null ? (
                       <span className="text-muted-foreground lg:text-md text-sm font-light">
                         N/A
                       </span>
                     ) : (
                       <GainAmount
                         className="lg:text-md text-sm font-light"
-                        value={gainLossAmount}
+                        value={periodAmount}
                         currency={baseCurrency}
-                        displayCurrency={false}
+                        displayCurrency={true}
                       />
                     )}
-                    <div className="border-secondary my-1 border-r pr-2" />
-                    {simpleReturn == null ? (
-                      <span className="text-muted-foreground lg:text-md text-sm font-light">
-                        N/A
-                      </span>
-                    ) : (
+                    {(simpleReturn != null || balancePace != null) && (
+                      <div className="border-secondary my-1 border-r pr-2" />
+                    )}
+                    {returnPace != null ? (
+                      <MonthlyPace className="lg:text-md text-sm font-light" value={returnPace} />
+                    ) : simpleReturn != null ? (
                       <GainPercent
                         className="lg:text-md text-sm font-light"
                         value={simpleReturn}
                         animated={true}
                       />
-                    )}
+                    ) : balancePace != null ? (
+                      <MonthlyPace
+                        className="lg:text-md text-sm font-light"
+                        value={balancePace}
+                        currency={baseCurrency}
+                      />
+                    ) : null}
                   </>
                 )}
                 {selectedInterval && (
@@ -242,9 +268,7 @@ export function DashboardContent() {
       <div
         className="flex grow flex-col"
         style={{
-          backgroundImage: isNegative
-            ? `linear-gradient(to top, color-mix(in srgb, var(--destructive) 30%, transparent), color-mix(in srgb, var(--destructive) 15%, transparent) 50%, transparent 100%)`
-            : `linear-gradient(to top, color-mix(in srgb, var(--success) 30%, transparent), color-mix(in srgb, var(--success) 15%, transparent) 50%, transparent 100%)`,
+          backgroundImage: pageWash(isNegative ? "var(--destructive)" : "var(--success)"),
         }}
       >
         <div className="h-70">
