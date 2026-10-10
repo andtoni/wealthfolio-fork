@@ -15,9 +15,9 @@
 > - **Upstream audit tooling** (`scripts/upstream-audit.mjs`, `docs/upstream-integration.md`) that tracks
 >   divergence from upstream and gates selective backports.
 >
-> This fork is published as a single commit on top of upstream. Deployment-specific files, planning
-> notes and the commit history of the private working repository are not included, so some
-> documentation refers to files that are absent here.
+> Published from a private working repository. Deployment-specific files and planning notes are not
+> included, commit messages are reduced to their subject lines, and personal data in tests has been
+> replaced with synthetic values, so some documentation refers to files that are absent here.
 >
 > Built with AI coding agents (Claude Code, Codex and Pi) that I direct. Every change in the private
 > working repository goes through a pull request gated by CI and security scanning.
