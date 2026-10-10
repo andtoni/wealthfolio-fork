@@ -1,3 +1,27 @@
+> **This is a fork of [wealthfolio/wealthfolio](https://github.com/wealthfolio/wealthfolio)**, maintained by
+> [Andrea Tonelli](https://github.com/andtoni) and licensed under the same AGPL-3.0 terms. All credit for
+> Wealthfolio itself belongs to its authors.
+>
+> What this fork adds on top of upstream:
+>
+> - **Bank-fed spending.** A receipt-bound bridge that accepts provider transactions from a separate
+>   reconciliation service, with card-authorisation to settlement linking and idempotent replay.
+> - **Budgeting extensions.** Configurable budget cycles, irregular-spending handling, budget exclusion
+>   and per-transaction budget periods, on top of upstream's budget groups and targets.
+> - **Categorisation extensions.** A South African merchant preset and suggestions from merchant
+>   history, on top of upstream's preset framework and assistant tools.
+> - **Household scope and file-backed secrets** for self-hosted, multi-member deployments.
+> - **Interface redesign** of the spending, dashboard and net-worth screens.
+> - **Upstream audit tooling** (`scripts/upstream-audit.mjs`, `docs/upstream-integration.md`) that tracks
+>   divergence from upstream and gates selective backports.
+>
+> This fork is published as a single commit on top of upstream. Deployment-specific files, planning
+> notes and the commit history of the private working repository are not included, so some
+> documentation refers to files that are absent here.
+>
+> Built with AI coding agents (Claude Code, Codex and Pi) that I direct. Every change in the private
+> working repository goes through a pull request gated by CI and security scanning.
+
 <div align="center">
   <a href="https://github.com/wealthfolio/wealthfolio">
     <img src="apps/frontend/public/logo.svg" alt="Logo" width="80" height="80">
