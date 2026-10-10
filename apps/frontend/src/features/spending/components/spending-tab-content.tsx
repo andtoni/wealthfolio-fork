@@ -1297,6 +1297,10 @@ export default function SpendingTabContent() {
                 ...(budgetCardBudget?.computed.groupRows.flatMap((row) => row.categories) ?? []),
                 ...(budgetCardBudget?.computed.ungroupedRows ?? []),
               ]}
+              uncategorized={
+                monthReport?.spendingBreakdown.find((row) => row.categoryId === "__uncategorized__")
+                  ?.amount ?? 0
+              }
               spendingBreakdown={budgetSpendingBreakdown}
               categoriesMeta={categoriesMeta}
               currency={budgetCardBudget?.computed.currency ?? currency}

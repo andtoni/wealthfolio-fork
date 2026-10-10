@@ -529,7 +529,7 @@ function budgetStatusColor(pct: number): string {
 }
 
 const RING_SIZE = 64;
-const RING_STROKE = 3;
+const RING_STROKE = 4;
 /** The tinted disc behind the icon, the same circle a transaction row uses. */
 const RING_DISC = 46;
 const RING_RADIUS = (RING_SIZE - RING_STROKE) / 2;
@@ -541,6 +541,7 @@ const IRREGULAR_LEGEND = 4;
 export function BudgetRings({
   allocations,
   unbudgeted,
+  uncategorized,
   spendingBreakdown,
   categoriesMeta,
   currency,
@@ -550,6 +551,8 @@ export function BudgetRings({
   allocations: BudgetCategoryRow[];
   /** Every spending category of the cycle; the ones without a budget feed the irregular bar. */
   unbudgeted: BudgetCategoryRow[];
+  /** Spending of the cycle that has no category yet; its own block in the irregular bar. */
+  uncategorized: number;
   spendingBreakdown: { categoryId: string; amount: number; count: number }[];
   categoriesMeta: CategoryMetaMap;
   currency: string;
@@ -594,6 +597,7 @@ export function BudgetRings({
   // Irregular spending: categories the plan gives nothing to but that were spent in,
   // whether they sit in a group, in an excluded group, or in no group at all.
   const irregular = useMemo(() => {
+    const period = `from=${activityRange.from}&to=${activityRange.to}&budget=1`;
     const rows = unbudgeted
       .filter((row) => (row.target || 0) <= 0 && row.actual > 0)
       .map((row) => ({
@@ -601,10 +605,23 @@ export function BudgetRings({
         name: row.name,
         color: row.color ?? "var(--muted-foreground)",
         spent: row.actual,
+        href: `/activities?tab=spending&category=${encodeURIComponent(row.categoryId)}&${period}`,
+        uncategorized: false,
       }))
       .sort((x, y) => y.spent - x.spent);
+    // Uncategorized spending leads, so it is always named under the bar.
+    if (uncategorized > 0) {
+      rows.unshift({
+        categoryId: "__uncategorized__",
+        name: t("spending:dashboard.uncategorized"),
+        color: BUDGET_NEAR_LIMIT,
+        spent: uncategorized,
+        href: `/activities?tab=spending&status=uncategorized&${period}`,
+        uncategorized: true,
+      });
+    }
     return { rows, total: rows.reduce((sum, row) => sum + row.spent, 0) };
-  }, [unbudgeted]);
+  }, [unbudgeted, uncategorized, activityRange, t]);
 
   if (rings.length === 0) {
     return (
@@ -720,15 +737,14 @@ export function BudgetRings({
               value: row.spent,
               color: row.color,
               label: row.name,
+              href: row.href,
             }))}
           />
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
             {irregular.rows.slice(0, IRREGULAR_LEGEND).map((row) => (
               <Link
                 key={row.categoryId}
-                to={`/activities?tab=spending&category=${encodeURIComponent(row.categoryId)}&from=${
-                  activityRange.from
-                }&to=${activityRange.to}&budget=1`}
+                to={row.href}
                 className="inline-flex min-w-0 items-center gap-1.5"
               >
                 <span
@@ -739,6 +755,11 @@ export function BudgetRings({
                 <span className="text-muted-foreground tabular-nums">
                   {isBalanceHidden ? "••••" : formatCompactAmount(row.spent, currency)}
                 </span>
+                {row.uncategorized && (
+                  <span className="underline underline-offset-4">
+                    {t("spending:transactions.categorize")}
+                  </span>
+                )}
               </Link>
             ))}
             {irregular.rows.length > IRREGULAR_LEGEND && (

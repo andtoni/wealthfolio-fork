@@ -857,11 +857,6 @@ export const SpendingTransactionsTab = forwardRef<
     });
   }, []);
 
-  const handleHoldRow = useCallback((id: string) => {
-    setSelectMode(true);
-    setSelectedRowIds((prev) => new Set(prev).add(id));
-  }, []);
-
   const allVisibleSelected =
     rows.length > 0 && rows.every((r) => selectedRowIds.has(r.activity.id));
   const someVisibleSelected =
@@ -1000,7 +995,6 @@ export const SpendingTransactionsTab = forwardRef<
         isSelected: selectedRowIds.has(r.activity.id),
         suggestedCategory: suggestedCategoryByActivity.get(r.activity.id),
         onToggleSelect: handleToggleRow,
-        onHoldSelect: handleHoldRow,
         onAssignCategory: handleAssignCategory,
         onClearCategory: handleClearCategory,
         onSetEvent: handleSetEvent,
@@ -1055,7 +1049,7 @@ export const SpendingTransactionsTab = forwardRef<
   }, [editingActivity]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-transactions>
       <TransactionsFilterBar
         searchInput={searchInput}
         onSearchInputChange={setSearchInput}

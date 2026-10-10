@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { DateRange } from "react-day-picker";
 import { useTranslation } from "react-i18next";
 
@@ -102,6 +103,38 @@ export function TransactionsFilterBar({
 }: TransactionsFilterBarProps) {
   const { t } = useTranslation();
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  // The buttons beside the title travel up with the page. When they reach the top of the
+  // screen a pinned copy takes over in the same spot, so they never leave and never pop in.
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const pinnedRef = useRef<HTMLDivElement>(null);
+  const [pinnedRight, setPinnedRight] = useState<number | null>(null);
+  useEffect(() => {
+    // The transactions list this bar sits above; it leaves sideways when another tab is swiped in.
+    const list = actionsRef.current?.closest("[data-transactions]");
+    if (!list) return;
+    const update = () => {
+      const inFlow = actionsRef.current?.getBoundingClientRect();
+      const pinned = pinnedRef.current?.getBoundingClientRect();
+      if (!inFlow || !pinned) return;
+      const bounds = list.getBoundingClientRect();
+      const onScreen = bounds.right > 0 && bounds.left < window.innerWidth && bounds.bottom > 0;
+      setPinnedRight(
+        onScreen && inFlow.top <= pinned.top ? window.innerWidth - inFlow.right : null,
+      );
+    };
+    const observer = new IntersectionObserver(update);
+    observer.observe(list);
+    document.addEventListener("scroll", update, { capture: true, passive: true });
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("scroll", update, { capture: true });
+    };
+  }, []);
+  const scrollToTop = () => {
+    for (let el = actionsRef.current?.parentElement; el; el = el.parentElement) {
+      if (el.scrollTop > 0) el.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
   const statusOptions = [
     { value: "needs_review", label: t("spending:filters.statusNeedsReview") },
     { value: "uncategorized", label: t("spending:filters.statusUncategorized") },
@@ -181,38 +214,67 @@ export function TransactionsFilterBar({
     </>
   );
 
+  const actions = (pinned: boolean) => (
+    <div className="bg-card flex shrink-0 items-center rounded-full p-1 shadow-sm">
+      {pinned && (
+        <button
+          type="button"
+          className="flex h-9 w-10 items-center justify-center rounded-full"
+          onClick={scrollToTop}
+          aria-label={t("spending:filters.backToTop")}
+        >
+          <Icons.ArrowUp className="h-[18px] w-[18px]" />
+        </button>
+      )}
+      {onToggleSelect && (
+        <button
+          type="button"
+          className={cn(
+            "flex h-9 w-10 items-center justify-center rounded-full",
+            selectMode && "bg-foreground/10",
+          )}
+          onClick={onToggleSelect}
+          aria-label={selectMode ? t("spending:filters.done") : t("common:select")}
+          aria-pressed={selectMode}
+        >
+          <Icons.ListChecks className="h-[18px] w-[18px]" />
+        </button>
+      )}
+      <button
+        type="button"
+        className="relative flex h-9 w-10 items-center justify-center rounded-full"
+        onClick={() => setMobileFiltersOpen(true)}
+        aria-label={t("spending:filters.filterTransactions")}
+      >
+        <Icons.ListFilter className="h-[18px] w-[18px]" />
+        {controlFiltersActive && (
+          <span className="bg-primary absolute right-2 top-1.5 h-2 w-2 rounded-full" />
+        )}
+      </button>
+    </div>
+  );
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3 pt-1">
         <h1 className="text-[32px] font-medium leading-tight tracking-tight">{title}</h1>
-        <div className="bg-card flex shrink-0 items-center rounded-full p-1 shadow-sm">
-          {onToggleSelect && (
-            <button
-              type="button"
-              className={cn(
-                "flex h-9 w-10 items-center justify-center rounded-full",
-                selectMode && "bg-foreground/10",
-              )}
-              onClick={onToggleSelect}
-              aria-label={selectMode ? t("spending:filters.done") : t("common:select")}
-              aria-pressed={selectMode}
-            >
-              <Icons.ListChecks className="h-[18px] w-[18px]" />
-            </button>
-          )}
-          <button
-            type="button"
-            className="relative flex h-9 w-10 items-center justify-center rounded-full"
-            onClick={() => setMobileFiltersOpen(true)}
-            aria-label={t("spending:filters.filterTransactions")}
-          >
-            <Icons.ListFilter className="h-[18px] w-[18px]" />
-            {controlFiltersActive && (
-              <span className="bg-primary absolute right-2 top-1.5 h-2 w-2 rounded-full" />
-            )}
-          </button>
+        <div ref={actionsRef} className={cn(pinnedRight !== null && "invisible")}>
+          {actions(false)}
         </div>
       </div>
+      {createPortal(
+        <div
+          ref={pinnedRef}
+          className={cn(
+            "fixed right-2 top-[calc(var(--inset-top)+0.5rem)] z-40",
+            pinnedRight === null && "invisible",
+          )}
+          style={pinnedRight === null ? undefined : { right: pinnedRight }}
+        >
+          {actions(true)}
+        </div>,
+        document.body,
+      )}
       <label className="bg-card flex h-11 items-center gap-2.5 rounded-full px-4 shadow-sm">
         <Icons.Search className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
         <input
