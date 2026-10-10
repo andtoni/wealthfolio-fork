@@ -22,6 +22,46 @@
 > Built with AI coding agents (Claude Code, Codex and Pi) that I direct. Every change in the private
 > working repository goes through a pull request gated by CI and security scanning.
 
+## What it looks like
+
+Screens from this fork on desktop and phone, running on synthetic seed data.
+
+**Spending and budget rings**
+
+<p>
+  <img src="docs/screenshots/spending-web.png" alt="Spending and budget rings, desktop" width="72%">
+  <img src="docs/screenshots/spending-phone.png" alt="Spending and budget rings, phone" width="22%">
+</p>
+
+**Daily spending, breakdown and pace**
+
+<p>
+  <img src="docs/screenshots/breakdown-web.png" alt="Daily spending, breakdown and pace, desktop" width="72%">
+  <img src="docs/screenshots/breakdown-phone.png" alt="Daily spending, breakdown and pace, phone" width="22%">
+</p>
+
+**Budget plan**
+
+<p>
+  <img src="docs/screenshots/budget-web.png" alt="Budget plan, desktop" width="72%">
+  <img src="docs/screenshots/budget-phone.png" alt="Budget plan, phone" width="22%">
+</p>
+
+**Transactions**
+
+<p>
+  <img src="docs/screenshots/transactions-web.png" alt="Transactions, desktop" width="72%">
+  <img src="docs/screenshots/transactions-phone.png" alt="Transactions, phone" width="22%">
+</p>
+
+**Net worth**
+
+<p>
+  <img src="docs/screenshots/networth-web.png" alt="Net worth, desktop" width="72%">
+  <img src="docs/screenshots/networth-phone.png" alt="Net worth, phone" width="22%">
+</p>
+
+
 <div align="center">
   <a href="https://github.com/wealthfolio/wealthfolio">
     <img src="apps/frontend/public/logo.svg" alt="Logo" width="80" height="80">
