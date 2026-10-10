@@ -7,11 +7,12 @@ import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { HealthSeverity } from "@/lib/types";
 
+/** The dot on the icon; the icon itself stays the colour of its neighbours. */
 const SEVERITY_COLORS: Record<HealthSeverity, string> = {
-  CRITICAL: "text-destructive",
-  ERROR: "text-destructive",
-  WARNING: "text-yellow-500",
-  INFO: "text-muted-foreground",
+  CRITICAL: "bg-destructive",
+  ERROR: "bg-destructive",
+  WARNING: "bg-[#C28B47]",
+  INFO: "bg-muted-foreground",
 };
 
 /**
@@ -68,11 +69,17 @@ export function HealthStatusIndicator() {
           <Button
             variant="secondary"
             size="icon-xs"
-            className="bg-secondary/50 rounded-full"
+            className="bg-secondary/50 relative rounded-full"
             asChild
           >
             <Link to="/health" title={t("common:component.data_status")}>
-              <Icons.AlertTriangle className={cn("size-5", severityColor)} />
+              <Icons.AlertTriangle className="size-5" />
+              <span
+                className={cn(
+                  "border-background absolute right-0.5 top-0.5 size-2 rounded-full border",
+                  severityColor,
+                )}
+              />
             </Link>
           </Button>
         </TooltipTrigger>

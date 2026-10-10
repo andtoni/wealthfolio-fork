@@ -98,8 +98,6 @@
   "thread": {
     "disclaimer": "回复可能不准确。不构成财务建议。",
     "scrollToBottom": "滚动到底部",
-    "welcomeHello": "您好！",
-    "welcomeHelp": "今天我能为您做些什么？",
     "toolDisplayFailed": "工具显示失败。对话仍然可用。",
     "sendMessage": "发送消息",
     "stopGenerating": "停止生成",
@@ -114,11 +112,29 @@
     "update": "更新",
     "previous": "上一条",
     "next": "下一条",
-    "suggestions": {
-      "performance": "我的投资组合今年表现如何？",
-      "topHoldings": "我表现最好的持仓有哪些？",
-      "dividendIncome": "显示我的股息收入摘要",
-      "assetAllocation": "分析我的资产配置"
+    "title": "助手",
+    "subtitle": "询问你的资金情况，或从这里开始",
+    "starters": {
+      "categorize": {
+        "title": "为我的交易分类",
+        "sub": "为每笔未分类交易建议类别",
+        "prompt": "帮我为所有未分类的交易分类。"
+      },
+      "spending": {
+        "title": "我的钱花到哪里了？",
+        "sub": "本预算周期",
+        "prompt": "本预算周期我的钱花到哪里了？显示最大的类别和任何异常情况。"
+      },
+      "performance": {
+        "title": "我的投资组合表现如何？",
+        "sub": "今年",
+        "prompt": "我的投资组合今年表现如何？"
+      },
+      "allocation": {
+        "title": "检查我的配置",
+        "sub": "我的资产如何分布",
+        "prompt": "分析我的资产配置"
+      }
     }
   },
   "codeHeader": {

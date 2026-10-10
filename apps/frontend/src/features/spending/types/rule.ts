@@ -26,6 +26,10 @@ export interface CategorySuggestion {
   activityId: string;
   taxonomyId: string;
   categoryId: string;
+  /** How many of the merchant's hand-given labels chose this category. */
+  agreeing: number;
+  /** How many hand-given labels the merchant has. */
+  total: number;
 }
 
 export interface NewCategorizationRule {

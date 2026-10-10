@@ -4,12 +4,14 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Bar,
   BarChart,
+  CartesianGrid,
   Cell,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   Treemap,
   XAxis,
+  YAxis,
 } from "recharts";
 
 import { DashboardCard, LIST_ROW, SECTION_HEADING } from "@/components/dashboard-card";
@@ -398,6 +400,8 @@ export default function SpendingTabContent() {
   // and survives reload. Falls back to the persisted preference, then to
   // DEFAULT_INTERVAL. The "spendingInterval" prefix avoids colliding with
   // other dashboard tabs that may want their own `?interval`.
+  // The comparison under the headline is folded away until the amount is tapped.
+  const [showDelta, setShowDelta] = usePersistentState<boolean>("spending-show-delta", false);
   const [persistedInterval, setPersistedInterval] = usePersistentState<string>(
     INTERVAL_STORAGE_KEY,
     DEFAULT_INTERVAL,
@@ -1211,7 +1215,7 @@ export default function SpendingTabContent() {
         </div>
       )}
       <div className="px-4 pt-2 md:px-6 lg:px-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-8">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between sm:gap-8">
           <div>
             <SpendingPeriodMenu
               value={selectedPeriod}
@@ -1225,13 +1229,21 @@ export default function SpendingTabContent() {
                 ? ` ${selectedIntervalDescription.startsWith("spending:") ? t(selectedIntervalDescription) : selectedIntervalDescription}`
                 : ""}
             </SpendingPeriodMenu>
-            <Balance
-              isLoading={isLoading}
-              targetValue={totalSpending}
-              currency={currency}
-              displayCurrency={true}
-            />
-            <div className="text-md flex items-center">
+            <button
+              type="button"
+              className="block text-left"
+              onClick={() => setShowDelta(!showDelta)}
+              aria-expanded={showDelta}
+              aria-label={t("spending:tabContent.toggleComparison")}
+            >
+              <Balance
+                isLoading={isLoading}
+                targetValue={totalSpending}
+                currency={currency}
+                displayCurrency={true}
+              />
+            </button>
+            <div className={cn("text-md items-center", showDelta ? "flex" : "hidden")}>
               {isPriorLoading ? (
                 <Skeleton className="mt-1 h-4 w-56" />
               ) : priorSpending > 0 ? (
@@ -1333,7 +1345,18 @@ export default function SpendingTabContent() {
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={barData} margin={{ top: 8, right: 24, left: 16, bottom: 8 }}>
+              <BarChart data={barData} margin={{ top: 8, right: 24, left: 4, bottom: 8 }}>
+                <CartesianGrid vertical={false} stroke="var(--foreground)" strokeOpacity={0.06} />
+                <YAxis
+                  width={44}
+                  axisLine={false}
+                  tickLine={false}
+                  tickCount={4}
+                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                  tickFormatter={(value: number) =>
+                    value === 0 ? "" : isBalanceHidden ? "••" : formatCompactAmount(value, currency)
+                  }
+                />
                 <defs>
                   <linearGradient id="spending-bar" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={theme.deep} stopOpacity={0.95} />
@@ -1481,7 +1504,7 @@ function SegmentedToggle({
     <div
       role="group"
       aria-label={ariaLabel}
-      className="bg-card/40 border-border/60 inline-flex max-w-full items-center gap-0.5 rounded-full border p-0.5"
+      className="glass-pill inline-flex max-w-full items-center gap-0.5 rounded-full p-0.5 [backdrop-filter:none]"
     >
       {items.map((it) => {
         const active = it.value === value;
@@ -1620,7 +1643,7 @@ function CategoryTreemapMono({
   }
 
   return (
-    <div className="border-border/60 bg-card/40 overflow-hidden rounded-xl border p-4 backdrop-blur-xl md:p-5">
+    <div className="border-border/60 bg-card/40 overflow-hidden rounded-xl border p-4 md:p-5">
       <div className="h-[220px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <Treemap
@@ -1938,7 +1961,7 @@ function CategoryRankedBar({
   // ── Flat layout (no budget groups configured) — unchanged. ──────────
   const uncategorizedShare = total > 0 ? (uncategorizedAmount / total) * 100 : 0;
   return (
-    <div className="border-border/60 bg-card/40 overflow-hidden rounded-xl border p-4 backdrop-blur-xl md:p-5">
+    <div className="border-border/60 bg-card/40 overflow-hidden rounded-xl border p-4 md:p-5">
       {StackedBar}
 
       <div className="mt-3 space-y-1.5">
@@ -2040,10 +2063,6 @@ function GroupedCategoryBlock({
             "text-muted-foreground/70 h-3 w-3 shrink-0 transition-transform",
             expanded && "rotate-90",
           )}
-        />
-        <span
-          className="block h-2.5 w-2.5 shrink-0 rounded-sm"
-          style={{ backgroundColor: accent }}
         />
         <span className="text-foreground min-w-0 flex-1 truncate text-left text-xs">
           {bucket.name}

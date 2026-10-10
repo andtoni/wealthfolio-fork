@@ -712,7 +712,6 @@
     "previousBudgetPeriod": "上一预算周期",
     "nextBudgetPeriod": "下一预算周期",
     "manage": "管理",
-    "budgetedTitle": "预算内支出",
     "budgetedOf": "{{spent}} / {{budget}}",
     "irregularTitle": "非常规支出",
     "irregularMore": "另有 {{count}} 项"
@@ -794,6 +793,7 @@
     "budgetPeriodClearedCount_other": "{{count}} 笔交易恢复按交易日期计入。"
   },
   "tabContent": {
+    "toggleComparison": "显示或隐藏与上一周期的对比",
     "stageWhereLabel": "我的现状",
     "stageWhereSub": "进度、预算及类别明细",
     "stageChangedLabel": "发生了什么变化",
@@ -941,5 +941,17 @@
     "rolloverIn": "结转流入",
     "dataUnavailable": "预算数据不可用",
     "migrationNeeded": "当前的本地数据库是在更新后的支出迁移之前创建的。"
+  },
+  "suggestions": {
+    "chip": "建议",
+    "title_other": "{{count}} 条建议",
+    "subtitle": "根据你之前的选择",
+    "acceptSure_other": "接受 {{count}} 条确定的",
+    "sure": "确定",
+    "likely": "很可能",
+    "guess": "猜测",
+    "more_other": "下方还有 {{count}} 条",
+    "none": "暂无建议",
+    "askAssistant": "询问助手"
   }
 }

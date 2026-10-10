@@ -26,6 +26,9 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
+/** How long the screen must be left alone before a background refresh runs. */
+const REFRESH_QUIET_MS = 1500;
+
 const TOAST_IDS = {
   marketSyncStart: "market-sync-start",
   portfolioUpdateStart: "portfolio-update-start",
@@ -75,6 +78,16 @@ const useGlobalEventListener = () => {
     let isMounted = true;
     let cleanupFn: (() => void) | undefined;
     setAreListenersReady(false);
+
+    let refreshTimer: number | undefined;
+    let lastTouchAt = 0;
+    const noteTouch = () => {
+      lastTouchAt = performance.now();
+    };
+    const touchEvents = ["pointerdown", "pointermove", "touchmove", "wheel", "scroll"] as const;
+    for (const type of touchEvents) {
+      document.addEventListener(type, noteTouch, { capture: true, passive: true });
+    }
 
     const handleMarketSyncStart = () => {
       if (isMobileViewportRef.current && syncContextRef.current) {
@@ -156,9 +169,21 @@ const useGlobalEventListener = () => {
       } else {
         toast.dismiss(TOAST_IDS.portfolioUpdateStart);
       }
-      queryClientRef.current.invalidateQueries({
-        predicate: (query) => shouldInvalidateAfterPortfolioUpdate(query.queryKey),
-      });
+      // A sync delivers its updates one after another, each announcing itself. They become
+      // one refresh, and the refresh waits until the screen has been left alone for a moment,
+      // so it never lands in the middle of a swipe or a scroll.
+      window.clearTimeout(refreshTimer);
+      const refreshWhenQuiet = () => {
+        const quietFor = performance.now() - lastTouchAt;
+        if (quietFor < REFRESH_QUIET_MS) {
+          refreshTimer = window.setTimeout(refreshWhenQuiet, REFRESH_QUIET_MS - quietFor);
+          return;
+        }
+        queryClientRef.current.invalidateQueries({
+          predicate: (query) => shouldInvalidateAfterPortfolioUpdate(query.queryKey),
+        });
+      };
+      refreshTimer = window.setTimeout(refreshWhenQuiet, REFRESH_QUIET_MS);
     };
 
     const handleDatabaseRestored = () => {
@@ -350,6 +375,10 @@ const useGlobalEventListener = () => {
     return () => {
       isMounted = false;
       setAreListenersReady(false);
+      window.clearTimeout(refreshTimer);
+      for (const type of touchEvents) {
+        document.removeEventListener(type, noteTouch, { capture: true });
+      }
       cleanupFn?.();
     };
   }, [isDesktopEnv]); // Only re-run if isDesktopEnv changes (which it won't)

@@ -70,6 +70,19 @@ export function SwipableView({
   });
 
   const [selectedIndex, setSelectedIndex] = React.useState(initialIndex);
+  // Slides that have been shown stay mounted, so coming back to one is instant.
+  const [visited, setVisited] = React.useState<ReadonlySet<number>>(() => new Set([initialIndex]));
+  // Once the first slide has settled, the others are prepared in the background, at low
+  // priority, so the first visit to each is as quick as a return.
+  const slideCount = items.length;
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      React.startTransition(() => {
+        setVisited(new Set(Array.from({ length: slideCount }, (_, index) => index)));
+      });
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [slideCount]);
   const [scrollSnaps, setScrollSnaps] = React.useState<number[]>([]);
   const previousIndexRef = React.useRef<number>(initialIndex);
 
@@ -80,6 +93,7 @@ export function SwipableView({
       if (!api) return;
       const index = api.selectedScrollSnap();
       setSelectedIndex(index);
+      setVisited((seen) => (seen.has(index) ? seen : new Set(seen).add(index)));
 
       // Only call onViewChange if the index actually changed
       if (index !== previousIndexRef.current) {
@@ -93,7 +107,10 @@ export function SwipableView({
   const onInit = React.useCallback(
     (api: CarouselApi) => {
       if (!api) return;
-      setScrollSnaps(api.scrollSnapList());
+      const snaps = api.scrollSnapList();
+      setScrollSnaps((prev) =>
+        prev.length === snaps.length && prev.every((snap, i) => snap === snaps[i]) ? prev : snaps,
+      );
       onInitProp?.(api);
     },
     [onInitProp],
@@ -124,10 +141,9 @@ export function SwipableView({
     }
   }, [controlledIndex, emblaApi]);
 
-  // MEMORY OPTIMIZATION:
-  // Only render the Active Slide and its immediate neighbors (±1).
-  // Distant slides are kept as empty divs to maintain scroll width but free up DOM nodes/RAM.
-  const shouldRender = (index: number) => Math.abs(selectedIndex - index) <= 1;
+  // Render the active slide, its immediate neighbours (±1) and any slide already visited.
+  // A distant slide never opened stays an empty div that only keeps the scroll width.
+  const shouldRender = (index: number) => Math.abs(selectedIndex - index) <= 1 || visited.has(index);
 
   return (
     <div className={cn("relative flex h-full w-full flex-col", bounded && "min-h-0", className)}>

@@ -8,6 +8,10 @@ pub struct CategorySuggestion {
     pub activity_id: String,
     pub taxonomy_id: String,
     pub category_id: String,
+    /// How many of the merchant's hand-given labels chose this category.
+    pub agreeing: usize,
+    /// How many hand-given labels the merchant has in this taxonomy.
+    pub total: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

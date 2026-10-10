@@ -35,7 +35,7 @@ export function StageNav({ stage, onStageChange }: StageNavProps) {
   return (
     <nav
       aria-label={t("spending:insights.stagesLabel")}
-      className="bg-foreground/[0.07] flex w-full items-center gap-1 rounded-full p-1 sm:inline-flex sm:w-auto"
+      className="glass-pill flex w-full items-center gap-1 rounded-full p-1 sm:inline-flex sm:w-auto"
     >
       {STAGES.map((s) => {
         const active = stage === s.id;

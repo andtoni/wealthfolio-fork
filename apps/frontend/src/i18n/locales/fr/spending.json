@@ -712,7 +712,6 @@
     "previousBudgetPeriod": "Période budgétaire précédente",
     "nextBudgetPeriod": "Période budgétaire suivante",
     "manage": "Gérer",
-    "budgetedTitle": "Dépenses budgétées",
     "budgetedOf": "{{spent}} sur {{budget}}",
     "irregularTitle": "Dépenses irrégulières",
     "irregularMore": "+{{count}} de plus"
@@ -794,6 +793,7 @@
     "budgetPeriodClearedCount_other": "{{count}} transactions sont de nouveau comptées à leur date."
   },
   "tabContent": {
+    "toggleComparison": "Afficher ou masquer la comparaison avec la période précédente",
     "stageWhereLabel": "Où j'en suis",
     "stageWhereSub": "Rythme, budget et répartition par catégorie",
     "stageChangedLabel": "Ce qui a changé",
@@ -941,5 +941,20 @@
     "rolloverIn": "Report entrant",
     "dataUnavailable": "Les données de budget ne sont pas disponibles",
     "migrationNeeded": "La base de données locale actuelle a été créée avant la migration des dépenses mise à jour."
+  },
+  "suggestions": {
+    "chip": "Suggérer",
+    "title_one": "{{count}} suggestion",
+    "title_other": "{{count}} suggestions",
+    "subtitle": "D'après vos choix précédents",
+    "acceptSure_one": "Accepter {{count}} sûre",
+    "acceptSure_other": "Accepter {{count}} sûres",
+    "sure": "Sûre",
+    "likely": "Probable",
+    "guess": "Supposition",
+    "more_one": "{{count}} de plus plus bas",
+    "more_other": "{{count}} de plus plus bas",
+    "none": "Rien à suggérer pour l'instant",
+    "askAssistant": "Demander à l'assistant"
   }
 }

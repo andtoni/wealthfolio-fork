@@ -67,6 +67,10 @@ interface TransactionsFilterBarProps {
   title?: string;
   selectMode?: boolean;
   onToggleSelect?: () => void;
+  /** How many categories are on offer; the first chip shows or hides them above the list. */
+  suggestionCount?: number;
+  suggestionsShown?: boolean;
+  onToggleSuggestions?: () => void;
 }
 
 export function TransactionsFilterBar({
@@ -100,6 +104,9 @@ export function TransactionsFilterBar({
   title,
   selectMode = false,
   onToggleSelect,
+  suggestionCount = 0,
+  suggestionsShown = false,
+  onToggleSuggestions,
 }: TransactionsFilterBarProps) {
   const { t } = useTranslation();
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -215,7 +222,7 @@ export function TransactionsFilterBar({
   );
 
   const actions = (pinned: boolean) => (
-    <div className="bg-card flex shrink-0 items-center rounded-full p-1 shadow-sm">
+    <div className="glass-pill flex shrink-0 items-center rounded-full p-1">
       {pinned && (
         <button
           type="button"
@@ -288,6 +295,21 @@ export function TransactionsFilterBar({
         data-no-swipe-drag
         className="-mx-4 overflow-x-auto whitespace-nowrap px-4 [scrollbar-width:none] md:mx-0 md:px-0 [&::-webkit-scrollbar]:hidden"
       >
+        {onToggleSuggestions && (
+          <button
+            type="button"
+            className={cn(
+              "mr-2 inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 text-sm",
+              suggestionsShown ? "bg-foreground text-background" : "bg-foreground/[0.07]",
+            )}
+            onClick={onToggleSuggestions}
+            aria-pressed={suggestionsShown}
+            aria-label={t("spending:suggestions.chip")}
+          >
+            <Icons.Sparkles className="h-4 w-4" aria-hidden="true" />
+            {suggestionCount > 0 && <span className="tabular-nums">{suggestionCount}</span>}
+          </button>
+        )}
         {chips.map((chip) => (
           <button
             key={chip.label}

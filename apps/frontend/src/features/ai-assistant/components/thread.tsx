@@ -18,6 +18,7 @@ import { MarkdownText } from "./markdown-text";
 import { ToolFallback } from "./tool-fallback";
 import { TooltipIconButton } from "./tooltip-icon-button";
 
+import { LIST_ROW } from "@/components/dashboard-card";
 import { cn } from "@/lib/utils";
 import { Reasoning, ReasoningGroup } from "./reasoning";
 
@@ -87,60 +88,56 @@ const ThreadScrollToBottom: FC = () => {
 const ThreadWelcome: FC = () => {
   const { t } = useTranslation();
   return (
-    <div className="aui-thread-welcome-root max-w-(--thread-max-width) mx-auto my-auto flex w-full grow flex-col">
-      <div className="aui-thread-welcome-center flex w-full grow flex-col items-center justify-center">
-        <div className="aui-thread-welcome-message flex size-full flex-col justify-center px-8">
-          <div className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-2 animate-in text-2xl font-medium duration-300 ease-out">
-            {t("ai:thread.welcomeHello")}
-          </div>
-          <div className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-2 animate-in text-muted-foreground/65 text-2xl delay-100 duration-300 ease-out">
-            {t("ai:thread.welcomeHelp")}
-          </div>
-        </div>
-      </div>
+    <div className="aui-thread-welcome-root max-w-(--thread-max-width) mx-auto flex w-full grow flex-col pt-2">
+      <h1 className="fade-in animate-in text-[32px] font-medium leading-tight tracking-tight duration-300 ease-out">
+        {t("ai:thread.title")}
+      </h1>
+      <p className="text-muted-foreground pb-3 pt-1 text-[15px]">{t("ai:thread.subtitle")}</p>
       <ThreadSuggestions />
     </div>
   );
 };
 
+/** Things to ask, laid out as the list rows the rest of the app uses. */
+const STARTERS = [
+  { icon: "Sparkles", key: "categorize" },
+  { icon: "Wallet", key: "spending" },
+  { icon: "TrendingUp", key: "performance" },
+  { icon: "PieChart", key: "allocation" },
+] as const;
+
 const ThreadSuggestions: FC = () => {
   const { t } = useTranslation();
   return (
-    <div className="aui-thread-welcome-suggestions flex flex-col items-stretch gap-2 pb-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-center">
-      {[
-        {
-          icon: "TrendingUp" as const,
-          text: t("ai:thread.suggestions.performance"),
-        },
-        {
-          icon: "BarChart" as const,
-          text: t("ai:thread.suggestions.topHoldings"),
-        },
-        {
-          icon: "FileText" as const,
-          text: t("ai:thread.suggestions.dividendIncome"),
-        },
-        {
-          icon: "PieChart" as const,
-          text: t("ai:thread.suggestions.assetAllocation"),
-        },
-      ].map((suggestion, index) => {
-        const Icon = Icons[suggestion.icon];
+    <div className="aui-thread-welcome-suggestions pb-4">
+      {STARTERS.map((starter, index) => {
+        const Icon = Icons[starter.icon];
+        const title = t(`ai:thread.starters.${starter.key}.title`);
         return (
           <div
-            key={`suggested-action-${index}`}
-            className="fade-in slide-in-from-bottom-4 animate-in fill-mode-both w-full duration-300 ease-out sm:w-auto"
+            key={starter.key}
+            className="fade-in slide-in-from-bottom-2 animate-in fill-mode-both duration-300 ease-out"
             style={{ animationDelay: `${index * 50}ms` }}
           >
-            <ThreadPrimitive.Suggestion prompt={suggestion.text} asChild>
-              <Button
-                variant="ghost"
-                className="text-muted-foreground hover:text-foreground dark:hover:bg-accent/60 bg-foreground/[0.07] h-auto w-full max-w-full justify-start gap-2 whitespace-normal rounded-full border-0 px-4 py-2.5 text-left text-sm font-normal sm:w-auto sm:justify-center sm:whitespace-nowrap sm:text-center"
-                aria-label={suggestion.text}
-              >
-                <Icon className="size-4 shrink-0 opacity-60" />
-                {suggestion.text}
-              </Button>
+            <ThreadPrimitive.Suggestion
+              prompt={t(`ai:thread.starters.${starter.key}.prompt`)}
+              asChild
+            >
+              <button type="button" className={cn(LIST_ROW, "w-[calc(100%+1rem)] text-left")}>
+                <span className="bg-foreground/[0.07] flex h-10 w-10 shrink-0 items-center justify-center rounded-full">
+                  <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[17px] leading-snug">{title}</span>
+                  <span className="text-muted-foreground block truncate text-[15px] leading-snug">
+                    {t(`ai:thread.starters.${starter.key}.sub`)}
+                  </span>
+                </span>
+                <Icons.ChevronRight
+                  className="text-muted-foreground h-4 w-4 shrink-0"
+                  aria-hidden="true"
+                />
+              </button>
             </ThreadPrimitive.Suggestion>
           </div>
         );
@@ -157,11 +154,11 @@ const Composer: FC<ComposerProps> = ({ composerActions }) => {
   const { t } = useTranslation();
   return (
     <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col">
-      <ComposerPrimitive.AttachmentDropzone className="aui-composer-attachment-dropzone bg-card data-[dragging=true]:bg-accent/50 flex w-full flex-col rounded-3xl px-1 pt-2 shadow-sm outline-none">
+      <ComposerPrimitive.AttachmentDropzone className="aui-composer-attachment-dropzone glass-pill data-[dragging=true]:bg-accent/50 flex w-full flex-col rounded-[26px] px-1 pt-1.5 outline-none">
         <ComposerAttachments />
         <ComposerPrimitive.Input
           placeholder={t("ai:thread.composerPlaceholder")}
-          className="aui-composer-input placeholder:text-muted-foreground mb-1 max-h-32 min-h-16 w-full resize-none bg-transparent px-3.5 pb-3 pt-1.5 text-base outline-none focus-visible:ring-0"
+          className="aui-composer-input placeholder:text-muted-foreground max-h-32 min-h-9 w-full resize-none bg-transparent px-3.5 pb-0 pt-1.5 text-base outline-none focus-visible:ring-0"
           rows={1}
           autoFocus
           aria-label={t("ai:thread.messageInput")}
@@ -179,7 +176,7 @@ interface ComposerActionProps {
 const ComposerAction: FC<ComposerActionProps> = ({ composerActions }) => {
   const { t } = useTranslation();
   return (
-    <div className="aui-composer-action-wrapper relative mx-1 mb-2 mt-2 flex items-center justify-between">
+    <div className="aui-composer-action-wrapper relative mx-1 mb-1.5 mt-0.5 flex items-center justify-between">
       <div className="flex items-center gap-1">
         <ComposerAddAttachment />
         {composerActions}

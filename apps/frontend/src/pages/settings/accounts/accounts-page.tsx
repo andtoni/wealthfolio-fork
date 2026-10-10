@@ -225,7 +225,7 @@ const SettingsAccountsPage = () => {
             type="single"
             value={filter}
             onValueChange={(value) => value && setFilter(value as FilterType)}
-            className="bg-foreground/[0.07] h-9 rounded-full p-1"
+            className="glass-pill h-9 rounded-full p-1"
           >
             <ToggleGroupItem
               value="all"

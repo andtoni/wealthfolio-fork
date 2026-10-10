@@ -177,8 +177,8 @@ impl CategorizationRulesService {
             };
             // What you chose before for this merchant comes ahead of any rule.
             let learned_category = bucket.taxonomy_id().and_then(|taxonomy_id| {
-                let category_id = learned.get(&(merchant_key(a)?, taxonomy_id))?;
-                Some((taxonomy_id.to_string(), category_id.clone()))
+                let learned = learned.get(&(merchant_key(a)?, taxonomy_id))?;
+                Some((taxonomy_id.to_string(), learned.category_id.clone()))
             });
             let (tax_id, cat_id, source) = if let Some((tax_id, cat_id)) = learned_category {
                 (tax_id, cat_id, "history")
@@ -268,11 +268,13 @@ impl CategorizationRulesService {
                 if categorized.contains(&(a.id.as_str(), taxonomy_id)) {
                     return None;
                 }
-                let category_id = leading.get(&(merchant_key(a)?, taxonomy_id))?;
+                let learned = leading.get(&(merchant_key(a)?, taxonomy_id))?;
                 Some(CategorySuggestion {
                     activity_id: a.id.clone(),
                     taxonomy_id: taxonomy_id.to_string(),
-                    category_id: category_id.clone(),
+                    category_id: learned.category_id.clone(),
+                    agreeing: learned.agreeing,
+                    total: learned.total,
                 })
             })
             .collect())
@@ -286,7 +288,7 @@ impl CategorizationRulesService {
         activities: &'a [Activity],
         assignments: &'a [ActivityTaxonomyAssignment],
         qualifies: fn(usize, usize, usize) -> bool,
-    ) -> Result<HashMap<(&'a str, &'a str), String>> {
+    ) -> Result<HashMap<(&'a str, &'a str), LearnedCategory>> {
         let merchants: HashMap<&str, &str> = activities
             .iter()
             .filter_map(|a| Some((a.id.as_str(), merchant_key(a)?)))
@@ -309,7 +311,14 @@ impl CategorizationRulesService {
             let runner_up = ranked.get(1).map_or(0, |(_, count)| *count);
             if let Some((category_id, top)) = ranked.first() {
                 if qualifies(*top, runner_up, total) {
-                    learned.insert((merchant, taxonomy_id), category_id.to_string());
+                    learned.insert(
+                        (merchant, taxonomy_id),
+                        LearnedCategory {
+                            category_id: category_id.to_string(),
+                            agreeing: *top,
+                            total,
+                        },
+                    );
                 }
             }
         }
@@ -318,14 +327,14 @@ impl CategorizationRulesService {
             .filter_existing_category_pairs(
                 &learned
                     .iter()
-                    .map(|((_, taxonomy_id), category_id)| {
-                        (taxonomy_id.to_string(), category_id.clone())
+                    .map(|((_, taxonomy_id), learned)| {
+                        (taxonomy_id.to_string(), learned.category_id.clone())
                     })
                     .collect::<Vec<_>>(),
             )
             .await?;
-        learned.retain(|(_, taxonomy_id), category_id| {
-            existing.contains(&(taxonomy_id.to_string(), category_id.clone()))
+        learned.retain(|(_, taxonomy_id), learned| {
+            existing.contains(&(taxonomy_id.to_string(), learned.category_id.clone()))
         });
         Ok(learned)
     }
@@ -442,6 +451,13 @@ impl CategorizationRulesService {
             kept_modified,
         })
     }
+}
+
+/// The category a merchant was most often given by hand, with the label counts behind it.
+struct LearnedCategory {
+    category_id: String,
+    agreeing: usize,
+    total: usize,
 }
 
 /// Written automatically: at least two labels, four in five agreeing.
@@ -1343,6 +1359,7 @@ mod tests {
         assert_eq!(suggestions[0].activity_id, "once2");
         assert_eq!(suggestions[0].taxonomy_id, "spending_categories");
         assert_eq!(suggestions[0].category_id, "cat_a");
+        assert_eq!((suggestions[0].agreeing, suggestions[0].total), (1, 1));
     }
 
     #[tokio::test]

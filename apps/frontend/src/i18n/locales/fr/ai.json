@@ -98,8 +98,6 @@
   "thread": {
     "disclaimer": "Les réponses peuvent être inexactes. Ceci n'est pas un conseil financier.",
     "scrollToBottom": "Faire défiler vers le bas",
-    "welcomeHello": "Bonjour !",
-    "welcomeHelp": "Comment puis-je vous aider aujourd'hui ?",
     "toolDisplayFailed": "L'affichage de l'outil a échoué. Le chat reste disponible.",
     "sendMessage": "Envoyer le message",
     "stopGenerating": "Arrêter la génération",
@@ -114,11 +112,29 @@
     "update": "Mettre à jour",
     "previous": "Précédent",
     "next": "Suivant",
-    "suggestions": {
-      "performance": "Comment se porte mon portefeuille cette année ?",
-      "topHoldings": "Quelles sont mes positions les plus performantes ?",
-      "dividendIncome": "Afficher le résumé de mes revenus de dividendes",
-      "assetAllocation": "Analyser mon allocation d'actifs"
+    "title": "Assistant",
+    "subtitle": "Posez une question sur votre argent, ou commencez ici",
+    "starters": {
+      "categorize": {
+        "title": "Catégoriser mes transactions",
+        "sub": "Propose des catégories",
+        "prompt": "Aide-moi à catégoriser toutes mes transactions sans catégorie."
+      },
+      "spending": {
+        "title": "Où est passé mon argent ?",
+        "sub": "Ce cycle budgétaire",
+        "prompt": "Où est passé mon argent pendant ce cycle budgétaire ? Montre les plus grandes catégories et tout ce qui est inhabituel."
+      },
+      "performance": {
+        "title": "Comment va mon portefeuille ?",
+        "sub": "Cette année",
+        "prompt": "Comment mon portefeuille se comporte-t-il cette année ?"
+      },
+      "allocation": {
+        "title": "Vérifier ma répartition",
+        "sub": "Comment mes actifs sont répartis",
+        "prompt": "Analyse ma répartition d'actifs"
+      }
     }
   },
   "codeHeader": {

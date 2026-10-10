@@ -712,7 +712,6 @@
     "previousBudgetPeriod": "Vorheriger Budgetzeitraum",
     "nextBudgetPeriod": "Nächster Budgetzeitraum",
     "manage": "Verwalten",
-    "budgetedTitle": "Budgetierte Ausgaben",
     "budgetedOf": "{{spent}} von {{budget}}",
     "irregularTitle": "Unregelmäßige Ausgaben",
     "irregularMore": "+{{count}} weitere"
@@ -794,6 +793,7 @@
     "budgetPeriodClearedCount_other": "{{count}} Transaktionen zählen wieder nach ihrem Datum."
   },
   "tabContent": {
+    "toggleComparison": "Vergleich mit dem letzten Zeitraum ein- oder ausblenden",
     "stageWhereLabel": "Wo ich stehe",
     "stageWhereSub": "Tempo, Budget & Kategorieaufschlüsselung",
     "stageChangedLabel": "Was sich geändert hat",
@@ -941,5 +941,20 @@
     "rolloverIn": "Übertrag ein",
     "dataUnavailable": "Budgetdaten sind nicht verfügbar",
     "migrationNeeded": "Die aktuelle lokale Datenbank wurde vor der aktualisierten Ausgabenmigration erstellt."
+  },
+  "suggestions": {
+    "chip": "Vorschläge",
+    "title_one": "{{count}} Vorschlag",
+    "title_other": "{{count}} Vorschläge",
+    "subtitle": "Nach deiner früheren Auswahl",
+    "acceptSure_one": "{{count}} sicheren annehmen",
+    "acceptSure_other": "{{count}} sichere annehmen",
+    "sure": "Sicher",
+    "likely": "Wahrscheinlich",
+    "guess": "Vermutung",
+    "more_one": "{{count}} weiterer weiter unten",
+    "more_other": "{{count}} weitere weiter unten",
+    "none": "Noch keine Vorschläge",
+    "askAssistant": "Assistenten fragen"
   }
 }

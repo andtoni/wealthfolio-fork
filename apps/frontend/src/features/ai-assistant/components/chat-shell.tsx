@@ -132,19 +132,23 @@ function Header({
   const { t } = useTranslation();
   return (
     <header className="pt-safe flex shrink-0 items-center gap-2 px-4">
-      <MobileSidebar />
-      <ButtonWithTooltip
-        variant="ghost"
-        size="icon"
-        tooltip={sidebarCollapsed ? t("ai:shell.showSidebar") : t("ai:shell.hideSidebar")}
-        side="bottom"
-        onClick={onToggleSidebar}
-        className="hidden size-9 md:flex"
-      >
-        <Icons.PanelLeft className="size-4" />
-      </ButtonWithTooltip>
-      <ProviderPicker />
+      <div className="glass-pill flex items-center rounded-full p-0.5">
+        <MobileSidebar />
+        <ButtonWithTooltip
+          variant="ghost"
+          size="icon"
+          tooltip={sidebarCollapsed ? t("ai:shell.showSidebar") : t("ai:shell.hideSidebar")}
+          side="bottom"
+          onClick={onToggleSidebar}
+          className="hidden size-9 md:flex"
+        >
+          <Icons.PanelLeft className="size-4" />
+        </ButtonWithTooltip>
+      </div>
       <div className="flex-1" />
+      <div className="glass-pill rounded-full px-1 py-0.5">
+        <ProviderPicker />
+      </div>
     </header>
   );
 }

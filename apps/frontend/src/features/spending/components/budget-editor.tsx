@@ -44,6 +44,7 @@ import {
 import { Switch } from "@wealthfolio/ui/components/ui/switch";
 
 import { BlockBar } from "@/components/block-bar";
+import { budgetStatusColor } from "./budget-line-chart-card";
 import { SECTION_HEADING } from "@/components/dashboard-card";
 import { cn } from "@/lib/utils";
 
@@ -147,6 +148,7 @@ export function BudgetEditor({ mode, periodKey }: BudgetEditorProps) {
         <GroupBudgetSection
           key={row.group.id}
           row={row}
+          planTotal={budget.computed.totals.spendingPlanned}
           groups={groups}
           targets={targets}
           rolloverSettings={rolloverSettings}
@@ -345,17 +347,6 @@ function BudgetSummary({
       </div>
 
       <SegmentedGroupBar groupRows={groupRows} total={planned} hasPlan={hasPlan} />
-
-      <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
-        {groupRows.map((row) => (
-          <GroupSummaryCell
-            key={row.group.id}
-            row={row}
-            currency={currency}
-            denominator={denominator}
-          />
-        ))}
-      </div>
     </section>
   );
 }
@@ -393,44 +384,22 @@ function SegmentedGroupBar({
   return (
     <BlockBar
       className="mt-4"
-      segments={groupRows
-        .filter((row) => row.plannedTotal > 0)
-        .map((row) => ({
-          value: row.plannedTotal,
-          color: groupAccent(row),
-          label: row.group.name,
-        }))}
+      // One block per budgeted category, in its own colour, kept in group order. A group's
+      // buffer follows its categories as a neutral block.
+      segments={groupRows.flatMap((row) => [
+        ...row.categories
+          .filter((category) => category.target > 0)
+          .map((category) => ({
+            value: category.target,
+            color: category.color ?? "var(--muted-foreground)",
+            label: category.name,
+          })),
+        ...(row.buffer > 0
+          ? [{ value: row.buffer, color: "var(--muted-foreground)", label: row.group.name }]
+          : []),
+      ])}
       total={total}
     />
-  );
-}
-
-function GroupSummaryCell({
-  row,
-  currency,
-  denominator,
-}: {
-  row: BudgetGroupRow;
-  currency: string;
-  denominator: number;
-}) {
-  const accent = groupAccent(row);
-  const pct = safePercent(row.plannedTotal, denominator);
-  return (
-    <div className="flex min-w-0 items-center gap-2 py-0.5">
-      <span
-        className="h-2 w-2 shrink-0 rounded-full"
-        style={{ backgroundColor: accent }}
-        aria-hidden
-      />
-      <span className="text-foreground min-w-0 flex-1 truncate text-sm">{row.group.name}</span>
-      <span className="text-muted-foreground w-9 shrink-0 text-right text-xs tabular-nums">
-        {formatPercent(pct)}
-      </span>
-      <span className="text-foreground shrink-0 text-sm tabular-nums">
-        <PrivacyAmount value={row.plannedTotal} currency={currency} />
-      </span>
-    </div>
   );
 }
 
@@ -442,6 +411,7 @@ interface CategoryPoolEntry {
 
 function GroupBudgetSection({
   row,
+  planTotal,
   groups,
   targets,
   rolloverSettings,
@@ -462,6 +432,8 @@ function GroupBudgetSection({
   onToggleCategoryRollover,
 }: {
   row: BudgetGroupRow;
+  /** The whole plan, which a group's share is taken of. */
+  planTotal: number;
   groups: BudgetGroup[];
   targets: BudgetTarget[];
   rolloverSettings: BudgetRolloverSetting[];
@@ -516,15 +488,6 @@ function GroupBudgetSection({
           />
         </button>
 
-        <button
-          type="button"
-          onClick={() => setEditOpen(true)}
-          className="flex h-7 w-5 shrink-0 items-center justify-center"
-          aria-label={t("spending:budgetEditor.editGroupName", { name: row.group.name })}
-        >
-          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: accent }} />
-        </button>
-
         <GroupEditDialog
           group={row.group}
           color={accent}
@@ -556,7 +519,8 @@ function GroupBudgetSection({
                 className="h-full rounded-[4px] transition-all"
                 style={{
                   width: `${Math.min(100, spentPct * 100)}%`,
-                  backgroundColor: accent,
+                  // Green, yellow, orange, red by how much of the group's plan is spent.
+                  backgroundColor: budgetStatusColor(spentPct),
                 }}
               />
             </div>
@@ -569,6 +533,9 @@ function GroupBudgetSection({
 
         <div className="text-right">
           <div className="text-[15px] tabular-nums">
+            <span className="text-muted-foreground mr-2 text-xs">
+              {formatPercent(safePercent(row.plannedTotal, planTotal))}
+            </span>
             <PrivacyAmount value={row.plannedTotal} currency={currency} />
           </div>
           <div className="text-muted-foreground text-xs">{totalSuffix}</div>

@@ -6,8 +6,9 @@ import { type ReactNode, useId, useState } from "react";
 const animatedToggleVariants = cva("relative inline-flex items-center scrollbar-hide overflow-x-auto touch-pan-x", {
   variants: {
     variant: {
-      default: "bg-muted",
-      secondary: "bg-secondary",
+      // Both take the app's frosted look; `secondary` is kept for the callers that name it.
+      default: "glass-pill",
+      secondary: "glass-pill",
     },
     size: {
       default: "gap-1 p-0.5",

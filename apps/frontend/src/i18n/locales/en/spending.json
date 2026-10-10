@@ -718,7 +718,6 @@
     "previousBudgetPeriod": "Previous budget period",
     "nextBudgetPeriod": "Next budget period",
     "manage": "Manage",
-    "budgetedTitle": "Budgeted spending",
     "budgetedOf": "{{spent}} of {{budget}}",
     "irregularTitle": "Irregular spending",
     "irregularMore": "+{{count}} more"
@@ -800,6 +799,7 @@
     "budgetPeriodClearedCount_other": "{{count}} transactions count by their own dates again."
   },
   "tabContent": {
+    "toggleComparison": "Show or hide the comparison with the last period",
     "stageWhereLabel": "Where I am",
     "stageWhereSub": "Pace, budget & category breakdown",
     "stageChangedLabel": "What changed",
@@ -947,5 +947,20 @@
     "rolloverIn": "Rollover in",
     "dataUnavailable": "Budget data is not available",
     "migrationNeeded": "The current local database was created before the updated spending migration."
+  },
+  "suggestions": {
+    "chip": "Suggest",
+    "title_one": "{{count}} suggestion",
+    "title_other": "{{count}} suggestions",
+    "subtitle": "From what you chose before",
+    "acceptSure_one": "Accept {{count}} sure",
+    "acceptSure_other": "Accept {{count}} sure",
+    "sure": "Sure",
+    "likely": "Likely",
+    "guess": "Guess",
+    "more_one": "{{count}} more further down",
+    "more_other": "{{count}} more further down",
+    "none": "Nothing to suggest yet",
+    "askAssistant": "Ask the assistant"
   }
 }

@@ -94,5 +94,12 @@ export default function PortfolioInsightsPage() {
     [accountFilter, holdingsActions, t],
   );
 
-  return <SwipablePage views={views} defaultView="overview" withPadding={true} />;
+  return (
+    <SwipablePage
+      views={views}
+      defaultView="overview"
+      withPadding={true}
+      mobileActionsPlacement="header"
+    />
+  );
 }

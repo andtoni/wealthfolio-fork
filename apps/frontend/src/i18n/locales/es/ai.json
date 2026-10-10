@@ -98,8 +98,6 @@
   "thread": {
     "disclaimer": "Las respuestas pueden ser inexactas. No constituyen asesoramiento financiero.",
     "scrollToBottom": "Desplazarse hasta abajo",
-    "welcomeHello": "¡Hola!",
-    "welcomeHelp": "¿En qué puedo ayudarte hoy?",
     "toolDisplayFailed": "No se pudo mostrar la herramienta. El chat sigue disponible.",
     "sendMessage": "Enviar mensaje",
     "stopGenerating": "Detener la generación",
@@ -114,11 +112,29 @@
     "update": "Actualizar",
     "previous": "Anterior",
     "next": "Siguiente",
-    "suggestions": {
-      "performance": "¿Cómo va el rendimiento de mi cartera este año?",
-      "topHoldings": "¿Cuáles son mis posiciones con mejor rendimiento?",
-      "dividendIncome": "Muéstrame el resumen de mis ingresos por dividendos",
-      "assetAllocation": "Analiza mi asignación de activos"
+    "title": "Asistente",
+    "subtitle": "Pregunta por tu dinero o empieza aquí",
+    "starters": {
+      "categorize": {
+        "title": "Categorizar mis transacciones",
+        "sub": "Sugiere una categoría",
+        "prompt": "Ayúdame a categorizar todas mis transacciones sin categorizar."
+      },
+      "spending": {
+        "title": "¿A dónde fue mi dinero?",
+        "sub": "Este ciclo de presupuesto",
+        "prompt": "¿A dónde fue mi dinero en este ciclo de presupuesto? Muestra las categorías más grandes y cualquier cosa inusual."
+      },
+      "performance": {
+        "title": "¿Cómo va mi cartera?",
+        "sub": "Este año",
+        "prompt": "¿Cómo está rindiendo mi cartera este año?"
+      },
+      "allocation": {
+        "title": "Revisar mi asignación",
+        "sub": "Cómo se reparten mis activos",
+        "prompt": "Analiza mi asignación de activos"
+      }
     }
   },
   "codeHeader": {

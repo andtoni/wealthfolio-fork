@@ -90,6 +90,19 @@ function NavigationPills({
 }
 
 // Mobile Navigation - Clean pill navigation
+/**
+ * The page's buttons share one frosted bubble on a phone. Secondary and outlined
+ * buttons lose their own fill and edge inside it; a primary button keeps its own.
+ */
+const MOBILE_ACTIONS = cn(
+  "glass-pill flex w-max items-center rounded-full p-1 [&_div]:flex-nowrap",
+  "[&_:is(button,a)]:size-8 [&_:is(button,a)]:rounded-full",
+  "[&_:is(button,a)[class*='bg-secondary']]:bg-transparent",
+  "[&_:is(button,a)[class*='border-input']]:border-0 [&_:is(button,a)[class*='border-input']]:bg-transparent [&_:is(button,a)[class*='border-input']]:shadow-none",
+);
+
+const HEADER_GLIDE = { type: "spring", stiffness: 420, damping: 38 } as const;
+
 function MobileNavigation({
   views,
   currentView,
@@ -106,7 +119,7 @@ function MobileNavigation({
   return (
     <div
       className={cn(
-        "bg-muted/50 flex items-center gap-0.5 rounded-full p-1 backdrop-blur-sm",
+        "glass-pill flex items-center gap-0.5 rounded-full p-1",
         compact && "min-w-0 max-w-full",
       )}
     >
@@ -183,14 +196,20 @@ export function SwipablePage({
     }
   });
 
+  // The tab just tapped, shown at once. The URL is what the rest of the app follows, and
+  // changing it re-renders a great deal, so it catches up at low priority instead of
+  // holding up the tab animation.
+  const [tappedView, setTappedView] = React.useState<string | null>(null);
+
   // URL wins; then persisted value (if any); then defaultView.
   const tabFromUrl = searchParams.get("tab");
-  const currentView =
+  const urlView =
     tabFromUrl && views.some((v) => v.value === tabFromUrl)
       ? tabFromUrl
       : persistedView && views.some((v) => v.value === persistedView)
         ? persistedView
         : (defaultView ?? views[0]?.value);
+  const currentView = tappedView ?? urlView;
 
   // Calculate numeric index from URL-derived currentView
   const currentIndex = React.useMemo(() => {
@@ -214,7 +233,11 @@ export function SwipablePage({
 
       // Update URL - this is the single source of truth
       // SwipableView will sync automatically via selectedIndex prop
-      setSearchParams({ tab: nextView }, { replace: true });
+      setTappedView(nextView);
+      React.startTransition(() => {
+        setSearchParams({ tab: nextView }, { replace: true });
+        setTappedView(null);
+      });
       onViewChange?.(nextView);
 
       if (persistKey) {
@@ -244,31 +267,34 @@ export function SwipablePage({
           <div className={cn("flex h-full flex-col md:hidden", isBounded && "min-h-0")}>
             {/* Mobile Navigation at top */}
             <div className="pt-safe flex shrink-0 flex-col gap-2 px-3 pb-2">
-              <div
-                className={cn(
-                  "grid w-full items-center gap-2",
-                  mobileActionsInHeader
-                    ? "grid-cols-[2.5rem_minmax(0,1fr)_auto] min-[390px]:grid-cols-[4.5rem_minmax(0,1fr)_auto]"
-                    : "grid-cols-[1fr_auto_1fr]",
-                )}
-              >
-                <div className={mobileActionsInHeader ? "w-10 min-[390px]:w-[4.5rem]" : "w-10"} />
-                <div className={cn("min-w-0", mobileActionsInHeader && "justify-self-center")}>
+              {/* The tabs sit in the middle while there is room. When the buttons beside
+                  them need more of the row, the tabs glide left to make way. */}
+              <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-2">
+                <div />
+                <motion.div layout="position" transition={HEADER_GLIDE} className="min-w-0">
                   <MobileNavigation
                     views={views}
                     currentView={currentView}
                     onViewChange={handleViewChange}
                     compact={mobileActionsInHeader}
                   />
+                </motion.div>
+                <div className="flex justify-end">
+                  {mobileActionsInHeader && currentActions && (
+                    <motion.div
+                      layout="position"
+                      transition={HEADER_GLIDE}
+                      className={MOBILE_ACTIONS}
+                    >
+                      {currentActions}
+                    </motion.div>
+                  )}
                 </div>
-                {mobileActionsInHeader ? (
-                  <div className="flex min-w-0 shrink-0 justify-end">{currentActions}</div>
-                ) : (
-                  <div />
-                )}
               </div>
               {currentActions && !mobileActionsInHeader && (
-                <div className="flex min-w-0 justify-end">{currentActions}</div>
+                <div className="flex min-w-0 justify-end">
+                  <div className={MOBILE_ACTIONS}>{currentActions}</div>
+                </div>
               )}
             </div>
 

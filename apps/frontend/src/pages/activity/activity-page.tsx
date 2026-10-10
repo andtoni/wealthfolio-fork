@@ -633,21 +633,6 @@ const ActivityPage = () => {
   const spendingActions = (
     <div className="flex flex-wrap items-center gap-2">
       <SyncButton />
-      {/* Ask AI to categorize uncategorized transactions */}
-      <Button
-        asChild
-        size="icon"
-        variant="outline"
-        title={t("activity:page.ask_ai_categorize")}
-        aria-label={t("activity:page.ask_ai_categorize")}
-      >
-        <Link
-          to="/assistant"
-          state={{ aiPrompt: "Help me categorize all my uncategorized transactions." }}
-        >
-          <Icons.Sparkles className="size-4" />
-        </Link>
-      </Button>
       {/* Desktop action palette */}
       <div className="hidden sm:flex">
         <ActionPalette
@@ -884,7 +869,12 @@ const ActivityPage = () => {
 
   return (
     <>
-      <SwipablePage views={views} defaultView="investments" persistKey="activity-page-tab" />
+      <SwipablePage
+        views={views}
+        defaultView="investments"
+        persistKey="activity-page-tab"
+        mobileActionsPlacement="header"
+      />
       {sharedModals}
     </>
   );

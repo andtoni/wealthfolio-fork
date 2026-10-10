@@ -41,6 +41,12 @@ import { ActivityType } from "@/lib/constants";
 import type { AmountRange } from "./amount-range-filter";
 import { DeleteTransactionsDialog, type DeletePreview } from "./delete-transactions-dialog";
 import type { SuggestedCategory } from "./suggested-category-button";
+import {
+  CategorySuggestionsCard,
+  suggestionCertainty,
+  type CategorySuggestionItem,
+  type SuggestionCertainty,
+} from "./category-suggestions-card";
 import { TransactionCard } from "./transaction-card";
 import { SplitTransactionSheet } from "./split-transaction-sheet";
 import { TransactionsBulkBar } from "./transactions-bulk-bar";
@@ -57,6 +63,7 @@ import {
 import { resolveCashActivitySubtype } from "../lib/cash-activity-form-utils";
 import {
   isLinkedTransferCashActivity,
+  getTransactionDisplay,
   isTransferCashActivity,
   stableArr,
   toEditableCashActivity,
@@ -553,7 +560,7 @@ export const SpendingTransactionsTab = forwardRef<
   const requestKey = useMemo(() => JSON.stringify(searchRequest), [searchRequest]);
   const { data: categorySuggestions = [] } = useCategorySuggestions();
   const suggestedCategoryByActivity = useMemo(() => {
-    const map = new Map<string, SuggestedCategory>();
+    const map = new Map<string, SuggestedCategory & { certainty: SuggestionCertainty }>();
     for (const s of categorySuggestions) {
       const category = allCategories.get(s.categoryId);
       if (category) {
@@ -562,11 +569,13 @@ export const SpendingTransactionsTab = forwardRef<
           id: category.id,
           name: category.name,
           color: category.color,
+          certainty: suggestionCertainty(s.agreeing, s.total),
         });
       }
     }
     return map;
   }, [categorySuggestions, allCategories]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [lastRequestKey, setLastRequestKey] = useState(requestKey);
   if (lastRequestKey !== requestKey) {
     setLastRequestKey(requestKey);
@@ -704,6 +713,31 @@ export const SpendingTransactionsTab = forwardRef<
     [selectedRowIds, bulkAssignMutation, t],
   );
 
+  const sureSuggestions = useMemo(
+    () =>
+      Array.from(suggestedCategoryByActivity, ([activityId, category]) => ({
+        activityId,
+        taxonomyId: category.taxonomyId,
+        categoryId: category.id,
+        certainty: category.certainty,
+      })).filter((s) => s.certainty === "sure"),
+    [suggestedCategoryByActivity],
+  );
+  const handleAcceptSureSuggestions = useCallback(async () => {
+    try {
+      const result = await bulkAssignMutation.mutateAsync(
+        sureSuggestions.map(({ activityId, taxonomyId, categoryId }) => ({
+          activityId,
+          taxonomyId,
+          categoryId,
+        })),
+      );
+      toast.success(t("spending:txTab.categorizedCount", { count: result.length }));
+    } catch {
+      // Hook already toasts on error.
+    }
+  }, [sureSuggestions, bulkAssignMutation, t]);
+
   const handleBulkSetEvent = useCallback(
     async (eventId: string | null) => {
       const ids = Array.from(selectedRowIds);
@@ -758,23 +792,44 @@ export const SpendingTransactionsTab = forwardRef<
 
   const clearSelection = useCallback(() => setSelectedRowIds(new Set()), []);
 
+  // The rows are memoized, so what they are handed must keep its identity between renders:
+  // `mutate` does, the mutation object around it does not.
+  const { mutate: assignCategory } = assignMutation;
+  const { mutate: unassignCategory } = unassignMutation;
+  const { mutate: setActivityEvent } = setEventMutation;
+  const { mutate: markReimbursement } = markReimbursementMutation;
+  const { mutate: changeType } = changeTypeMutation;
+  const handleChangeType = useCallback(
+    (row: TransactionRowVM, type: CashActivityType) => changeType({ row, type }),
+    [changeType],
+  );
+  const handleLinkCardLifecycle = useMemo(
+    () =>
+      onLinkInvestecCardLifecycle
+        ? (row: TransactionRowVM) =>
+            onLinkInvestecCardLifecycle(
+              toActivityDetails(row, accountById.get(row.activity.accountId)),
+            )
+        : undefined,
+    [onLinkInvestecCardLifecycle, accountById],
+  );
   const handleAssignCategory = useCallback(
     (activityId: string, taxonomyId: string, categoryId: string) => {
-      assignMutation.mutate({ activityId, taxonomyId, categoryId });
+      assignCategory({ activityId, taxonomyId, categoryId });
     },
-    [assignMutation],
+    [assignCategory],
   );
   const handleClearCategory = useCallback(
     (activityId: string, taxonomyId: string) => {
-      unassignMutation.mutate({ activityId, taxonomyId });
+      unassignCategory({ activityId, taxonomyId });
     },
-    [unassignMutation],
+    [unassignCategory],
   );
   const handleSetEvent = useCallback(
     (activityId: string, eventId: string | null) => {
-      setEventMutation.mutate({ activityId, eventId });
+      setActivityEvent({ activityId, eventId });
     },
-    [setEventMutation],
+    [setActivityEvent],
   );
   const handleSaveSplits = useCallback(
     async (activityId: string, splits: NewActivitySplit[]) => {
@@ -955,6 +1010,32 @@ export const SpendingTransactionsTab = forwardRef<
 
   useImperativeHandle(ref, () => ({ openAddForm }), [openAddForm]);
 
+  // The first few transactions on screen that have a category on offer.
+  const suggestionItems = useMemo(() => {
+    const items: CategorySuggestionItem[] = [];
+    for (const row of rows) {
+      const category = suggestedCategoryByActivity.get(row.activity.id);
+      if (!category || row.category || row.splitCount > 0) continue;
+      const display = getTransactionDisplay(
+        row.activity,
+        accountById.get(row.activity.accountId)?.accountType,
+      );
+      if (display.isNeutral) continue;
+      items.push({
+        activityId: row.activity.id,
+        name: row.activity.notes ?? null,
+        amount: display.safeAmount,
+        currency: row.activity.currency,
+        sign: display.sign,
+        scope: display.isIncome ? "income" : display.isSaving ? "saving" : "expense",
+        category,
+        certainty: category.certainty,
+      });
+      if (items.length === 5) break;
+    }
+    return items;
+  }, [rows, suggestedCategoryByActivity, accountById]);
+
   const isMobile = useIsMobileViewport();
 
   const loadMoreButton = hasNextPage ? (
@@ -998,21 +1079,15 @@ export const SpendingTransactionsTab = forwardRef<
         onAssignCategory: handleAssignCategory,
         onClearCategory: handleClearCategory,
         onSetEvent: handleSetEvent,
-        onMarkReimbursement: (row: TransactionRowVM) => markReimbursementMutation.mutate(row),
+        onMarkReimbursement: markReimbursement,
         onEditSplits: setSplittingActivity,
         onEdit: handleEditRow,
-        onChangeType: (row: TransactionRowVM, type: CashActivityType) =>
-          changeTypeMutation.mutate({ row, type }),
+        onChangeType: handleChangeType,
         onDuplicate: handleDuplicate,
         onDelete: handleDeleteRow,
         onLinkTransfer: handleLinkTransfer,
         onUnlinkTransfer: handleUnlinkTransfer,
-        onLinkInvestecCardLifecycle: onLinkInvestecCardLifecycle
-          ? (row: TransactionRowVM) =>
-              onLinkInvestecCardLifecycle(
-                toActivityDetails(row, accountById.get(row.activity.accountId)),
-              )
-          : undefined,
+        onLinkInvestecCardLifecycle: handleLinkCardLifecycle,
       };
       const day = dayOf(r.activity.activityDate, r.activity.activityDatePrecision);
       const heading = day === lastDay ? null : day;
@@ -1079,6 +1154,9 @@ export const SpendingTransactionsTab = forwardRef<
         onClearAll={clearAllFilters}
         isMobile={isMobile}
         title={t("dashboard:tabs.transactions")}
+        suggestionCount={suggestedCategoryByActivity.size}
+        suggestionsShown={showSuggestions}
+        onToggleSuggestions={() => setShowSuggestions((shown) => !shown)}
         selectMode={selectMode}
         onToggleSelect={() => {
           if (selectMode) clearSelection();
@@ -1099,6 +1177,17 @@ export const SpendingTransactionsTab = forwardRef<
             clearSelection();
             setSelectMode(false);
           }}
+        />
+      )}
+
+      {showSuggestions && (
+        <CategorySuggestionsCard
+          items={suggestionItems}
+          total={suggestedCategoryByActivity.size}
+          sureCount={sureSuggestions.length}
+          onAccept={handleAssignCategory}
+          onAcceptSure={handleAcceptSureSuggestions}
+          onClose={() => setShowSuggestions(false)}
         />
       )}
 

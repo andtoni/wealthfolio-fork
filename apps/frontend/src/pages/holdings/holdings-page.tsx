@@ -697,7 +697,7 @@ export const HoldingsPage = () => {
 
   return (
     <>
-      <SwipablePage views={views} defaultView="investments" />
+      <SwipablePage views={views} defaultView="investments" mobileActionsPlacement="header" />
 
       {/* Mobile Filter Sheet */}
       <HoldingsMobileFilterSheet

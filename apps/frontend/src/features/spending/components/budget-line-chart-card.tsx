@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
@@ -482,7 +482,8 @@ function BudgetCardHeaderActions({
   const { t } = useTranslation();
   return (
     <div className="flex items-center gap-1.5">
-      <div className="bg-card inline-flex items-center rounded-full p-1 shadow-sm">
+      {/* Blur is off: this pill travels with a swiped page, where a live blur stutters. */}
+      <div className="glass-pill inline-flex items-center rounded-full p-1 [backdrop-filter:none]">
         <button
           type="button"
           onClick={onPreviousMonth}
@@ -521,18 +522,27 @@ const BudgetManageLink = ({ monthKey }: { monthKey: string }) => {
   );
 };
 
-const BUDGET_NEAR_LIMIT = "#C28B47";
+// Green to yellow to orange to red, shared by the bar and the rings. Four steps: with a
+// fifth, two neighbouring shades are too alike to tell apart at ring size.
+// Green and red are the app's own. Its warning yellow reads brown at ring thickness, so
+// the two middle steps are a honey yellow and a soft orange chosen by the owner.
+const BUDGET_FILLING = "#D9AA2F";
+const BUDGET_NEAR_LIMIT = "#D2742F";
+/** The part of a ring that laps round again once a category is over budget. */
+const RING_OVER_LAP = "color-mix(in srgb, var(--destructive) 70%, black)";
 
-/** Green while there is room, amber in the last 15%, red once over. */
-function budgetStatusColor(pct: number): string {
-  return pct > 1 ? "var(--destructive)" : pct > 0.85 ? BUDGET_NEAR_LIMIT : "var(--success)";
+/** Green up to 60% used, yellow to 85%, orange for the last 15%, red once over. */
+export function budgetStatusColor(pct: number): string {
+  if (pct > 1) return "var(--destructive)";
+  if (pct > 0.85) return BUDGET_NEAR_LIMIT;
+  return pct > 0.6 ? BUDGET_FILLING : "var(--success)";
 }
 
-const RING_SIZE = 64;
-const RING_STROKE = 4;
-/** The tinted disc behind the icon, the same circle a transaction row uses. */
-const RING_DISC = 46;
+const RING_SIZE = 66;
+const RING_STROKE = 7;
 const RING_RADIUS = (RING_SIZE - RING_STROKE) / 2;
+/** The tinted disc behind a ring's symbol — the same circle a transaction row uses. */
+const RING_DISC = 46;
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
 /** How many irregular categories are named under the bar before the rest are counted. */
 const IRREGULAR_LEGEND = 4;
@@ -561,6 +571,8 @@ export function BudgetRings({
 }) {
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
+  // Folded, irregular spending is one line with its amount; the bar and names open on tap.
+  const [irregularOpen, setIrregularOpen] = useState(false);
   // Every category with a budget; the bar totals them all, the rings show the eight fullest.
   const budgetedRows = useMemo(() => {
     const spentByTop = new Map<string, number>();
@@ -640,16 +652,13 @@ export function BudgetRings({
   return (
     <div>
       <div className="mb-6">
-        <div className="flex items-baseline justify-between gap-3 pb-2">
-          <span className="text-[15px]">{t("spending:budgetChart.budgetedTitle")}</span>
-          <span className="text-[15px] tabular-nums">
-            {isBalanceHidden
-              ? "••••"
-              : t("spending:budgetChart.budgetedOf", {
-                  spent: formatCompactAmount(budgeted.spent, currency),
-                  budget: formatCompactAmount(budgeted.target, currency),
-                })}
-          </span>
+        <div className="text-muted-foreground pb-1.5 text-right text-[13px] tabular-nums">
+          {isBalanceHidden
+            ? "••••"
+            : t("spending:budgetChart.budgetedOf", {
+                spent: formatCompactAmount(budgeted.spent, currency),
+                budget: formatCompactAmount(budgeted.target, currency),
+              })}
         </div>
         <BlockBar
           segments={[
@@ -681,7 +690,7 @@ export function BudgetRings({
                     r={RING_RADIUS}
                     fill="none"
                     stroke="var(--foreground)"
-                    strokeOpacity={0.09}
+                    strokeOpacity={0.08}
                     strokeWidth={RING_STROKE}
                   />
                   <circle
@@ -694,6 +703,18 @@ export function BudgetRings({
                     strokeLinecap="round"
                     strokeDasharray={`${RING_LENGTH * Math.min(1, ring.pct)} ${RING_LENGTH}`}
                   />
+                  {over && (
+                    <circle
+                      cx={RING_SIZE / 2}
+                      cy={RING_SIZE / 2}
+                      r={RING_RADIUS}
+                      fill="none"
+                      stroke={RING_OVER_LAP}
+                      strokeWidth={RING_STROKE}
+                      strokeLinecap="round"
+                      strokeDasharray={`${RING_LENGTH * Math.min(1, ring.pct - 1)} ${RING_LENGTH}`}
+                    />
+                  )}
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center">
                   <span
@@ -711,7 +732,8 @@ export function BudgetRings({
               </div>
               <div className="text-muted-foreground w-full truncate text-[11px]">{ring.name}</div>
               <div
-                className={cn("w-full truncate text-xs tabular-nums", over && "text-destructive")}
+                className={cn("w-full truncate text-xs tabular-nums", over && "font-medium")}
+                style={over ? { color: "var(--destructive)" } : undefined}
               >
                 {isBalanceHidden
                   ? "••••"
@@ -725,23 +747,41 @@ export function BudgetRings({
         })}
       </div>
       {irregular.total > 0 && (
-        <div className="mt-6">
-          <div className="flex items-baseline justify-between gap-3 pb-2">
-            <span className="text-[15px]">{t("spending:budgetChart.irregularTitle")}</span>
+        // Sits as far below the rings' text as the rings sit below the bar.
+        <div className="mt-4">
+          <button
+            type="button"
+            className="flex w-full items-baseline justify-between gap-3 pb-2 text-left"
+            onClick={() => setIrregularOpen((open) => !open)}
+            aria-expanded={irregularOpen}
+          >
+            <span className="inline-flex items-center gap-1.5 text-[15px]">
+              {t("spending:budgetChart.irregularTitle")}
+              <Icons.ChevronDown
+                className={cn(
+                  "text-muted-foreground h-4 w-4 self-center transition-transform",
+                  irregularOpen && "rotate-180",
+                )}
+                aria-hidden="true"
+              />
+            </span>
             <span className="text-[15px] tabular-nums">
               {isBalanceHidden ? "••••" : formatCompactAmount(irregular.total, currency)}
             </span>
-          </div>
-          <BlockBar
-            segments={irregular.rows.map((row) => ({
-              value: row.spent,
-              color: row.color,
-              label: row.name,
-              href: row.href,
-            }))}
-          />
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
-            {irregular.rows.slice(0, IRREGULAR_LEGEND).map((row) => (
+          </button>
+          {irregularOpen && (
+            <BlockBar
+              className="mb-2"
+              segments={irregular.rows.map((row) => ({
+                value: row.spent,
+                color: row.color,
+                label: row.name,
+                href: row.href,
+              }))}
+            />
+          )}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
+            {(irregularOpen ? irregular.rows.slice(0, IRREGULAR_LEGEND) : []).map((row) => (
               <Link
                 key={row.categoryId}
                 to={row.href}
@@ -762,7 +802,7 @@ export function BudgetRings({
                 )}
               </Link>
             ))}
-            {irregular.rows.length > IRREGULAR_LEGEND && (
+            {irregularOpen && irregular.rows.length > IRREGULAR_LEGEND && (
               <span className="text-muted-foreground">
                 {t("spending:budgetChart.irregularMore", {
                   count: irregular.rows.length - IRREGULAR_LEGEND,

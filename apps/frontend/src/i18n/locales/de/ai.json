@@ -98,8 +98,6 @@
   "thread": {
     "disclaimer": "Antworten können ungenau sein. Dies ist keine Finanzberatung.",
     "scrollToBottom": "Nach unten scrollen",
-    "welcomeHello": "Hallo!",
-    "welcomeHelp": "Wie kann ich Ihnen heute helfen?",
     "toolDisplayFailed": "Die Anzeige des Tools ist fehlgeschlagen. Der Chat ist weiterhin verfügbar.",
     "sendMessage": "Nachricht senden",
     "stopGenerating": "Generierung stoppen",
@@ -114,11 +112,29 @@
     "update": "Aktualisieren",
     "previous": "Zurück",
     "next": "Weiter",
-    "suggestions": {
-      "performance": "Wie entwickelt sich mein Portfolio dieses Jahr?",
-      "topHoldings": "Was sind meine leistungsstärksten Positionen?",
-      "dividendIncome": "Zeige meine Dividendenertragsübersicht",
-      "assetAllocation": "Analysiere meine Anlageaufteilung"
+    "title": "Assistent",
+    "subtitle": "Frag nach deinem Geld oder beginne hier",
+    "starters": {
+      "categorize": {
+        "title": "Meine Transaktionen kategorisieren",
+        "sub": "Schlägt Kategorien vor",
+        "prompt": "Hilf mir, alle meine unkategorisierten Transaktionen zu kategorisieren."
+      },
+      "spending": {
+        "title": "Wohin ist mein Geld geflossen?",
+        "sub": "Dieser Budgetzeitraum",
+        "prompt": "Wohin ist mein Geld in diesem Budgetzeitraum geflossen? Zeige die größten Kategorien und alles Ungewöhnliche."
+      },
+      "performance": {
+        "title": "Wie läuft mein Portfolio?",
+        "sub": "Dieses Jahr",
+        "prompt": "Wie entwickelt sich mein Portfolio in diesem Jahr?"
+      },
+      "allocation": {
+        "title": "Meine Aufteilung prüfen",
+        "sub": "Wie mein Vermögen verteilt ist",
+        "prompt": "Analysiere meine Vermögensaufteilung"
+      }
     }
   },
   "codeHeader": {

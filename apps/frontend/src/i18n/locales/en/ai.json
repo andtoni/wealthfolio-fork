@@ -98,8 +98,6 @@
   "thread": {
     "disclaimer": "Responses may be inaccurate. Not a financial advice.",
     "scrollToBottom": "Scroll to bottom",
-    "welcomeHello": "Hello there!",
-    "welcomeHelp": "How can I help you today?",
     "toolDisplayFailed": "Tool display failed. The chat is still available.",
     "sendMessage": "Send message",
     "stopGenerating": "Stop generating",
@@ -114,11 +112,29 @@
     "update": "Update",
     "previous": "Previous",
     "next": "Next",
-    "suggestions": {
-      "performance": "How is my portfolio performing this year?",
-      "topHoldings": "What are my top performing holdings?",
-      "dividendIncome": "Show my dividend income summary",
-      "assetAllocation": "Analyze my asset allocation"
+    "title": "Assistant",
+    "subtitle": "Ask about your money, or start here",
+    "starters": {
+      "categorize": {
+        "title": "Categorize my transactions",
+        "sub": "Suggests a category for each",
+        "prompt": "Help me categorize all my uncategorized transactions."
+      },
+      "spending": {
+        "title": "Where did my money go?",
+        "sub": "This budget cycle",
+        "prompt": "Where did my money go this budget cycle? Show the biggest categories and anything unusual."
+      },
+      "performance": {
+        "title": "How is my portfolio doing?",
+        "sub": "This year",
+        "prompt": "How is my portfolio performing this year?"
+      },
+      "allocation": {
+        "title": "Check my allocation",
+        "sub": "How my assets are spread",
+        "prompt": "Analyze my asset allocation"
+      }
     }
   },
   "codeHeader": {
